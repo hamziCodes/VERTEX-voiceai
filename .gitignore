@@ -1,0 +1,44 @@
+# Legacy inspiration codebases — keep local only; do not push
+/AI_voice_agent_v3 - gemini/
+/awaazlabs/
+/habiba-sdk-agent/
+/Multilingual_AI_Voice_Agent_gittracked/
+
+# Secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.npm/
+dist/
+build/
+.next/
+out/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Cursor / local agent
+.cursor/
+agent-transcripts/
