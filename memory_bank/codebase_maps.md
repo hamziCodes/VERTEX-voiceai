@@ -2,14 +2,15 @@
 
 > Bootstrap index. Full dossiers: `AUDIT_01`…`05`. Do not re-audit unless source changed.
 > Disk names ≠ protocol aliases: `awaazlabs` (double-a); `AI_voice_agent_v3 - gemini` (space).
+> All four live under `legacy_codebases/` (source tracked on git for Cursor Cloud).
 
 ## Aliases
 | Alias | Path |
 |-------|------|
-| V3 | `AI_voice_agent_v3 - gemini/` |
-| AWAZ | `awaazlabs/` |
-| MULTI | `Multilingual_AI_Voice_Agent_gittracked/` |
-| HAB | `habiba-sdk-agent/` |
+| V3 | `legacy_codebases/AI_voice_agent_v3 - gemini/` |
+| AWAZ | `legacy_codebases/awaazlabs/` |
+| MULTI | `legacy_codebases/Multilingual_AI_Voice_Agent_gittracked/` |
+| HAB | `legacy_codebases/habiba-sdk-agent/` |
 
 ---
 
@@ -17,7 +18,7 @@
 
 ### V3 — Scratch Urdu PCM loop
 ```
-AI_voice_agent_v3 - gemini/
+legacy_codebases/AI_voice_agent_v3 - gemini/
 ├── backend/app/
 │   ├── main.py                 # FastAPI entry, mounts WS
 │   ├── config.py               # Settings (thresholds, models)
@@ -35,7 +36,7 @@ AI_voice_agent_v3 - gemini/
 
 ### AWAZ — Dashboard + Retell CRM (NOT a voice engine)
 ```
-awaazlabs/
+legacy_codebases/awaazlabs/
 ├── ali-Awaazlabs-client-dashboard-backend/
 │   └── supabase/functions/     # CANONICAL Edge Functions
 │       ├── retell-webhook/     # call_* events
@@ -50,7 +51,7 @@ Grep voice PCM/Silero/VAD = **0**. Nested gits per subfolder.
 
 ### MULTI — Modular relative of V3
 ```
-Multilingual_AI_Voice_Agent_gittracked/
+legacy_codebases/Multilingual_AI_Voice_Agent_gittracked/
 ├── backend/app/
 │   ├── main.py
 │   ├── orchestration/session.py
@@ -72,7 +73,7 @@ Multilingual_AI_Voice_Agent_gittracked/
 
 ### HAB — Multi-tenant VaaS (LiveKit Agents)
 ```
-habiba-sdk-agent/
+legacy_codebases/habiba-sdk-agent/
 ├── control_plane/app.py + mint.py   # POST /v1/session HMAC+JWT
 ├── worker/
 │   ├── main.py                      # AgentSession + silero.VAD.load()

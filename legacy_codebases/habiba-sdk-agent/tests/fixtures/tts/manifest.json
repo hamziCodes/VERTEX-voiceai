@@ -1,0 +1,24 @@
+{
+  "c6228ded3cd7af7e5d49954e0cbae817": {
+    "voiceId": "v_meklc281",
+    "text": "السلام علیکم، ٹیک زون لیپ ٹاپس میں خوش آمدید۔ میں مہ نور بات کر رہی ہوں، میں آپ کی کیا مدد کر سکتی ہوں؟",
+    "ms": 8440,
+    "bytes": 372268,
+    "sample_rate": 22050,
+    "output_format": "WAV_22050_16",
+    "recorded_at": "2026-07-16T18:43:20.194328+00:00",
+    "status": "superseded",
+    "superseded_by": "e2c70ca90ee456cfe0a790af434dec7d",
+    "note": "Earlier take with the Urdu-script brand name (ٹیک زون لیپ ٹاپس). Superseded by e2c70ca (Latin 'TechZone Laptops'), which the human listened to and approved as canonical. Kept on disk, NOT deleted."
+  },
+  "e2c70ca90ee456cfe0a790af434dec7d": {
+    "voiceId": "v_meklc281",
+    "text": "السلام علیکم، TechZone Laptops میں خوش آمدید۔ میں مہ نور بات کر رہی ہوں، میں آپ کی کیا مدد کر سکتی ہوں؟",
+    "ms": 8626,
+    "bytes": 380460,
+    "sample_rate": 22050,
+    "output_format": "WAV_22050_16",
+    "recorded_at": "2026-07-16T22:16:52.595314+00:00",
+    "status": "canonical (human-listened + approved 2026-07-17)"
+  }
+}

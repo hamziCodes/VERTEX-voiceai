@@ -1,0 +1,727 @@
+# Modular Multilingual Voice Agent — COMPLETE Implementation Plan v2
+**VERTEX/studio // VERTEX/voice Platform**
+
+---
+
+## Part 1 — Full Provider Catalog (All Free Dev Tiers)
+
+### 1A — Speech-to-Text (STT) Providers
+
+| Provider | Model | Free Tier | Live Stream | Code-Switch | Urdu | Arabic | Malay | English |
+|----------|-------|-----------|-------------|-------------|------|--------|-------|---------|
+| **Gladia** | Solaria-1 | ✅ 10 hrs/mo | ✅ WebSocket | ✅ Native | ✅ Best | ✅ Good | ✅ Good | ✅ Excellent |
+| **AssemblyAI** | Universal-3.5 Pro | ✅ $50 credit (~333h) | ✅ WebSocket | ✅ Good | ⚠️ Limited | ✅ Good | ⚠️ Limited | ✅ Excellent |
+| **Deepgram** | Nova-3 | ✅ $200 credit | ✅ WebSocket | ✅ Good | ⚠️ Limited | ✅ Good | ⚠️ Limited | 🌟 Best |
+| **Groq Whisper** | whisper-large-v3-turbo | ✅ Free (rate limited) | ❌ Batch only | ❌ No | ✅ Good | ✅ Good | ✅ Good | ✅ Excellent |
+| **Fish Audio ASR** | Fish ASR | ✅ Free tier | ❌ Batch HTTP | ❌ No | ⚠️ Unknown | ✅ Good | ✅ Good | ✅ Good |
+| **Azure STT** | Fast Transcription | ✅ 5 hrs/mo | ✅ WebSocket | ✅ Good | ⚠️ Fair | ✅ Good | ✅ Good | ✅ Excellent |
+| **Cartesia Ink** | Ink v1 | ✅ 20K credits/mo | ✅ WebSocket | ⚠️ Limited | ❌ No | ⚠️ Fair | ❌ No | ✅ Good |
+| **Whisper Local** | whisper-large-v3 | ✅ FREE (self-host) | ❌ Batch | ❌ No | ✅ Good | ✅ Good | ✅ Good | ✅ Excellent |
+
+> **Key STT insight:** For a live voice agent with Urdu/Minglish code-switching, **Gladia Solaria-1 is uniquely best** — the only provider that does live WebSocket + native code-switching + Urdu simultaneously. Everything else is either batch-only, lacks Urdu, or lacks real code-switching.
+
+---
+
+### 1B — Language Model (LLM) Providers
+
+| Provider | Model(s) | Free Tier | Streaming | Urdu | Arabic | Malay | English | Speed |
+|----------|----------|-----------|-----------|------|--------|-------|---------|-------|
+| **Groq** | llama-3.3-70b, llama-3.1-8b | ✅ Free ~30 RPM | ✅ | ✅ Good | ✅ Good | ✅ Good | ✅ Excellent | 🚀 Fastest API |
+| **Gemini AI Studio** | gemini-2.0-flash, 1.5-flash | ✅ 15 RPM / 1M TPD | ✅ | ✅ Good | 🌟 Best | ✅ Good | ✅ Excellent | 🚀 Fast |
+| **Cerebras** | llama3.3-70b, qwen3-32b | ✅ 1M tokens/day | ✅ | ✅ Good | ✅ Good | ✅ Good | ✅ Excellent | 🚀🚀 2600 T/s! |
+| **OpenRouter** | Llama 4, DeepSeek R1, Gemma 4 | ✅ 50 req/day (25+ free) | ✅ | ✅ Variable | ✅ Variable | ✅ Variable | ✅ Excellent | Variable |
+| **Mistral AI** | mistral-small-latest | ✅ Free experimental | ✅ | ⚠️ Fair | ⚠️ Fair | ⚠️ Fair | ✅ Excellent | 🟡 Medium |
+| **Together AI** | Llama 3.3, Qwen2.5 | ✅ $25 credit | ✅ | ✅ Good | ✅ Good | ✅ Good | ✅ Excellent | 🚀 Fast |
+| **Ollama (Local)** | Any GGUF model | ✅ FREE (self-host) | ✅ | ✅ Variable | ✅ Variable | ✅ Variable | ✅ Variable | ⚠️ Hardware dep. |
+
+> **Key LLM insight:** For real-time voice you need streaming + low TTFT. Best free options: **Groq** (fastest, simplest) and **Gemini AI Studio** (best Arabic context, biggest free context). **Cerebras** is the dark horse — 2600 T/s is extraordinary and largely untested for voice agents.
+
+---
+
+### 1C — Text-to-Speech (TTS) Providers
+
+| Provider | Free Tier | Live Stream | Urdu | Arabic | Malay | English | Voice Quality | Latency |
+|----------|-----------|-------------|------|--------|-------|---------|---------------|---------|
+| **Uplift AI** | Dev tier (limited) | ❌ HTTP chunks | 🌟 Best | ❌ No | ❌ No | ❌ No | 🌟 Native Urdu | ~400ms |
+| **Google TTS** | ✅ 1M Neural2 chars/mo | ❌ HTTP+base64 | ⚠️ ur-PK robotic | ✅ ar-XA | ✅ ms-MY | ✅ Excellent | 🟡 Neural2 | ~200ms |
+| **ElevenLabs** | ✅ 10K chars/mo | ❌ HTTP stream | ❌ No | ✅ Good | ✅ Good | 🌟 Best | 🌟 Premium | ~350ms |
+| **Fish Audio** | ✅ Free tier | ✅ WebSocket | ❌ No | ✅ Good | ✅ Good | ✅ Excellent | 🌟 Premium | ~150ms |
+| **Azure TTS** | ✅ 500K chars/mo Neural | ❌ HTTP stream | ⚠️ ur-PK ok | ✅ Good | ✅ Good | ✅ Excellent | 🌟 Premium | ~300ms |
+| **Cartesia Sonic** | ✅ 20K credits/mo | ✅ WebSocket | ❌ No | ⚠️ Fair | ❌ No | ✅ Excellent | 🌟 Very Natural | 🚀 ~80ms TTFB! |
+| **Kokoro TTS** | ✅ FREE forever (local) | ❌ Local async | ❌ No | ❌ No | ❌ No | ✅ Excellent | 🟡 Good | CPU real-time |
+| **Edge TTS** | ✅ FREE (unofficial) | ❌ HTTP | ⚠️ ur-PK ok | ✅ Good | ✅ Good | ✅ Good | 🟡 Good | ~200ms |
+| **Coqui XTTS** | ✅ FREE (local, Apache) | ❌ Local async | ⚠️ Limited | ✅ Good | ❌ No | ✅ Good | 🟡 Good | GPU needed |
+
+> **Key TTS insight:** Urdu is the hardest — only **Uplift AI** delivers natural native Urdu. For everything else, **Google TTS Neural2** is the best value free tier. **Cartesia Sonic** has the lowest latency of any TTS at 80ms TTFB but only for English.
+
+---
+
+## Part 2 — Provider Grading System
+
+### Rating Dimensions (5 axes, A–D scale)
+
+| Dimension | What it measures |
+|-----------|-----------------|
+| **Accuracy** | WER, language fidelity, hallucination control |
+| **Latency** | Time-to-first-audio — target total pipeline <800ms |
+| **Naturalness** | Voice prosody, code-switching fluency, human-likeness |
+| **Reliability** | Uptime, error handling, free tier stability |
+| **Cost** | How far the free tier goes (~100 test calls/month = ~50 hrs STT) |
+
+### Grade Scale
+| Grade | Label | Meaning |
+|-------|-------|---------|
+| 🏆 **A+** | GOLD STANDARD | Ship to any client immediately. Best in class. |
+| 🟢 **A** | OPTIMAL | Production-ready. Negligible tradeoffs. |
+| 🔵 **B** | GOOD | Reliable. Minor tradeoffs acceptable for most use cases. |
+| 🟡 **C** | CAUTION | Works but notable limitation. Testing/non-critical use only. |
+| 🔴 **D** | AVOID | Significant technical or UX limitation. Do not ship. |
+| ⚫ **X** | INCOMPATIBLE | Technical blocker. Will not function correctly. |
+
+---
+
+## Part 3 — Full Combination Matrix (Per Language)
+
+### URDU / MINGLISH (Pakistan) 🇵🇰
+
+| STT | LLM | TTS | Accuracy | Latency | Naturalness | Reliability | Overall | Key Notes |
+|-----|-----|-----|----------|---------|-------------|-------------|---------|-----------|
+| **Gladia** | **Groq LLaMA-3.3** | **Uplift AI** | A | A | A | A | 🏆 **A+ GOLD** | The definitive Urdu stack. Live code-switching + native TTS. Ship to client. |
+| **Gladia** | **Cerebras LLaMA** | **Uplift AI** | A | A | A | B | 🟢 **A** | Cerebras is 3x faster inference than Groq. Less mature API. Test in staging. |
+| **Gladia** | **Gemini 2.0 Flash** | **Uplift AI** | A | B | A | B | 🔵 **B+** | Gemini slower TTFT. Better reasoning. Use for complex multi-step queries. |
+| **Gladia** | **Groq LLaMA-3.3** | **Google (ur-PK)** | A | A | C | A | 🟡 **C+** | Google Urdu voice is robotic/unnatural. Acceptable fallback when Uplift is down only. |
+| **Gladia** | **Groq LLaMA-3.3** | **Azure (ur-PK)** | A | B | C | B | 🟡 **C** | Azure Urdu is marginally better than Google. Still not natural. Fallback only. |
+| **Gladia** | **Groq LLaMA-3.3** | **Edge TTS (ur)** | A | A | C | B | 🟡 **C** | Free with no key. Robotic. Dev testing only. |
+| **AssemblyAI** | **Groq LLaMA-3.3** | **Uplift AI** | C | A | A | B | 🟡 **C+** | AssemblyAI Urdu is inconsistent. Code-switching less reliable than Gladia. |
+| **Deepgram Nova-3** | **Groq LLaMA-3.3** | **Uplift AI** | C | A | A | B | 🟡 **C** | Deepgram Urdu coverage thin. Code-switching unreliable. Thorough testing needed. |
+| **Groq Whisper** | **Groq LLaMA-3.3** | **Uplift AI** | B | D | A | B | 🔴 **D** | Batch STT. ~400ms+ overhead kills conversational flow. Never ship for voice agent. |
+| **Whisper Local** | **Ollama** | **Uplift AI** | B | D | A | A | 🔴 **D** | Fully free but zero latency guarantees. Turn-based only. Dev/offline only. |
+
+---
+
+### ARABIC — MSA / Gulf-Neutral 🇸🇦🇦🇪
+
+| STT | LLM | TTS | Accuracy | Latency | Naturalness | Reliability | Overall | Key Notes |
+|-----|-----|-----|----------|---------|-------------|-------------|---------|-----------|
+| **Gladia** | **Gemini 2.0 Flash** | **Google (ar-XA)** | A | B | A | A | 🟢 **A OPTIMAL** | Best balanced Arabic stack. Gemini has stronger Arabic training data. |
+| **Gladia** | **Cerebras LLaMA** | **Google (ar-XA)** | A | A | A | B | 🟢 **A** | Fastest Arabic stack on free tier. Cerebras speed is extraordinary. |
+| **Gladia** | **Groq LLaMA-3.3** | **Google (ar-XA)** | A | A | A | A | 🟢 **A OPTIMAL** | Excellent latency. LLaMA Arabic very good. Slightly less cultural nuance than Gemini. |
+| **Gladia** | **Gemini 2.0 Flash** | **ElevenLabs** | A | C | A+ | B | 🔵 **B+** | Best voice quality for Arabic. +200ms vs Google. 10K free chars burns fast. |
+| **Gladia** | **Gemini 2.0 Flash** | **Fish Audio** | A | A | A | B | 🔵 **B+** | Fish Arabic solid. Faster than ElevenLabs. PCM conversion needed (verify). |
+| **Gladia** | **Groq LLaMA-3.3** | **Azure (ar-XA)** | A | B | A | B | 🔵 **B** | Azure Arabic voices more expressive than Google. 500K free chars is generous. |
+| **AssemblyAI** | **Gemini 2.0 Flash** | **Google (ar-XA)** | B | B | A | B | 🔵 **B** | AssemblyAI Arabic accuracy solid via Universal-3.5. $50 credit adequate for testing. |
+| **Deepgram Nova-3** | **Gemini 2.0 Flash** | **Google (ar-XA)** | B | A | A | B | 🔵 **B** | Deepgram Arabic decent. No code-switching. $200 credit goes far. |
+| **Groq Whisper** | **Gemini 2.0 Flash** | **Google (ar-XA)** | B | D | A | B | 🔴 **D** | Batch mode kills latency. Do not use for live Arabic voice agent. |
+
+---
+
+### ENGLISH 🇬🇧🇺🇸🇵🇰
+
+| STT | LLM | TTS | Accuracy | Latency | Naturalness | Reliability | Overall | Key Notes |
+|-----|-----|-----|----------|---------|-------------|-------------|---------|-----------|
+| **Gladia** | **Groq LLaMA-3.3** | **Google Neural2-F** | A | A | A | A | 🟢 **A OPTIMAL** | Best balanced free English stack. Sub-700ms TTFA achievable consistently. |
+| **Deepgram Nova-3** | **Cerebras LLaMA** | **Cartesia Sonic** | A+ | S | A | B | 🚀 **S-TIER ULTRA** | The fastest possible free English stack. All streaming-native. ~350ms TTFA! Demo wow factor. |
+| **Gladia** | **Cerebras LLaMA** | **Cartesia Sonic** | A | S | A | B | 🚀 **S-TIER** | Near real-time. Cartesia 80ms TTFB + Cerebras 2600 T/s is extraordinary for demos. |
+| **Gladia** | **Groq LLaMA-3.3** | **ElevenLabs** | A | B | A+ | B | 🔵 **B+** | Best voice naturalness on free tier. 10K free chars limit. Use for client showcases only. |
+| **Gladia** | **Gemini 2.0 Flash** | **Google Neural2-F** | A | B | A | A | 🟢 **A** | When reasoning/accuracy matters more than raw speed. Complex product questions. |
+| **Gladia** | **Groq LLaMA-3.3** | **Fish Audio** | A | A | A | B | 🔵 **B+** | Fish English is premium quality, faster than ElevenLabs. Test PCM output first. |
+| **Deepgram Nova-3** | **Groq LLaMA-3.3** | **Google Neural2-F** | A+ | A | A | B | 🟢 **A** | Deepgram is arguably the best English STT. $200 credit goes a long way. |
+| **AssemblyAI** | **Groq LLaMA-3.3** | **Google Neural2-F** | A | B | A | A | 🔵 **B+** | Universal-3.5 top-tier English accuracy. $50 credit (~333h streaming) very generous. |
+| **Gladia** | **Groq LLaMA-3.3** | **Azure Neural** | A | B | A | B | 🔵 **B** | Azure Neural English voices are expressive. 500K free chars is very generous. |
+| **Gladia** | **Groq LLaMA-3.3** | **Kokoro TTS** | A | C | B | B | 🟡 **C+** | 100% free/local. Great English quality but requires self-hosting. Dev/offline use. |
+| **Gladia** | **OpenRouter (free)** | **Google Neural2-F** | A | C | A | C | 🟡 **C** | OpenRouter free models rotate. Unstable. Exploration only, never client demos. |
+| **Whisper Local** | **Ollama** | **Kokoro TTS** | B | D | B | A | 🔴 **D** | Fully free, fully local. But batch STT + local inference = too slow for real-time. |
+
+---
+
+### MALAY (Bahasa Malaysia) 🇲🇾
+
+| STT | LLM | TTS | Accuracy | Latency | Naturalness | Reliability | Overall | Key Notes |
+|-----|-----|-----|----------|---------|-------------|-------------|---------|-----------|
+| **Gladia** | **Groq LLaMA-3.3** | **Google (ms-MY)** | A | A | B | A | 🟢 **A OPTIMAL** | Best available Malay stack. Google ms-MY-Wavenet-B is clear and intelligible. |
+| **Gladia** | **Gemini 2.0 Flash** | **Google (ms-MY)** | A | B | B | A | 🔵 **B+** | Gemini has broader Southeast Asian cultural training. Use for complex Malay queries. |
+| **Gladia** | **Groq LLaMA-3.3** | **Fish Audio** | A | A | B | B | 🔵 **B** | Fish Malay quality needs on-device validation. Likely better prosody than Google. |
+| **Gladia** | **Groq LLaMA-3.3** | **Azure (ms-MY)** | A | B | B | B | 🔵 **B** | Azure ms-MY voices are clear. 500K free chars generous. |
+| **AssemblyAI** | **Groq LLaMA-3.3** | **Google (ms-MY)** | B | B | B | B | 🔵 **B** | AssemblyAI Malay support adequate. Test before client use. |
+| **Deepgram Nova-3** | **Groq LLaMA-3.3** | **Google (ms-MY)** | C | A | B | B | 🟡 **C** | Deepgram Malay coverage is thin. Verify current model support before use. |
+
+---
+
+## Part 4 — SOLID Recommended Tech Stacks
+
+### 🏆 Stack 1 — "Zara Classic" (Urdu-first, Daily Driver)
+> **Best for:** Pakistani market, VERTEX/voice demos, Minglish conversations
+```
+STT:  Gladia Solaria-1         → live streaming, code-switching, Urdu+English
+LLM:  Groq llama-3.3-70b       → fastest free API, excellent Urdu instruction follow
+TTS:  Uplift AI (ur)           → only native Urdu voice, natural Minglish cadence
+      Google Neural2 (en/ar/ms) → per-language routing
+VAD:  Silero → Energy fallback  → local, zero latency
+COST: ~$0 within free tiers for ~100 demo calls/month
+TTFA: ~600-750ms
+VERDICT: Ship to client with confidence
+```
+
+### 🌟 Stack 2 — "Zara Pro" (Multilingual, Best Quality)
+> **Best for:** Arabic/English/Malay clients, premium client demonstrations
+```
+STT:  Gladia Solaria-1         → only live multilingual+code-switching provider
+LLM:  Gemini 2.0 Flash         → best multilingual reasoning, 1M context window
+TTS:  Uplift (ur) + Google Neural2 (en/ar/ms)
+VAD:  Silero → Energy fallback
+COST: ~$0 within free tiers
+TTFA: ~700-900ms
+VERDICT: Best quality. Slightly slower than Classic. Ideal for Arabic.
+```
+
+### 🚀 Stack 3 — "Zara Turbo" (English, Speed Demo)
+> **Best for:** English-only deployments where speed is the wow factor
+```
+STT:  Deepgram Nova-3          → best English WER, $200 free credit
+LLM:  Cerebras llama3.3-70b    → 2600 T/s, fastest inference available free
+TTS:  Cartesia Sonic           → 80ms TTFB, WebSocket streaming native
+VAD:  Silero → Energy fallback
+COST: ~$0 within free tiers
+TTFA: ~350-450ms (pushing real-time boundaries)
+VERDICT: Jaw-dropping speed for English. Not for multilingual use.
+```
+
+### 💡 Stack 4 — "Zara Local" (Zero Cost, Offline)
+> **Best for:** Offline demos, no-internet environments, CI testing
+```
+STT:  Whisper Local (faster-whisper) → self-hosted, 99 langs, batch mode
+LLM:  Ollama (llama3.3 GGUF)         → local, free forever, no rate limits
+TTS:  Kokoro TTS (English)            → Apache 2.0, CPU real-time, no cloud cost
+VAD:  Silero (already local)
+COST: $0 forever (hardware costs only)
+TTFA: ~1200-2000ms (GPU strongly recommended)
+VERDICT: For dev/testing only. Batch STT = not suitable for live demo.
+```
+
+### 🛡️ Stack 5 — "Zara Enterprise" (Production, Paid, Client-ready)
+> **Best for:** Paying clients, SLA requirements, high call volume
+```
+STT:  Gladia (Growth plan)     → $0.25/hr, unlimited concurrency
+LLM:  Groq (Paid tier)        → no rate limits, dedicated throughput
+TTS:  Uplift (ur) + Google Neural2 (en/ar/ms)
+VAD:  Silero
+COST: ~$0.40-0.60 per hour of active calls
+TTFA: ~600ms
+VERDICT: Production. This is what you bill the client for.
+```
+
+---
+
+## Part 5 — Provider Plugin Registry (Core Architecture)
+
+### 5.1 Single Registration File
+
+**File (NEW):** `backend/app/services/registry.py`
+
+```python
+"""
+PROVIDER REGISTRY
+=================
+Single source of truth. One entry per provider.
+Add a new provider here — zero changes anywhere else.
+"""
+from dataclasses import dataclass, field
+from typing import Callable
+
+@dataclass(frozen=True)
+class ProviderSpec:
+    id: str
+    display_name: str
+    tier: str              # "optimal" | "good" | "caution" | "local"
+    free_limit: str        # Human-readable
+    live_streaming: bool
+    languages: list[str]
+    requires_keys: list[str]
+    pros: list[str]
+    cons: list[str]
+
+STT_PROVIDERS: dict[str, ProviderSpec] = {
+    "gladia": ProviderSpec(
+        id="gladia", display_name="Gladia Solaria-1",
+        tier="optimal", free_limit="10 hrs/month",
+        live_streaming=True,
+        languages=["ur", "en", "ar", "ms"],
+        requires_keys=["gladia_api_key"],
+        pros=["Only live Urdu code-switching STT", "100+ languages", "Partial transcripts"],
+        cons=["1 concurrent session on free tier", "402 quota errors at limit"],
+    ),
+    "assemblyai": ProviderSpec(
+        id="assemblyai", display_name="AssemblyAI Universal-3.5",
+        tier="good", free_limit="$50 credit (~333h streaming)",
+        live_streaming=True, languages=["en", "ar"],
+        requires_keys=["assemblyai_api_key"],
+        pros=["Very generous free credit", "Top English accuracy", "Speaker diarization"],
+        cons=["Limited Urdu/Malay", "Code-switching less reliable than Gladia"],
+    ),
+    "deepgram": ProviderSpec(
+        id="deepgram", display_name="Deepgram Nova-3",
+        tier="good", free_limit="$200 credit",
+        live_streaming=True, languages=["en", "ar"],
+        requires_keys=["deepgram_api_key"],
+        pros=["Best English WER", "Very generous free credit", "Sub-300ms latency"],
+        cons=["Limited Urdu/Malay", "No Urdu code-switching"],
+    ),
+    "groq_whisper": ProviderSpec(
+        id="groq_whisper", display_name="Groq Whisper Large v3-Turbo",
+        tier="caution", free_limit="Free rate limited (batch only)",
+        live_streaming=False, languages=["ur", "en", "ar", "ms"],
+        requires_keys=["groq_api_key"],
+        pros=["Completely free", "99+ languages", "200x real-time speed"],
+        cons=["BATCH ONLY — adds ~400ms per turn", "No partial transcripts", "No code-switching"],
+    ),
+    "fish_stt": ProviderSpec(
+        id="fish_stt", display_name="Fish Audio ASR",
+        tier="experimental", free_limit="Free tier (fish.audio)",
+        live_streaming=False, languages=["en", "ar"],
+        requires_keys=["fish_api_key"],
+        pros=["Free tier", "100+ languages", "Timestamps support"],
+        cons=["BATCH ONLY", "Urdu support unverified", "No code-switching"],
+    ),
+    "whisper_local": ProviderSpec(
+        id="whisper_local", display_name="Whisper Local (faster-whisper)",
+        tier="local", free_limit="FREE forever (self-hosted)",
+        live_streaming=False, languages=["ur", "en", "ar", "ms"],
+        requires_keys=[],
+        pros=["Zero API cost", "99 languages", "No rate limits", "Privacy"],
+        cons=["BATCH ONLY", "Requires GPU for low latency", "Self-hosting overhead"],
+    ),
+}
+
+LLM_PROVIDERS: dict[str, ProviderSpec] = {
+    "groq": ProviderSpec(
+        id="groq", display_name="Groq / LLaMA-3.3-70B",
+        tier="optimal", free_limit="Free ~30 RPM, no credit card",
+        live_streaming=True, languages=["ur", "en", "ar", "ms"],
+        requires_keys=["groq_api_key"],
+        pros=["Fastest free LLM API", "No credit card needed", "Rate limits not credit limits"],
+        cons=["30 RPM on free tier", "May struggle with very formal Arabic"],
+    ),
+    "gemini": ProviderSpec(
+        id="gemini", display_name="Google Gemini 2.0 Flash",
+        tier="optimal", free_limit="15 RPM / 1M tokens/day free",
+        live_streaming=True, languages=["ur", "en", "ar", "ms"],
+        requires_keys=["gemini_api_key"],
+        pros=["Best Arabic cultural context", "1M token context", "Google-scale training"],
+        cons=["Slightly higher TTFT than Groq", "15 RPM limit on free"],
+    ),
+    "cerebras": ProviderSpec(
+        id="cerebras", display_name="Cerebras / LLaMA-3.3-70B",
+        tier="good", free_limit="1M tokens/day free",
+        live_streaming=True, languages=["ur", "en", "ar", "ms"],
+        requires_keys=["cerebras_api_key"],
+        pros=["2600 tokens/second — fastest inference on the planet", "OpenAI-compatible API"],
+        cons=["Less mature than Groq/Gemini", "API stability still improving", "Urdu untested at scale"],
+    ),
+    "openrouter": ProviderSpec(
+        id="openrouter", display_name="OpenRouter (Free Rotation)",
+        tier="caution", free_limit="50 req/day unfunded, 1K/day funded",
+        live_streaming=True, languages=["en", "ar"],
+        requires_keys=["openrouter_api_key"],
+        pros=["25+ free models", "OpenAI-compatible API", "Model diversity"],
+        cons=["Models rotate without notice", "50 req/day limit", "Variable quality", "Privacy varies"],
+    ),
+    "ollama": ProviderSpec(
+        id="ollama", display_name="Ollama (Local, Any Model)",
+        tier="local", free_limit="FREE forever (self-hosted)",
+        live_streaming=True, languages=["en"],
+        requires_keys=[],
+        pros=["Zero API cost", "Total privacy", "No rate limits", "Any GGUF model"],
+        cons=["Requires GPU for acceptable latency", "Hardware cost", "Setup overhead"],
+    ),
+}
+
+TTS_PROVIDERS: dict[str, ProviderSpec] = {
+    "uplift": ProviderSpec(
+        id="uplift", display_name="Uplift AI (Urdu-native)",
+        tier="optimal", free_limit="Dev API (limited)",
+        live_streaming=False, languages=["ur"],
+        requires_keys=["uplift_api_key", "uplift_voice_id"],
+        pros=["Only natural Urdu TTS voice", "Native Minglish cadence", "PCM output"],
+        cons=["Urdu ONLY", "Limited free tier", "No WebSocket streaming"],
+    ),
+    "google": ProviderSpec(
+        id="google", display_name="Google TTS Neural2",
+        tier="optimal", free_limit="1M Neural2 chars/month free",
+        live_streaming=False, languages=["en", "ar", "ms", "ur"],
+        requires_keys=["google_tts_api_key"],
+        pros=["Very generous free tier", "Excellent en/ar/ms voices", "Fast HTTP response"],
+        cons=["ur-PK voice is robotic", "Base64 decode step adds ~5ms", "HTTP not WebSocket"],
+    ),
+    "elevenlabs": ProviderSpec(
+        id="elevenlabs", display_name="ElevenLabs Multilingual v2",
+        tier="good", free_limit="10K chars/month free",
+        live_streaming=False, languages=["en", "ar", "ms"],
+        requires_keys=["elevenlabs_api_key"],
+        pros=["Best voice naturalness/quality", "Emotion control", "83 languages"],
+        cons=["10K chars burns very fast (~5-10 demo calls)", "No Urdu", "+200ms vs Google"],
+    ),
+    "fish_tts": ProviderSpec(
+        id="fish_tts", display_name="Fish Audio S2.1",
+        tier="good", free_limit="Free tier (fish.audio)",
+        live_streaming=True, languages=["en", "ar", "ms"],
+        requires_keys=["fish_api_key"],
+        pros=["83 languages", "WebSocket streaming native", "Voice cloning", "Fast TTFB"],
+        cons=["PCM format support needs verification", "Urdu not supported", "Newer/less proven"],
+    ),
+    "azure_tts": ProviderSpec(
+        id="azure_tts", display_name="Azure Neural TTS",
+        tier="good", free_limit="500K chars/month free",
+        live_streaming=False, languages=["en", "ar", "ms", "ur"],
+        requires_keys=["azure_api_key", "azure_region"],
+        pros=["500K free chars very generous", "Good ur-PK voice", "Enterprise SLA"],
+        cons=["Region setup required", "ur-PK not native quality", "No WebSocket streaming"],
+    ),
+    "cartesia": ProviderSpec(
+        id="cartesia", display_name="Cartesia Sonic",
+        tier="good", free_limit="20K credits/month free",
+        live_streaming=True, languages=["en"],
+        requires_keys=["cartesia_api_key"],
+        pros=["LOWEST latency TTS (~80ms TTFB)", "WebSocket streaming", "State Space Model architecture"],
+        cons=["English dominant (40 langs, Arabic/Malay limited)", "No Urdu", "Startup credits limit"],
+    ),
+    "kokoro": ProviderSpec(
+        id="kokoro", display_name="Kokoro TTS (Local, Apache 2.0)",
+        tier="local", free_limit="FREE forever (self-hosted)",
+        live_streaming=False, languages=["en"],
+        requires_keys=[],
+        pros=["Completely free forever", "Apache 2.0 commercial", "CPU real-time", "No cloud dependency"],
+        cons=["English only", "54 preset voices, no cloning", "Self-hosting overhead"],
+    ),
+    "edge_tts": ProviderSpec(
+        id="edge_tts", display_name="Microsoft Edge TTS (Free)",
+        tier="caution", free_limit="FREE (unofficial, no SLA)",
+        live_streaming=False, languages=["en", "ar", "ms", "ur"],
+        requires_keys=[],
+        pros=["Completely free", "No API key", "Good language coverage", "ur-PK voice ok"],
+        cons=["UNOFFICIAL API — no SLA, can break any time", "Not for production", "Terms of service unclear"],
+    ),
+}
+```
+
+---
+
+### 5.2 Pipeline Security Guard
+
+**File (NEW):** `backend/app/core/security.py`
+
+```python
+"""
+PIPELINE SECURITY GUARD
+=======================
+Validates session configs before any connection is established.
+Prevents injection, misconfiguration, and resource exhaustion.
+"""
+from backend.app.core.session_config import SessionConfig
+from backend.app.services.registry import STT_PROVIDERS, LLM_PROVIDERS, TTS_PROVIDERS
+
+class ConfigValidationError(ValueError):
+    pass
+
+class PipelineSecurityGuard:
+    MAX_LANGUAGES = 6
+
+    @classmethod
+    def validate(cls, config: SessionConfig) -> list[str]:
+        """Returns warnings list. Raises ConfigValidationError on fatal issues."""
+        from backend.app.core.config.config import get_settings
+        settings = get_settings()
+        warnings = []
+
+        # 1. WHITELIST CHECK — prevent injection of arbitrary provider names
+        if config.stt_provider not in STT_PROVIDERS:
+            raise ConfigValidationError(
+                f"Unknown STT: '{config.stt_provider}'. Allowed: {list(STT_PROVIDERS)}"
+            )
+        if config.llm_provider not in LLM_PROVIDERS:
+            raise ConfigValidationError(f"Unknown LLM: '{config.llm_provider}'.")
+        for lang, tts in config.tts_overrides.items():
+            if tts not in TTS_PROVIDERS:
+                raise ConfigValidationError(f"Unknown TTS: '{tts}' for language '{lang}'.")
+
+        # 2. API KEY PRESENCE — fail fast before connecting to any service
+        stt_spec = STT_PROVIDERS[config.stt_provider]
+        llm_spec = LLM_PROVIDERS[config.llm_provider]
+        for key in stt_spec.requires_keys:
+            if not getattr(settings, key, ""):
+                raise ConfigValidationError(
+                    f"STT '{config.stt_provider}' requires '{key}' in .env"
+                )
+        for key in llm_spec.requires_keys:
+            if not getattr(settings, key, ""):
+                raise ConfigValidationError(
+                    f"LLM '{config.llm_provider}' requires '{key}' in .env"
+                )
+
+        # 3. LANGUAGE COUNT GUARD — prevent resource exhaustion
+        if len(config.active_languages) > cls.MAX_LANGUAGES:
+            raise ConfigValidationError(
+                f"Max {cls.MAX_LANGUAGES} active languages per session."
+            )
+        if len(config.active_languages) == 0:
+            raise ConfigValidationError("At least 1 active language required.")
+
+        # 4. WARNINGS — non-fatal UX degradation notices
+        if not stt_spec.live_streaming:
+            warnings.append(
+                f"⚠️ '{stt_spec.display_name}' is BATCH-only. "
+                "No partial transcripts. +400ms per turn latency."
+            )
+        if config.llm_provider == "openrouter":
+            warnings.append(
+                "⚠️ OpenRouter free models rotate unpredictably. "
+                "Do not use for client demos."
+            )
+        if "edge_tts" in config.tts_overrides.values():
+            warnings.append(
+                "⚠️ Edge TTS uses an unofficial API with no SLA. "
+                "Dev testing only."
+            )
+        for lang in config.active_languages:
+            if (lang not in stt_spec.languages
+                    and "+" not in "".join(stt_spec.languages)):
+                warnings.append(
+                    f"⚠️ STT '{config.stt_provider}' may not support '{lang}'. Verify before demo."
+                )
+
+        return warnings
+```
+
+Security integrated into `websocket.py`:
+```python
+from backend.app.core.security import PipelineSecurityGuard, ConfigValidationError
+
+try:
+    warnings = PipelineSecurityGuard.validate(config)
+    if warnings:
+        await websocket.send_text(json.dumps({
+            "type": "warnings", "items": warnings
+        }))
+except ConfigValidationError as e:
+    await websocket.send_text(json.dumps({
+        "type": "error", "message": str(e)
+    }))
+    await websocket.close(code=1008)   # RFC 6455 Policy Violation
+    return
+```
+
+---
+
+## Part 6 — Config API (Full Spec)
+
+**File (NEW):** `backend/app/transport/config_api.py`
+
+```python
+from fastapi import APIRouter
+from dataclasses import asdict
+from backend.app.services.registry import STT_PROVIDERS, LLM_PROVIDERS, TTS_PROVIDERS
+from backend.app.core.config.config import get_settings
+
+router = APIRouter(prefix="/api")
+
+def _spec_with_availability(spec, settings):
+    d = asdict(spec)
+    d["configured"] = all(
+        bool(getattr(settings, k, "")) for k in spec.requires_keys
+    )
+    return d
+
+@router.get("/providers")
+async def get_providers():
+    """Returns full provider catalog with availability + compatibility matrix."""
+    s = get_settings()
+    return {
+        "stt":  [_spec_with_availability(v, s) for v in STT_PROVIDERS.values()],
+        "llm":  [_spec_with_availability(v, s) for v in LLM_PROVIDERS.values()],
+        "tts":  [_spec_with_availability(v, s) for v in TTS_PROVIDERS.values()],
+        "recommended_stacks": RECOMMENDED_STACKS,
+    }
+
+@router.get("/languages")
+async def get_languages():
+    """Returns all registered languages from the YAML registry."""
+    from backend.app.core.config.language_registry import LanguageRegistry
+    registry = LanguageRegistry()
+    return {
+        code: {"name": p.name, "script": p.script, "tts_provider": p.tts_provider}
+        for code, p in registry._profiles.items()
+    }
+
+RECOMMENDED_STACKS = [
+    {
+        "id": "zara_classic", "name": "Zara Classic",
+        "tagline": "Urdu-first. The gold standard for Pakistani callers.",
+        "stt": "gladia", "llm": "groq",
+        "tts": {"ur": "uplift", "en": "google", "ar": "google", "ms": "google"},
+        "languages": ["ur", "en", "ar", "ms"],
+        "estimated_ttfa_ms": 650, "overall_grade": "A+",
+    },
+    {
+        "id": "zara_pro", "name": "Zara Pro",
+        "tagline": "Best multilingual reasoning. Arabic standout.",
+        "stt": "gladia", "llm": "gemini",
+        "tts": {"ur": "uplift", "en": "google", "ar": "google", "ms": "google"},
+        "languages": ["ur", "en", "ar", "ms"],
+        "estimated_ttfa_ms": 800, "overall_grade": "A",
+    },
+    {
+        "id": "zara_turbo", "name": "Zara Turbo",
+        "tagline": "English-only. Fastest demo stack on the planet.",
+        "stt": "deepgram", "llm": "cerebras",
+        "tts": {"en": "cartesia"},
+        "languages": ["en"],
+        "estimated_ttfa_ms": 380, "overall_grade": "S",
+    },
+    {
+        "id": "zara_local", "name": "Zara Local",
+        "tagline": "Zero cost. Fully offline. Dev/CI use only.",
+        "stt": "whisper_local", "llm": "ollama",
+        "tts": {"en": "kokoro"},
+        "languages": ["en"],
+        "estimated_ttfa_ms": 1500, "overall_grade": "C",
+    },
+]
+```
+
+---
+
+## Part 7 — Frontend Config Panel (Detailed Spec)
+
+### Panel UX Flow
+
+```
+[Load Preset ▼]  → Shows: Classic / Pro / Turbo / Local / Custom
+
+STEP 1: Active Languages
+  [x] English  [x] Urdu  [x] Arabic  [x] Malay  [ ] Hindi
+  + each language shows its registry greeting preview text
+
+STEP 2: STT Provider
+  Dropdown → each option shows:
+    ✅ Configured (green) or 🔒 Needs API key (grey + tooltip)
+    Badge: OPTIMAL / GOOD / CAUTION / LOCAL
+    Live stream indicator: LIVE or BATCH
+
+STEP 3: LLM Provider
+  Dropdown → same pattern
+
+STEP 4: TTS — one dropdown per active language
+  en: [Google Neural2 ▼] → ✅ OPTIMAL for English
+  ur: [Uplift AI ▼]      → ✅ OPTIMAL for Urdu
+  ar: [Google TTS ▼]     → ✅ OPTIMAL for Arabic
+
+STEP 5: Stack Preview (auto-updates live)
+  ┌─────────────────────────────┐
+  │ STACK GRADE: A+             │
+  │ Est. TTFA: ~650ms           │
+  │ Free tier: ✅               │
+  │                             │
+  │ WARNINGS (0): All clear     │
+  │                             │
+  │ PROS:                       │
+  │  · Native Urdu TTS          │
+  │  · Live code-switching      │
+  │  · Sub-700ms response time  │
+  │                             │
+  │ CONS:                       │
+  │  · 1 concurrent session     │
+  │  · 10 hrs/month Gladia free │
+  └─────────────────────────────┘
+
+  [Save as Preset]  [Launch Session →]
+```
+
+### Grade Badge Colors (CSS variables)
+```css
+.badge-optimal  { background: var(--green-accent); }   /* A/A+ */
+.badge-good     { background: var(--cyan-accent); }    /* B */
+.badge-caution  { background: var(--amber); }          /* C */
+.badge-avoid    { background: var(--red-accent); }     /* D */
+.badge-local    { background: var(--purple-accent); }  /* Local */
+.badge-splus    { background: linear-gradient(135deg, #f59e0b, #ef4444); } /* S-tier */
+```
+
+### localStorage Persistence
+```javascript
+// Save current config
+function savePreset(name) {
+    const presets = JSON.parse(localStorage.getItem('vertex_presets') || '{}');
+    presets[name] = configurator.config;
+    localStorage.setItem('vertex_presets', JSON.stringify(presets));
+}
+
+// Load on startup
+window.addEventListener('DOMContentLoaded', () => {
+    const lastConfig = localStorage.getItem('vertex_last_config');
+    if (lastConfig) configurator.loadConfig(JSON.parse(lastConfig));
+});
+```
+
+---
+
+## Part 8 — Phase Execution Order
+
+```
+PHASE 1 — Close Backend Gaps            ~3 hrs   ZERO RISK
+  · YAML: add greeting, filler, tts_fallback fields
+  · LanguageProfile: add new fields
+  · session.py: remove if/elif chains
+  · gladia_service.py: registry-driven language list
+  · tts_manager.py: YAML-driven fallback
+  · base_system_prompt.md: replace with VERTEX/studio prompt
+  · language_directives/*.md: update all 4
+
+PHASE 2 — Provider Registry + Security  ~2 hrs   ZERO RISK
+  · registry.py (NEW)
+  · security.py (NEW)
+  · session_config.py (NEW)
+
+PHASE 3 — New LLM Providers             ~3 hrs   LOW RISK
+  · gemini_service.py (NEW)
+  · cerebras_service.py (NEW)
+  · openrouter_service.py (NEW)
+  · base_llm_service.py (shared mixin — NEW)
+  · llm/__init__.py factory (NEW)
+  · config.py: add gemini/cerebras/openrouter keys
+
+PHASE 4 — New TTS Providers             ~3 hrs   LOW RISK
+  · fish_service.py (NEW)
+  · azure_service.py (NEW — upgrade existing stub)
+  · cartesia_service.py (NEW)
+  · edge_tts_service.py (NEW)
+  · kokoro_service.py (NEW)
+  · tts_manager.py: add to providers dict
+
+PHASE 5 — New STT Providers             ~3 hrs   MEDIUM RISK
+  · assemblyai_service.py (NEW)
+  · deepgram_service.py (NEW)
+  · fish_stt_service.py (NEW)
+  · whisper_local_service.py (NEW)
+  · stt/__init__.py factory (NEW)
+  · websocket.py: read provider from query params
+
+PHASE 6 — Config API                    ~2 hrs   LOW RISK
+  · config_api.py (NEW)
+  · main.py: register router
+
+PHASE 7 — Frontend Config Panel         ~5 hrs   ZERO BACKEND RISK
+  · config_panel.js (NEW)
+  · config_panel.css (NEW)
+  · index.html: add panel section
+  · app.js: WS URL includes provider params
+  ─────────────────────────────────────────
+  TOTAL: ~21 hrs
+```
+
+> [!IMPORTANT]
+> **Always start with Phase 1.** It has zero risk, closes the biggest gaps, and delivers value immediately. Every phase after that is additive — the system remains fully functional throughout.
+
+> [!NOTE]
+> **Fish Audio PCM:** Verify at Phase 4 integration whether their API returns raw PCM directly (`format=pcm`). If not, add `soundfile` or `audioop` for MP3→PCM conversion. This is the only open technical unknown that could add a dependency.
+
+> [!NOTE]
+> **Cerebras + Urdu:** Cerebras speed is extraordinary but test Urdu instruction-following carefully before using in the Zara Classic stack. Groq remains the safer Urdu LLM option until validated.

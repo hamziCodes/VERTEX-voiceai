@@ -1,0 +1,22 @@
+PS D:\AI_voice_agent\backend\tests> python test_gladia_pipeline.py
+2026-07-07 14:40:35,909 - Mock Client: Opening WAV file...
+2026-07-07 14:40:36,182 - [test-session-001] Gladia session started.
+2026-07-07 14:40:36,189 - [test-session-001] Gladia audio sender loop started.
+2026-07-07 14:40:36,189 - [test-session-001] Gladia transcript receive loop started.
+2026-07-07 14:40:37,050 - HTTP Request: POST https://api.gladia.io/v2/live "HTTP/1.1 201 Created"
+[Interim]: السلام علیکم میرا نام سید محمد حمزہ سلطان ہے اور آج میں سٹی ٹی اے پی آئی کی لیٹنسی اور ورڈ ایرر ریٹ میجر کر 2026-07-07 14:40:50,514 - [test-session-001] Final transcript: السلام علیکم میرا نام سید محمد حمزہ سلطان ہے اور آج میں سٹی ٹی اے پی آئی کی لیٹنسی اور ورڈ ایرر ریٹ میجر کر رہا ہوں
+
+[FINAL TO LLM] UR: السلام علیکم میرا نام سید محمد حمزہ سلطان ہے اور آج میں سٹی ٹی اے پی آئی کی لیٹنسی اور ورڈ ایرر ریٹ میجر کر رہا ہوں
+
+2026-07-07 14:40:59,543 - [test-session-001] Final transcript: میں بحریہ یونیورسٹی میں کمپیوٹر سائنس کے سورنٹ ہوں اور ایف الیون اسلام آباد میں رہتا ہوں
+
+[FINAL TO LLM] UR: میں بحریہ یونیورسٹی میں کمپیوٹر سائنس کے سورنٹ ہوں اور ایف الیون اسلام آباد میں رہتا ہوں
+
+2026-07-07 14:41:07,269 - [test-session-001] Final transcript: پچھلے دنوں میں نے اور شازیب نے ملکر ورٹیکس کلاسیفائی پروجیکٹ ڈپلائی کیا تھا
+
+[FINAL TO LLM] UR: پچھلے دنوں میں نے اور شازیب نے ملکر ورٹیکس کلاسیفائی پروجیکٹ ڈپلائی کیا تھا
+
+2026-07-07 14:41:09,915 - Mock Client: Finished streaming audio.
+2026-07-07 14:41:11,928 - [test-session-001] Gladia audio sender loop cancelled.
+2026-07-07 14:41:11,928 - [test-session-001] Gladia transcript receive loop cancelled.
+2026-07-07 14:41:11,929 - [test-session-001] Gladia session stopped.

@@ -1,0 +1,12 @@
+aiohttp==3.13.5
+fastapi==0.139.0
+ffmpeg_downloader==0.5.2
+gladiaio_sdk==1.0.4
+groq==1.5.0
+pydantic_settings==2.14.2
+pydub==0.25.1
+python-dotenv==1.2.2
+uvicorn==0.51.0
+websockets==16.0
+
+pyyaml>=6.0

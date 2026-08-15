@@ -13,8 +13,8 @@
 - Prefer harvesting proven code from MULTI/HAB/V3/AWAZ over greenfield
 - Cite exact paths when changing or porting modules
 - Keep memory_bank updated when decisions, paths, or debt status change
-- Quote paths with spaces: `"AI_voice_agent_v3 - gemini"`
-- Use alias table: V3 / MULTI / HAB / AWAZ=`awaazlabs`
+- Quote paths with spaces: `"legacy_codebases/AI_voice_agent_v3 - gemini"`
+- Use alias table: V3 / MULTI / HAB / AWAZ=`awaazlabs` under `legacy_codebases/`
 
 ### Don't
 - Re-audit the four repos from scratch
@@ -71,4 +71,4 @@ target_unified_engine.md ← sync if schema/arch changed
 | What to copy / what is broken | `audit_synthesis.md` |
 | What we are building | `target_unified_engine.md` |
 | How agents must behave | this file |
-| Line-level proof | `AUDIT_01`…`05` at repo root |
+| Line-level proof | `auit_docs/AUDIT_01`…`05` |

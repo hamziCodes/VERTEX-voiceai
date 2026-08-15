@@ -1,0 +1,14 @@
+code: ms
+name: Malay
+script: latin
+tts_provider: google
+tts_voice_id: null
+llm_directive_file: language_directives/ms.md
+stt_hint: ms
+tts_sample_rate: 22050
+
+# Chunking Rules
+chunk_min_words: 12
+chunk_max_words: 25
+chunk_primary_delimiters: [".", "?", "!"]
+chunk_secondary_delimiters: [",", ";", "dan", "tetapi", "lalu"]

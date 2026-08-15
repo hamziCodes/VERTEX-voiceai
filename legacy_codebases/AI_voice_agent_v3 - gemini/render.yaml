@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: urdu-voice-agent-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GLADIA_API_KEY
+        sync: false # Requires manual entry in Render Dashboard
+      - key: GEMINI_API_KEY
+        sync: false # Requires manual entry in Render Dashboard
+      - key: GEMINI_MODEL
+        value: "gemini-3.1-flash-lite"
+      - key: GEMINI_MAX_HISTORY
+        value: "6"
+      - key: UPLIFT_API_KEY
+        sync: false # Requires manual entry in Render Dashboard
+      - key: UPLIFT_VOICE_ID
+        value: "helpdesk-agent"
+      - key: CORS_ORIGINS
+        value: "https://udru-voice-agent-finova.vercel.app,http://localhost:3000"
