@@ -1,6 +1,6 @@
 # 09 — Developer Implementation Roadmap & Autonomy Rules
 
-File 9 of 9 — the last file to read, and the one that governs how the previous eight get built.
+File 9 of 9 — the last engineering file to read. For a non-technical map of the product, start at `00_PRODUCT_OVERVIEW.md`.
 
 ---
 

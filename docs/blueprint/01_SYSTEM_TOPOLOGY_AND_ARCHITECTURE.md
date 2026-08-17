@@ -2,7 +2,7 @@
 
 **Codename:** Unified Core Voice Engine (UCVE)
 **Status:** Master blueprint, synthesized from `AUDIT_01`–`AUDIT_05` of four legacy codebases (`AI_voice_agent_v3 - gemini`, `awaazlabs`, `Multilingual_AI_Voice_Agent_gittracked`, `habiba-sdk-agent`). Live trees used for the source-spot-check pass live under `legacy_codebases/`.
-**Reading order:** This is File 1 of 9. Read alongside `09_DEVELOPER_IMPLEMENTATION_ROADMAP_AND_AUTONOMY_RULES.md` for how this topology gets built in phases, and see that file's closing **Autonomy & Non-Dogmatic Directive** — these 9 files are a strategic blueprint, not immutable dogma; the implementing agent (Cursor) has explicit license to adapt them against ground truth found in the real codebases.
+**Reading order:** Start with `00_PRODUCT_OVERVIEW.md` (plain-English product story). This is File 1 of 9 of the engineering blueprint. Read alongside `09_DEVELOPER_IMPLEMENTATION_ROADMAP_AND_AUTONOMY_RULES.md` for how this topology gets built in phases, and see that file's closing **Autonomy & Non-Dogmatic Directive** — these files are a strategic blueprint, not immutable dogma; the implementing agent (Cursor) has explicit license to adapt them against ground truth found in the real codebases.
 
 > Every design decision below is annotated with which legacy repo it's harvested from, or flagged `[NEW]` if it fills a gap that AUDIT_05 §3 found absent in all four. This is not aspirational hand-waving — it is a build plan grounded in inspected code.
 
@@ -347,6 +347,7 @@ unified-core-voice-engine/
 
 | Concern | File |
 |---|---|
+| Plain-English product overview (what / why / how we sell it) | `00_PRODUCT_OVERVIEW.md` |
 | Audio buffers, FSM, barge-in protocol detail | `02_CORE_AUDIO_ENGINE_AND_STATE_MACHINE.md` |
 | Provider interfaces, hot-swap, S2S | `03_PLUGGABLE_PROVIDER_ABSTRACTION.md` |
 | Code-switching, phoneme normalization | `04_MULTILINGUAL_AND_CODE_SWITCHING_ENGINE.md` |
