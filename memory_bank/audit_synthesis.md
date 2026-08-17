@@ -4,7 +4,7 @@
 
 ## 1. Per-Project Strengths & Assets (HARVEST)
 
-### V3 — `AI_voice_agent_v3 - gemini`
+### V3 — `legacy_codebases/AI_voice_agent_v3 - gemini`
 | Asset | Location / Spec |
 |-------|-----------------|
 | Barge-in interrupt | `websocket.py` `_barge_in()` — cancel LLM/TTS, flush queue, `{type:control,action:barge_in}` |
@@ -17,7 +17,7 @@
 
 **Gap to fix if porting:** finals during `_speaking_until` dropped → barge utterance not next turn.
 
-### MULTI — `Multilingual_AI_Voice_Agent_gittracked`
+### MULTI — `legacy_codebases/Multilingual_AI_Voice_Agent_gittracked`
 | Asset | Location / Spec |
 |-------|-----------------|
 | Hybrid VAD | `vad_service.py`: `SileroModelPool` + `EnergyVADProcessor` + `AdaptiveNoiseGate` (k=**3.0**, win=**50**, floor=**0.015**) |
@@ -28,7 +28,7 @@
 | Prompt injection | `prompt_builder.build_messages` — language directive before user |
 | Interfaces stub | `core/interfaces.py` (orchestrator still concrete Gladia+Groq) |
 
-### HAB — `habiba-sdk-agent`
+### HAB — `legacy_codebases/habiba-sdk-agent`
 | Asset | Location / Spec |
 |-------|-----------------|
 | Multi-tenant mint | `control_plane/mint.py` — HMAC `tenant_id.ts.nonce.agent_id`, replay **60s**, JWT TTL **120s** |
@@ -44,7 +44,7 @@
 | Quota / JSONB transcript | shutdown persistence + `usage_events` |
 | Test/CI depth | `tests/` 60+, `.github/workflows/ci.yml` |
 
-### AWAZ — `awaazlabs` (adjacent CRM, not voice core)
+### AWAZ — `legacy_codebases/awaazlabs` (adjacent CRM, not voice core)
 | Asset | Location / Spec |
 |-------|-----------------|
 | Retell lifecycle | `retell-webhook/index.ts` — `call_started\|transcript_updated\|call_ended\|call_analyzed` |

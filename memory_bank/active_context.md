@@ -1,6 +1,6 @@
 # Active Context — VERTEX_voiceai
 
-> **Read this first every session.** Last crystallized: 2026-08-14.
+> Last crystallized: 2026-08-15.
 
 ## 1. Current Operational State
 
@@ -10,8 +10,9 @@
 | Source trees modified | **NO** — audits write-only to workspace root |
 | Memory bank | **DONE** — this folder |
 | Unified engine code | **NOT STARTED** |
-| Claude architectural prompt pack | **NOT PREPARED** in prior session (no dedicated Claude architecture deliverable found; only in-repo `habiba-sdk-agent/docs/.clauderules` etc.) |
-| Workspace git | Root **not** a git repo; nested gits inside each project |
+| Claude architectural prompt pack | **NOT PREPARED** in prior session (no dedicated Claude architecture deliverable found; only in-repo `legacy_codebases/habiba-sdk-agent/docs/.clauderules` etc.) |
+| Workspace git | Root repo `VERTEX-voiceai` on GitHub; nested gits still inside each legacy project |
+| Legacy layout | Four inspiration trees live in `legacy_codebases/` (source tracked on git for Cursor Cloud) |
 | Dirty trees | MULTI had **pre-existing** dirty tree; auditor did not write those files |
 
 ### What we know (do not re-search)
@@ -67,4 +68,4 @@ When Claude pack arrives: paste/store under `memory_bank/claude_inbox/` (create 
 - Do **not** re-audit from scratch — trust AUDIT_* + this bank
 - Do **not** read `.env` (secrets); use `.env.example` + source
 - Prefer copy-forward of proven modules over rewrite
-- Path with space: quote `"AI_voice_agent_v3 - gemini"`
+- Path with space: quote `"legacy_codebases/AI_voice_agent_v3 - gemini"`

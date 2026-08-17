@@ -1,8 +1,9 @@
-# Legacy inspiration codebases — keep local only; do not push
-/AI_voice_agent_v3 - gemini/
-/awaazlabs/
-/habiba-sdk-agent/
-/Multilingual_AI_Voice_Agent_gittracked/
+# Track legacy_codebases/ source. Ignore only secrets, logs, and install artifacts.
+legacy_codebases/**/logs/
+legacy_codebases/**/secrets/
+legacy_codebases/**/*.raw
+legacy_codebases/**/Antigravity/
+**/.nested_git/
 
 # Secrets
 .env

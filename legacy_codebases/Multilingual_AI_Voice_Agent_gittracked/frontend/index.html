@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>VERTEX/studio - Multilingual AI Voice Agent</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <!-- Top Header Lockup Bar (VERTEX Specification) -->
+    <header>
+        <div class="brand-section">
+            <div class="brand-logo-container">
+                <img src="nobg_logo_1.png" alt="VERTEX Logo" class="brand-logo">
+            </div>
+            <div class="brand-text">
+                <div class="brand-title">
+                    <h1>VERTEX</h1>
+                    <span class="brand-domain">/studio</span>
+                </div>
+                <p class="brand-tagline">We Build Digital Realities.</p>
+            </div>
+        </div>
+
+        <div class="header-actions">
+            <button id="wake-btn" class="btn-control" style="display: none;">Wake Server</button>
+            <div class="status-badge" id="status-indicator">
+                <span class="status-dot"></span>
+                <span id="status-indicator-text">Disconnected</span>
+            </div>
+            <button id="about-btn" class="btn-control"
+                onclick="document.getElementById('about-modal').classList.add('open')" title="About VERTEX/studio">
+                <span class="btn-icon">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                </span>
+                System Spec
+            </button>
+            <div id="auth-container"></div>
+        </div>
+    </header>
+
+    <!-- System Spec / About Modal -->
+    <div id="about-modal" class="about-modal-overlay" onclick="if(event.target===this)this.classList.remove('open')">
+        <div class="about-modal-card glass-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    00 // SYSTEM SPECIFICATION
+                </h2>
+                <button class="about-close-btn"
+                    onclick="document.getElementById('about-modal').classList.remove('open')"
+                    aria-label="Close">✕</button>
+            </div>
+            <div class="panel-body about-body">
+                <p class="about-description">
+                    The Multilingual AI Voice Agent <span class="about-langs">(Arabic, Malay, English, Urdu)</span> is an enterprise digital voice engine engineered by <strong>VERTEX/studio</strong>.
+                </p>
+                <div class="about-meta">
+                    <div class="about-meta-row">
+                        <span class="about-label">Platform</span>
+                        <span class="about-value">VERTEX/studio AI Engine v2.4</span>
+                    </div>
+                    <div class="about-meta-row">
+                        <span class="about-label">License</span>
+                        <span class="about-value">Proprietary Enterprise Spec</span>
+                    </div>
+                    <div class="about-meta-row">
+                        <span class="about-label">Status</span>
+                        <span class="about-value about-status-pill">01 // ACTIVE PRODUCTION</span>
+                    </div>
+                    <div class="about-meta-row">
+                        <span class="about-label">Engineer</span>
+                        <span class="about-value">VERTEX/studio</span>
+                    </div>
+                    <div class="about-meta-row">
+                        <span class="about-label">Contact</span>
+                        <a href="mailto:vertex11solution@gmail.com" class="about-link">vertex11solution@gmail.com</a>
+                    </div>
+                </div>
+                <p class="about-footer">© 2026 VERTEX/studio. We Build Digital Realities.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Workspace -->
+    <main class="dashboard-grid">
+
+        <!-- Left Panel: Live Transcripts -->
+        <section class="glass-panel transcript-wrapper">
+            <div class="panel-header">
+                <h2 class="panel-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    Live Transcripts
+                </h2>
+                <span class="panel-badge">01 // TELEMETRY STREAM</span>
+            </div>
+            <div class="panel-body" id="transcripts">
+                <!-- Dynamic messages from User / AI Agent will be appended here -->
+            </div>
+        </section>
+
+        <!-- Center Panel: The Visualizer centerpiece and Call controls -->
+        <section class="center-column">
+
+            <!-- Glowing canvas area for the VERTEX 3D particle wave -->
+            <div class="glass-panel visualizer-panel">
+                <div class="visualizer-overlay">
+                    <span class="eyebrow-label">02 // STREAMING VISUALIZER</span>
+                    <div class="visualizer-state">
+                        <span class="visualizer-pulse"></span>
+                        <span id="visualizer-state-text">STANDBY</span>
+                    </div>
+                </div>
+                <canvas id="visualizer-canvas"></canvas>
+                <div class="visualizer-watermark">
+                    <span>VERTEX</span>
+                    <span>/studio</span>
+                </div>
+            </div>
+
+            <!-- Controller Panel directly below visualizer -->
+            <div class="glass-panel controls-panel">
+                <button id="startBtn" class="btn-control">
+                    <span class="btn-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                    </span>
+                    Start Session →
+                </button>
+
+                <button id="micBtn" class="btn-control" disabled>
+                    <span class="btn-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                            <line x1="12" y1="19" x2="12" y2="23"></line>
+                            <line x1="8" y1="23" x2="16" y2="23"></line>
+                        </svg>
+                    </span>
+                    Mute Mic
+                </button>
+
+                <button id="stopBtn" class="btn-control" disabled>
+                    <span class="btn-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="4" y="4" width="16" height="16" rx="1" ry="1"></rect>
+                        </svg>
+                    </span>
+                    Terminate Session
+                </button>
+            </div>
+        </section>
+
+        <!-- Right Panel: Telemetry Metrics & Console Logs -->
+        <section class="right-column">
+
+            <!-- Latency telemetry panel -->
+            <div class="glass-panel metrics-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="3" width="20" height="14" rx="1" ry="1"></rect>
+                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                        </svg>
+                        Latency Metrics
+                    </h2>
+                    <span class="panel-badge">03 // TELEMETRY</span>
+                </div>
+                <div class="panel-body metrics-grid" id="metrics">
+                    <div class="metric-card" id="m-stt">
+                        <span class="metric-name">Gladia STT</span>
+                        <div class="metric-val">-- ms</div>
+                    </div>
+
+                    <div class="metric-card" id="m-llm">
+                        <span class="metric-name">Groq LLM</span>
+                        <div class="metric-val">-- ms</div>
+                    </div>
+
+                    <div class="metric-card" id="m-tts">
+                        <span class="metric-name">TTS Engine</span>
+                        <div class="metric-val">-- ms</div>
+                    </div>
+
+                    <div class="metric-card highlight" id="m-total">
+                        <span class="metric-name">Total Response Time</span>
+                        <div class="metric-val">-- ms</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Monospace developer system console log panel -->
+            <div class="glass-panel logs-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="4 17 10 11 4 5"></polyline>
+                            <line x1="12" y1="19" x2="20" y2="19"></line>
+                        </svg>
+                        System Logs
+                    </h2>
+                    <span class="panel-badge">04 // CONSOLE LOGS</span>
+                </div>
+                <div class="panel-body">
+                    <div id="sys-logs">
+                        <!-- Dynamic logs written here -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Visualizer Core -->
+    <script src="visualizer.js"></script>
+    <!-- Web Socket & Audio Engine Logic -->
+    <script src="app.js"></script>
+</body>
+
+</html>

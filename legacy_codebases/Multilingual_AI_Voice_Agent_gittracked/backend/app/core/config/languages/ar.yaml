@@ -1,0 +1,17 @@
+code: ar
+name: Arabic
+script: arabic
+tts_provider: google
+tts_voice_id: null
+llm_directive_file: language_directives/ar.md
+stt_hint: ar
+tts_sample_rate: 22050
+
+# Chunking Rules
+chunk_min_words: 10
+chunk_max_words: 22
+chunk_primary_delimiters: [".", "?", "!"]
+chunk_secondary_delimiters: ["،", "و", "ثم", "لكن"]
+
+# VAD Overrides (Arabic pauses are naturally longer)
+vad_silence_duration_ms: 800

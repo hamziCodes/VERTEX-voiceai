@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Urdu Voice Agent - Live UI</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            padding: 2rem;
+            max-width: 1100px;
+            margin: 0 auto;
+            background: #0f172a;
+            color: #f8fafc;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            transition: opacity 0.2s;
+        }
+
+        #startBtn {
+            background-color: #22c55e;
+            color: #fff;
+        }
+
+        #stopBtn {
+            background-color: #ef4444;
+            color: #fff;
+        }
+
+        #micBtn {
+            background-color: #3b82f6;
+            color: #fff;
+        }
+
+        #micBtn.muted {
+            background-color: #f59e0b;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+        }
+
+        .box {
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            height: 450px;
+            overflow-y: auto;
+        }
+
+        h3 {
+            margin-top: 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #334155;
+            font-size: 16px;
+            color: #94a3b8;
+        }
+
+        /* Transcripts */
+        .msg {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 6px;
+            line-height: 1.4;
+            font-size: 15px;
+        }
+
+        .msg.user {
+            background: #1e3a8a;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .msg.ai {
+            background: #064e3b;
+            border-left: 4px solid #10b981;
+        }
+
+        .speaker-label {
+            font-size: 11px;
+            font-weight: bold;
+            margin-bottom: 4px;
+            opacity: 0.7;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .partial {
+            opacity: 0.6;
+            font-style: italic;
+        }
+
+        /* Logs & Metrics */
+        #sys-logs {
+            font-family: monospace;
+            font-size: 13px;
+            color: #cbd5e1;
+        }
+
+        .log-entry {
+            margin-bottom: 4px;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 4px;
+        }
+
+        .metric-card {
+            background: #0f172a;
+            border: 1px solid #334155;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .metric-name {
+            font-size: 12px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .metric-val {
+            font-size: 24px;
+            font-weight: bold;
+            color: #38bdf8;
+            font-family: monospace;
+        }
+
+        .highlight .metric-val {
+            color: #22c55e;
+            font-size: 28px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>🎙️ AI Pipeline Evaluation</h2>
+
+    <div class="controls">
+        <button id="startBtn">▶ Start Call</button>
+        <button id="micBtn" disabled>🎤 Mute</button>
+        <button id="stopBtn" disabled>⏹ Stop Call</button>
+    </div>
+
+    <div class="layout">
+        <div class="box" id="transcript-box">
+            <h3>Live Transcripts</h3>
+            <div id="transcripts"></div>
+        </div>
+
+        <div class="box" id="metrics-box">
+            <h3>Latency Metrics (Last Turn)</h3>
+            <div id="metrics">
+                <div class="metric-card" id="m-stt">
+                    <div class="metric-name">Gladia STT Latency</div>
+                    <div class="metric-val">-- ms</div>
+                </div>
+                <div class="metric-card" id="m-llm">
+                    <div class="metric-name">Gemini LLM Latency</div>
+                    <div class="metric-val">-- ms</div>
+                </div>
+                <div class="metric-card" id="m-tts">
+                    <div class="metric-name">Uplift TTS Latency</div>
+                    <div class="metric-val">-- ms</div>
+                </div>
+                <div class="metric-card highlight" id="m-total">
+                    <div class="metric-name">Total Response Time</div>
+                    <div class="metric-val">-- ms</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="box">
+            <h3>System Logs</h3>
+            <div id="sys-logs"></div>
+        </div>
+    </div>
+
+    <script>
+        const WS_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+            ? "ws://localhost:8000/ws/audio"
+            : "wss://gemini-urdu-voice-agent.onrender.com/ws/audio";
+
+        //const WS_URL = "ws://localhost:8000/ws/audio";
+
+        const MIC_RATE = 16000;
+        const TTS_RATE = 22050;
+        let ws, micCtx, micNode, micStream, playCtx, playerNode;
+        let isMuted = false;
+        const PREBUFFER_CHUNKS = 3;   // absorb ~3 chunks (~280ms @ 22050Hz/4096B) of jitter before first playback
+        let prebuffered = [];
+        let playbackStarted = false;
+        // Discard incoming binary audio frames in the window between a barge-in
+        // control message and the next new audio response starting.
+        let bargeInActive = false;
+        let lastBinaryRecvTime = 0;
+        let binaryFrameCount = 0;
+
+        function logSys(msg) {
+            const logs = document.getElementById("sys-logs");
+            const time = new Date().toLocaleTimeString();
+            logs.innerHTML += `<div class="log-entry">[${time}] ${msg}</div>`;
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        let currentUserMsgDiv = null;
+
+        function handleTextData(data) {
+            try {
+                const payload = JSON.parse(data);
+
+                if (payload.type === "transcript") {
+                    const tBox = document.getElementById("transcripts");
+
+                    if (payload.speaker === "ai") {
+                        tBox.innerHTML += `<div class="msg ai"><div class="speaker-label">Agent</div>${payload.text}</div>`;
+                        currentUserMsgDiv = null;
+
+                        // New AI response turn has started — clear barge-in flag & reset playback state
+                        if (bargeInActive) {
+                            logSys("New AI turn started. Re-enabling audio playback.");
+                        }
+                        bargeInActive = false;
+                        playbackStarted = false;
+                        prebuffered = [];
+                    }
+                    else if (payload.speaker === "user") {
+                        if (!currentUserMsgDiv) {
+                            currentUserMsgDiv = document.createElement("div");
+                            currentUserMsgDiv.className = "msg user";
+                            tBox.appendChild(currentUserMsgDiv);
+                        }
+                        const styleClass = payload.is_final ? "" : "partial";
+                        currentUserMsgDiv.innerHTML = `<div class="speaker-label">You</div><span class="${styleClass}">${payload.text}</span>`;
+                        if (payload.is_final) currentUserMsgDiv = null;
+                    }
+                    tBox.scrollTop = tBox.scrollHeight;
+                }
+                else if (payload.type === "metric") {
+                    if (payload.name.includes("STT")) {
+                        document.querySelector("#m-stt .metric-val").textContent = payload.value;
+                    } else if (payload.name.includes("LLM")) {
+                        document.querySelector("#m-llm .metric-val").textContent = payload.value;
+                    } else if (payload.name.includes("TTS")) {
+                        document.querySelector("#m-tts .metric-val").textContent = payload.value;
+                    } else if (payload.name.includes("Total")) {
+                        document.querySelector("#m-total .metric-val").textContent = payload.value;
+                    }
+                    logSys(`Metric: ${payload.name} = ${payload.value}`);
+                }
+                // ---> NEW BARGE-IN LOGIC <---
+                else if (payload.type === "control" && payload.action === "barge_in") {
+                    logSys("Barge-in detected! Stopping current AI audio.");
+
+                    // 1. Raise the flag FIRST — any binary frames arriving after this
+                    //    (ghost chunks in-flight from the backend) will be discarded.
+                    bargeInActive = true;
+
+                    // 2. Tell the Worklet to drop all buffered audio
+                    if (playerNode) {
+                        playerNode.port.postMessage({ flush: true });
+                    }
+
+                    // 3. Clear any pre-buffered chunks waiting to play
+                    prebuffered = [];
+                    playbackStarted = false;
+                }
+                else if (payload.type === "error") {
+                    logSys("SYSTEM ERROR: " + payload.message);
+                }
+            } catch (e) {
+                logSys("Error parsing WS JSON: " + e.message);
+            }
+        }
+
+        const workletCode = `
+class MicProcessor extends AudioWorkletProcessor {
+  constructor() { 
+    super(); 
+    this._ratio = sampleRate / ${MIC_RATE}; 
+    this._acc = 0; 
+    this._buffer = []; 
+  }
+  process(inputs) {
+    const input = inputs[0][0]; if (!input) return true;
+    for (let i = 0; i < input.length; i++) {
+      this._acc += 1;
+      if (this._acc >= this._ratio) {
+        this._acc -= this._ratio;
+        const s = Math.max(-1, Math.min(1, input[i]));
+        this._buffer.push(s < 0 ? s * 0x8000 : s * 0x7fff);
+      }
+    }
+    
+    // Accumulate at least 512 samples (1024 bytes) before sending.
+    // 512 samples at 16000Hz is exactly 32ms of audio, aligning perfectly with our VAD window size.
+    const CHUNK_SIZE = 512;
+    while (this._buffer.length >= CHUNK_SIZE) {
+        const chunk = this._buffer.slice(0, CHUNK_SIZE);
+        this._buffer = this._buffer.slice(CHUNK_SIZE);
+        const buf = new Int16Array(chunk);
+        this.port.postMessage(buf.buffer, [buf.buffer]);
+    }
+    return true;
+  }
+}
+registerProcessor("mic-processor", MicProcessor);
+
+class PCMPlayerProcessor extends AudioWorkletProcessor {
+constructor() {
+    super();
+    this._buf = new Float32Array(0);
+    this._underruns = 0;
+    this.port.onmessage = (e) => {
+      const incoming = e.data;
+      // ---> NEW FLUSH LOGIC <---
+      if (incoming.flush) {
+          this.port.postMessage({ flushedSamples: this._buf.length, atTime: currentTime });
+          this._buf = new Float32Array(0);
+          return;
+      }
+      
+      const merged = new Float32Array(this._buf.length + incoming.length);
+      merged.set(this._buf, 0);
+      merged.set(incoming, this._buf.length);
+      this._buf = merged;
+    };
+  }
+  process(_inputs, outputs) {
+    const out = outputs[0][0];
+    if (this._buf.length >= out.length) {
+      out.set(this._buf.subarray(0, out.length));
+      this._buf = this._buf.subarray(out.length);
+    } else {
+      out.set(this._buf);
+      for (let i = this._buf.length; i < out.length; i++) out[i] = 0; // silence pad, never garbage
+      if (this._buf.length > 0 || this._underruns === 0) {
+        this._underruns++;
+        this.port.postMessage({ underrun: this._underruns });
+      }
+      this._buf = new Float32Array(0);
+    }
+    return true;
+  }
+}
+registerProcessor("pcm-player", PCMPlayerProcessor);`;
+
+        async function startCall() {
+            document.getElementById("sys-logs").innerHTML = "";
+            document.getElementById("transcripts").innerHTML = "";
+            document.querySelectorAll(".metric-val").forEach(el => el.textContent = "-- ms");
+            logSys("Connecting to Orchestrator...");
+
+            ws = new WebSocket(WS_URL);
+            ws.binaryType = "arraybuffer";
+
+            playCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: TTS_RATE });
+            const playerUrl = URL.createObjectURL(new Blob([workletCode], { type: "application/javascript" }));
+            await playCtx.audioWorklet.addModule(playerUrl);
+            playerNode = new AudioWorkletNode(playCtx, "pcm-player");
+            playerNode.connect(playCtx.destination);
+            playerNode.port.onmessage = (e) => {
+                if (e.data?.underrun) console.warn("Playback underrun:", e.data.underrun);
+                if (e.data?.flushedSamples !== undefined) {
+                    console.log(`[BARGE-IN] worklet flushed ${e.data.flushedSamples} samples (${(e.data.flushedSamples / 22050 * 1000).toFixed(0)}ms of audio) at audioTime=${e.data.atTime.toFixed(3)}`);
+                }
+            };
+            playbackStarted = false;
+            prebuffered = [];
+            bargeInActive = false;
+
+            ws.onmessage = (evt) => {
+                if (typeof evt.data === "string") {
+                    const t = performance.now();
+                    try {
+                        const p = JSON.parse(evt.data);
+                        if (p.type === "control" && p.action === "barge_in") {
+                            console.log(`[BARGE-IN] control msg received at t=${t.toFixed(1)}ms, last binary frame was at t=${lastBinaryRecvTime.toFixed(1)}ms (gap=${(t - lastBinaryRecvTime).toFixed(1)}ms), frame#${binaryFrameCount}`);
+                        }
+                    } catch (e) { }
+                    handleTextData(evt.data);
+                } else {
+                    lastBinaryRecvTime = performance.now();
+                    binaryFrameCount++;
+                    feedPlayback(evt.data);
+                }
+            };
+            ws.onclose = () => logSys("WebSocket Disconnected.");
+
+            micStream = await navigator.mediaDevices.getUserMedia({
+                audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            });
+
+            micCtx = new (window.AudioContext || window.webkitAudioContext)();
+            await micCtx.audioWorklet.addModule(playerUrl); // same module, registers mic-processor too
+
+            const src = micCtx.createMediaStreamSource(micStream);
+            micNode = new AudioWorkletNode(micCtx, "mic-processor");
+            micNode.port.onmessage = (e) => { if (ws.readyState === WebSocket.OPEN) ws.send(e.data); };
+            src.connect(micNode);
+
+            document.getElementById("startBtn").disabled = true;
+            document.getElementById("stopBtn").disabled = false;
+            document.getElementById("micBtn").disabled = false;
+            isMuted = false;
+            document.getElementById("micBtn").textContent = "🎤 Mute";
+            document.getElementById("micBtn").classList.remove("muted");
+
+            logSys("Live — Listening for speech...");
+        }
+
+        document.getElementById("micBtn").onclick = () => {
+            if (!micStream) return;
+            const audioTrack = micStream.getAudioTracks()[0];
+            isMuted = !isMuted;
+            audioTrack.enabled = !isMuted;
+
+            const btn = document.getElementById("micBtn");
+            if (isMuted) {
+                btn.textContent = "🔇 Unmute";
+                btn.classList.add("muted");
+                logSys("Microphone muted.");
+            } else {
+                btn.textContent = "🎤 Mute";
+                btn.classList.remove("muted");
+                logSys("Microphone unmuted. Listening...");
+            }
+        };
+
+        function decodeInt16(arrayBuffer) {
+            const int16 = new Int16Array(arrayBuffer);
+            const f32 = new Float32Array(int16.length);
+            for (let i = 0; i < int16.length; i++) {
+                f32[i] = int16[i] / (int16[i] < 0 ? 0x8000 : 0x7fff);
+            }
+            return f32;
+        }
+
+        function feedPlayback(arrayBuffer) {
+            // Discard any incoming binary frames if we are currently in a barge-in state.
+            // This prevents old-turn in-flight audio from playing or resetting the flag.
+            if (bargeInActive) {
+                return;
+            }
+
+            const f32 = decodeInt16(arrayBuffer);
+
+            if (!playbackStarted) {
+                prebuffered.push(f32);
+                if (prebuffered.length < PREBUFFER_CHUNKS) return;
+
+                playbackStarted = true;
+                for (const chunk of prebuffered) {
+                    playerNode.port.postMessage(chunk, [chunk.buffer]);
+                }
+                prebuffered = [];
+                return;
+            }
+
+            playerNode.port.postMessage(f32, [f32.buffer]);
+        }
+
+        function stopCall() {
+            if (micStream) micStream.getTracks().forEach(t => t.stop());
+            if (micNode) micNode.disconnect();
+            if (playerNode) playerNode.disconnect();
+            if (micCtx) micCtx.close(); if (playCtx) playCtx.close(); if (ws) ws.close();
+
+            document.getElementById("startBtn").disabled = false;
+            document.getElementById("stopBtn").disabled = true;
+            document.getElementById("micBtn").disabled = true;
+            logSys("Call stopped by user.");
+        }
+
+        document.getElementById("startBtn").onclick = startCall;
+        document.getElementById("stopBtn").onclick = stopCall;
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,14 @@
+code: en
+name: English
+script: latin
+tts_provider: google
+tts_voice_id: null
+tts_sample_rate: 22050  # Match standard sample rate
+llm_directive_file: language_directives/en.md
+stt_hint: en
+
+# Chunking Rules
+chunk_min_words: 12
+chunk_max_words: 25
+chunk_primary_delimiters: [".", "?", "!"]
+chunk_secondary_delimiters: [",", ";", ":", "—", "and", "but", "so"]

@@ -1,0 +1,24 @@
+# Urdu Language Profile
+code: ur
+name: Urdu
+script: arabic
+
+# TTS Configuration
+tts_provider: uplift
+tts_voice_id: null
+
+# LLM Configuration
+llm_directive_file: language_directives/ur.md
+
+# STT hint
+stt_hint: ur
+tts_sample_rate: 22050
+
+# Chunking Rules
+chunk_min_words: 10
+chunk_max_words: 22
+chunk_primary_delimiters: ["۔", "؟", "!"]
+chunk_secondary_delimiters: ["،", "اور", "تو", "کہ"]
+
+# VAD Overrides (Urdu pauses are naturally longer)
+vad_silence_duration_ms: 800
