@@ -180,12 +180,12 @@ Every one of these was a specific, cited bug or gap in a legacy repo. This is th
 | # | Anti-pattern | Source repo | File where the fix is specified |
 |---|---|---|---|
 | 1 | Sync blocking calls on event loop at session init (also: sync DB inside async tool handlers) | v3, habiba tools | File 1 §3.2, File 2 §5.1, File 6 §2.2 |
-| 2 | Unbounded queues | v3, multilingual | File 2 §1.1 |
+| 2 | Unbounded queues | v3 (MULTI queues are bounded; MULTI still has unbounded `ReplayableAsyncIterator._consumed` per turn) | File 2 §1.1 |
 | 3 | Fire-and-forget on a must-await callback | multilingual | File 2 §5.2 |
 | 4 | Secrets embedded in URLs | multilingual | File 2 §5.3, File 3 §6 |
-| 5 | Unbounded per-session resource construction | v3, multilingual | File 2 §5.4 |
+| 5 | Unbounded per-session resource construction | v3 Silero+HTTP; multilingual TTS HTTP (Silero is pooled) | File 2 §5.4 |
 | 6 | Invalid FSM transition logged but still applied | multilingual | File 2 §2.2 |
-| 7 | STT confidence field collected but never read | v3 | File 3 §2 (Transcript model), File 5 §4 |
+| 7 | STT `language` collected but never read (v3); `confidence` never collected in any of the four | v3 (language); all four (confidence) | File 3 §2 (Transcript model), File 5 §4 |
 | 8 | Fail-open auth secrets | awaazlabs | File 5 §6 |
 | 9 | Idempotency gaps (missing required field still "succeeds") | awaazlabs | File 5 §6 |
 | 10 | No retry/backoff on inter-service HTTP forwarding | awaazlabs | File 5 §6 |

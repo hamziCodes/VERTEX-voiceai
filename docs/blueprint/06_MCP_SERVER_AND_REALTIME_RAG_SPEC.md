@@ -84,7 +84,7 @@ BUILTIN_TOOLS = [
 # Provenance: habiba worker/tools.py:52-116, AUDIT_04 §2 LLM
 ```
 
-**Known bug NOT to inherit:** habiba's tool handlers perform **synchronous** `psycopg.connect` calls inside `async def` handlers, blocking the worker event loop (AUDIT_04 §5: "Tools — sync `psycopg.connect` inside `async def` tool handlers — blocks worker event loop", citing `tools.py:64,102`). Every UCVE tool handler — built-in or tenant MCP — must use `asyncio.to_thread` or a native async DB driver, never a raw sync call inside an async function.
+**Known bug NOT to inherit:** habiba's tool handlers perform **synchronous** `psycopg.connect` calls inside `async def` handlers, blocking the worker event loop (AUDIT_04 §5; live still `worker/tools.py:64` and `:102`, no `to_thread`). Every UCVE tool handler — built-in or tenant MCP — must use `asyncio.to_thread` or a native async DB driver, never a raw sync call inside an async function.
 
 ### 2.3 Zero-latency tool-calling with streaming fillers
 

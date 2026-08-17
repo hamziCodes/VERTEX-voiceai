@@ -140,7 +140,7 @@ class ExtractionService:
 
 ## 4. Data Recalibration & Verification Layer
 
-**Gap identified and fixed:** awaazlabs validates extraction *output shape* (does the JSON parse, are required fields present) but does **not** cross-check extracted values against ground truth — e.g., `save-booking` will happily persist a record with a missing `call_id` (AUDIT_02 §6: "`save-booking` returns `{result:'saved'}` when `call_id` missing"). UCVE adds a distinct verification pass after extraction, before the record is considered final:
+**Gap identified and fixed:** awaazlabs validates extraction *output shape* (does the JSON parse, are required fields present) but does **not** cross-check extracted values against ground truth — e.g. `save-booking` returns `{result:"saved"}` with HTTP 200 when `call_id` is missing **without persisting a row** (live `save-booking/index.ts:15–16`; AUDIT_02 §6). That is a false-success / idempotency bug, not a silent insert of a partial record. UCVE adds a distinct verification pass after extraction, before the record is considered final:
 
 ```python
 class VerificationIssue(BaseModel):
@@ -154,9 +154,12 @@ class VerificationService:
         """
         1. Phone numbers -> E.164 normalization; reject/flag if unparseable.
         2. Dates -> resolve against the CALL's timezone (not server UTC by
-           default). Timezone anchoring of stored timestamps is a UCVE
-           `[NEW]` design requirement — the audits do not document an
-           explicit timezone-anchoring gap across legacy repos. Check
+           default). Call-event timestamps in awaazlabs are UTC ISO from
+           epoch (`retell-webhook/index.ts:378–381`); appointment *slot*
+           parsing is clinic-zone anchored (`appointment-time.ts` +
+           `location.timezone`, typically America/Chicago). UCVE requires
+           an explicit timezone on every extracted datetime — do not
+           inherit epoch-UTC for appointment-like fields. Check
            plausibility (not in the past for a future appointment request,
            etc).
         3. CRM cross-check: if `insurance_id` or similar is extracted,
@@ -216,8 +219,8 @@ class CallSummary(BaseModel):
 |---|---|---|
 | Forwarding fetch to extraction functions has **no retry**; throws on non-OK | AUDIT_02 §5: "`retell-webhook/index.ts:280-289` throws on non-OK" | Exponential backoff retry queue, dead-letter after N attempts |
 | `background()` swallows errors via `p.catch(console.error)` | AUDIT_02 §5 | Errors routed to a monitored dead-letter queue, not just logged |
-| `checkSecret` **fails open** if `RETELL_SHARED_SECRET` is unset | AUDIT_02 §6: "fail-open if empty" | All webhook dispatch/receipt secrets fail **closed** by default; explicit opt-out flag required, logged loudly |
-| Idempotency: `save-booking` accepts records with a missing `call_id` | AUDIT_02 §6 | Every dispatched/received webhook carries a mandatory idempotency key; duplicate keys are deduped at the dispatcher, not left to the receiving CRM |
+| `checkSecret` **fails open** if `RETELL_SHARED_SECRET` is unset (`_shared/supa.ts:23–27`); CRM poc local copy is fail-closed (`transcript-crm-poc/index.ts:281–285`) but VOB poc local copy is fail-**open** (`transcript-vob-poc/index.ts:215–217`) | AUDIT_02 §6 (shared/CRM); VOB split found live | All webhook dispatch/receipt secrets fail **closed** by default; explicit opt-out flag required, logged loudly |
+| Idempotency: `save-booking` returns `{result:"saved"}` when `call_id` is missing (ACK-without-persist, `index.ts:15–16`) | AUDIT_02 §6; live confirmed | Every dispatched/received webhook carries a mandatory idempotency key; duplicate keys are deduped at the dispatcher, not left to the receiving CRM |
 
 ```python
 class WebhookTarget(BaseModel):

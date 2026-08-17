@@ -1,7 +1,7 @@
 # 01 — System Topology & Architecture
 
 **Codename:** Unified Core Voice Engine (UCVE)
-**Status:** Master blueprint, synthesized from `AUDIT_01`–`AUDIT_05` of four legacy codebases (`AI_voice_agent_v3 - gemini`, `awaazlabs`, `Multilingual_AI_Voice_Agent_gittracked`, `habiba-sdk-agent`).
+**Status:** Master blueprint, synthesized from `AUDIT_01`–`AUDIT_05` of four legacy codebases (`AI_voice_agent_v3 - gemini`, `awaazlabs`, `Multilingual_AI_Voice_Agent_gittracked`, `habiba-sdk-agent`). Live trees used for the source-spot-check pass live under `legacy_codebases/`.
 **Reading order:** This is File 1 of 9. Read alongside `09_DEVELOPER_IMPLEMENTATION_ROADMAP_AND_AUTONOMY_RULES.md` for how this topology gets built in phases, and see that file's closing **Autonomy & Non-Dogmatic Directive** — these 9 files are a strategic blueprint, not immutable dogma; the implementing agent (Cursor) has explicit license to adapt them against ground truth found in the real codebases.
 
 > Every design decision below is annotated with which legacy repo it's harvested from, or flagged `[NEW]` if it fills a gap that AUDIT_05 §3 found absent in all four. This is not aspirational hand-waving — it is a build plan grounded in inspected code.
@@ -160,7 +160,7 @@ graph TB
 | Extractor | `transcript-crm-poc/`, `transcript-vob-poc/` Groq extraction | AUDIT_02 §1, §2 LLM |
 | Webhooks | Green API WhatsApp pattern generalized | AUDIT_02 §4 telephony-specific |
 | SessionStore (Redis), RAGSvc, MCPHost | — | `[NEW]` — AUDIT_05 §3 gap analysis |
-| UsageMeter | habiba `usage.py` / admin usage path, generalized cross-plane | AUDIT_04 §1 tree (`usage.py`), §4 admin; AUDIT_05 §3 (usage metering is **not** a four-repo gap — habiba emits it; Redis/shared cross-replica metering is `[NEW]`) |
+| UsageMeter | habiba `worker/usage.py` (`record_usage` / `record_usage_many` into Postgres `usage_events`) + `GET /admin/usage` | Live: `worker/usage.py:1–8,23–58`, `worker/main.py:365–381`, `supabase/migrations/0001_schema.sql:58–65`; AUDIT_05 §3 (not a four-repo gap). Redis/shared cross-replica metering remains `[NEW]`. |
 
 ### 2.3 Component diagram — inside a Worker (either plane)
 
@@ -217,12 +217,12 @@ graph TB
 | Pool | Purpose | Sizing | Provenance |
 |---|---|---|---|
 | Silero inference pool | CPU-bound VAD frame inference off the event loop | `min(4, cpu_count())` workers, model instances checked out/in — not one model per session | AUDIT_03 §1 `SileroModelPool` with `threading.Lock` (pool also referenced in AUDIT_03 §2 VAD), superior to AUDIT_01's per-session `torch.hub.load` (flagged as blocking risk, AUDIT_01 §5) |
-| DB I/O pool | Sync psycopg calls off the event loop | `asyncio.to_thread` per call, not a dedicated pool — matches habiba's pattern | AUDIT_04 §1 `asyncio.to_thread`; **note the anti-pattern to avoid**: habiba's `tools.py:64,102` does sync `psycopg.connect` *inside* `async def` tool handlers without `to_thread` — AUDIT_04 §5 flags this as blocking the worker loop. UCVE must not repeat it. |
+| DB I/O pool | Sync psycopg calls off the event loop | `asyncio.to_thread` per call, not a dedicated pool — matches habiba's pattern | AUDIT_04 §1 `asyncio.to_thread`; **note the anti-pattern to avoid**: habiba's `worker/tools.py:64,102` does sync `psycopg.connect` *inside* `async def` tool handlers without `to_thread` — confirmed live; AUDIT_04 §5 flags this as blocking the worker loop. UCVE must not repeat it. |
 | HTTP client pool | STT/LLM/TTS provider calls | `aiohttp.TCPConnector(limit=20)` per provider client, one client per process not per session | AUDIT_01 §2 TTS (`uplift_service.py` `limit=20`) — good pattern; AUDIT_03 §5 flags the anti-pattern of *3 HTTP sessions per WebSocket session* in `TTSManager` — UCVE pools at the process level instead |
 
 ### 3.3 Distributed state management
 
-**Gap identified:** AUDIT_05 §3 confirms no Redis/distributed store in any of the four repos — session state is either in-process (v3, multilingual: lost on crash/restart) or Postgres-only (awaazlabs, habiba: correct for durable state but too slow/heavy for hot per-turn conversational state and completely absent for the mint rate-limiter, which AUDIT_04 §5 documents as an in-process `_hits` dict that breaks under horizontal scaling).
+**Gap identified:** AUDIT_05 §3 confirms no Redis/distributed store in any of the four repos — session state is either in-process (v3, multilingual: lost on crash/restart) or Postgres-only (awaazlabs, habiba: correct for durable state but too slow/heavy for hot per-turn conversational state and completely absent for the mint rate-limiter, which AUDIT_04 §5 documents as an in-process `_hits` dict — live at `control_plane/app.py:62,238,262–269`, not in `mint.py` — that breaks under horizontal scaling).
 
 **Decision `[NEW]`:**
 

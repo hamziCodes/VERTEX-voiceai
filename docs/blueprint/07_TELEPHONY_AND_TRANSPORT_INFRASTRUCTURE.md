@@ -58,7 +58,7 @@ Telephony legs (Twilio Media Streams, generic SIP/RTP) typically deliver 20ms fr
 |---|---|---|
 | SFU | LiveKit Cloud (external managed service) | AUDIT_04 §1 dependency diagram |
 | Session token | Short-TTL (120s) room-join-only JWT, minted by control plane | AUDIT_04 §3 handshake step 5 |
-| Client join | `livekit-client` Room connect with token + wsUrl | AUDIT_04 §2 transport, `sdk/src/index.ts:264-311` |
+| Client join | `livekit-client` Room connect with token + wsUrl | AUDIT_04 §2 transport; live `sdk/src/index.ts:198–202` (`room.connect`); event wiring `263–317` (audit's `:264–311` range is the event handlers, not connect) |
 | Data channels | LiveKit DataReceived events, used for legacy Habiba `metrics_updated` passthrough (UCVE wire name: `metric`, File 8 §3) | AUDIT_04 §4 |
 | ICE/STUN/TURN | Handled by LiveKit Cloud infrastructure, not configured in-repo | Out of scope per AUDIT_04 §2 (LiveKit internals not verifiable statically) |
 
@@ -107,9 +107,9 @@ class SIPParticipantResolver:
 
 ### 4.2 Outbound / warm transfer
 
-**Gap identified:** warm transfer, supervisor whisper, AMD/voicemail-drop campaign orchestration, and calling-window compliance gates are not evidenced as full UCVE-scope features in any of the four audits (AUDIT_05 §3 does not list them as checked-for collective gaps). Habiba **does** enumerate telephony routes including `outbound-calls` (AUDIT_04 §4: `telephony_routes.py` connect/rotate/numbers/SIP/outbound-calls/etc.) — so "no outbound surface at all" would be incorrect — but campaign AMD, warm-transfer, and whisper as specified below remain `[NEW]` build work required by the master mandate's Outbound Campaign Orchestrator and Live Call Monitoring requirements:
+**Gap identified:** warm transfer, supervisor whisper, AMD/voicemail-drop campaign orchestration, and calling-window compliance gates are not implemented in any of the four trees. Habiba **does** implement a **one-shot outbound PSTN dialer**: `POST /portal/telephony/outbound-calls` and `/machine/telephony/outbound-calls` (`telephony_routes.py:506–522, 1062–1093`) call `create_outbound_call` (`telephony_service.py:999–1183`) which dispatches a named LiveKit worker then `LiveKitSIPClient.create_sip_participant` toward a Telnyx SIP edge. Request body is a single `to_number` (no dial list, no AMD, no campaign). Telnyx is inventory/SIP plumbing, not `/v2/calls`. `escalate_to_human` inserts an `escalations` row (`worker/tools.py:91–113`) and does **not** bridge SIP. Campaign AMD, warm-transfer, and whisper as specified below remain `[NEW]`.
 
-> Corrected during finalization pass: earlier text claimed habiba telephony was "inbound PSTN→LiveKit only" and that "no legacy repo implements outbound calling"; AUDIT_04 §4 lists `outbound-calls` among portal/machine routes.
+> Corrected during live-source pass: habiba outbound is a real LiveKit-SIP dialer, not route-name CRUD. AUDIT_04 §4 only enumerated the routes.
 
 ```python
 class WarmTransferService:

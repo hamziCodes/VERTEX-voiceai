@@ -36,11 +36,13 @@ class LanguageRouterConfig(BaseModel):
                                                           # AUDIT_03 §3 language
     debounce_consecutive_detections_required: int = 2   # for utterances below
                                                           # the word threshold
-    fallback_language: str = "en"                        # multilingual default
-                                                          # when STT returns an
-                                                          # unrecognized code,
-                                                          # AUDIT_03 §5: "Fallback
-                                                          # language 'en' if unknown"
+    fallback_language: str = "en"                        # LanguageRegistry.get()
+                                                          # default when *looked up*
+                                                          # by code (`language_registry.py:133–136`).
+                                                          # The router itself does NOT
+                                                          # apply this on unrecognized
+                                                          # STT tags — it keeps current
+                                                          # (`language_router.py:26–34`).
 
 
 class LanguageRouter:
@@ -70,10 +72,11 @@ class LanguageProfile(BaseModel):
     vad_silence_override_ms: int | None = None    # ur/ar: 800ms override,
                                                     # AUDIT_03 §2 VAD
     tts_voice_id: str
-    tts_first_chunk_word_count: int = 2           # multilingual's aggressive
-                                                    # first-chunk split for fast
-                                                    # TTFB, AUDIT_03 §5 — NOTE the
-                                                    # tradeoff below
+    tts_first_chunk_word_count: int = 2           # NOT a YAML field — hardcoded in
+                                                    # `groq_service.py:42–43` (YAML
+                                                    # `chunk_min_words` is 10/12).
+                                                    # Aggressive first-chunk split for
+                                                    # fast TTFB — NOTE the tradeoff below
     script_direction: str = "ltr"                  # "rtl" for ur/ar
 ```
 
