@@ -295,3 +295,9 @@ Trees: `legacy_codebases/`. Audit `file:line` cites from 2026-08-14 are **almost
 | 09 | Phases 1–3 sovereign-first; compose as the product; anti-patterns #18–20; autonomy §6.2 sovereignty bullet. |
 
 No `legacy_codebases/` edits. No monorepo scaffolding.
+
+---
+
+## Pass 4 — Product overview (2026-08-17)
+
+Added `00_PRODUCT_OVERVIEW.md` (plain-English what/why/how we build, four packaging modes: product / service / SaaS / dedicated client, and a guide to files 01–09). Added `docs/blueprint/README.md`. File 1 reading order + index and File 9 header point at `00`. No engine code.
