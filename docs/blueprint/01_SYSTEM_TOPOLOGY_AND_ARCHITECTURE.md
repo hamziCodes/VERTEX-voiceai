@@ -19,10 +19,12 @@ The audits converged on a clear picture: **no single legacy repo is the unified 
 
 UCVE therefore has two coexisting execution planes, not one:
 
-1. **Managed transport plane** — LiveKit-mediated WebRTC + SIP, à la habiba. Best for browser/mobile clients and PSTN, gets jitter buffering, SFU, and interruption detection "for free" from LiveKit.
-2. **Raw transport plane** — a direct FastAPI WebSocket PCM loop, à la v3/multilingual. Kept alive deliberately for: embedded/IoT clients that can't do WebRTC, ultra-low-overhead single-tenant deployments, and as the reference implementation for teams who don't want a LiveKit dependency.
+1. **Sovereign transport plane (default, always shippable)** — a direct FastAPI WebSocket PCM loop, à la v3/multilingual, plus `DirectSIPTransport` for PSTN. This plane owns the full conversation loop in-process. It is the product: a customer can run UCVE with no LiveKit account, no Retell, no Clerk.
+2. **Optional managed media plane** — LiveKit (or a future Daily/self-hosted SFU adapter) for browser WebRTC quality, SFU fan-out, and carrier SIP convenience. Media only. Conversation intelligence (FSM, VAD, barge-in lock, language router, provider registry) stays in `core/` — habiba's `AgentSession` as the *orchestrator* is **not** inherited (AUDIT_04 §6 residual coupling: "LiveKit `AgentSession` is the orchestrator (hard to run without LiveKit)").
 
 Both planes terminate in the **same** pluggable pipeline core (File 3), the **same** FSM (File 2), and the **same** provider registry — this is the actual point of "unification."
+
+> Product mandate (2026-08-17): UCVE is a standalone engine whose IP lives in-process. Cloud vendors are interchangeable adapters used when quality, credits, or GPU cost beat a local path — never a single throat to choke. Detail: §3.6.
 
 ---
 
@@ -44,11 +46,11 @@ graph TB
     end
 
     subgraph External
-        STTProv[STT Providers<br/>Gladia / Deepgram / Whisper]
+        STTProv[STT Providers<br/>Gladia / Deepgram / local Whisper]
         LLMProv[LLM Providers<br/>Gemini / Groq / Claude / local vLLM]
-        TTSProv[TTS Providers<br/>Uplift / ElevenLabs / Cartesia]
-        Telco[PSTN Carriers<br/>Telnyx / Nayatel SIP trunks]
-        VectorDB[Vector Store<br/>Qdrant / pgvector]
+        TTSProv[TTS Providers<br/>Uplift / ElevenLabs / Cartesia / local Piper]
+        Telco[PSTN Carriers<br/>Telnyx + second SIP trunk]
+        VectorDB[Vector Store<br/>pgvector default / Qdrant optional]
         Tools[Tenant Tools & APIs<br/>via MCP]
     end
 
@@ -271,7 +273,33 @@ class BaseTransportGateway(ABC):
 
 ### 3.5 Multi-tenant session isolation
 
-Adopted wholesale from habiba (AUDIT_04 §1, §3, Modularity 8/10 justification #2 — transport/control-plane split; justification #1 is the provider registry, File 3): HMAC-signed session mint → short-TTL JWT (120s) → explicit named-agent dispatch → RLS `set local role authenticated` on tenant config load (`worker/config.py:60–76`). Extended `[NEW]` to also gate the raw-PCM plane (v3/multilingual had **zero** auth on `/ws/audio` — AUDIT_01 §3 handshake step 2, AUDIT_03 §3 handshake — this is fixed in UCVE, not inherited).
+Adopted wholesale from habiba (AUDIT_04 §1, §3, Modularity 8/10 justification #2 — transport/control-plane split; justification #1 is the provider registry, File 3): HMAC-signed session mint → short-TTL JWT (120s) → explicit named-agent dispatch → RLS `set local role authenticated` on tenant config load (`worker/config.py:60–76`). Extended `[NEW]` to also gate the raw-PCM plane (v3/multilingual had **zero** auth on `/ws/audio` — AUDIT_01 §3 handshake step 2, AUDIT_03 §3 handshake — this is fixed in UCVE, not inherited). Clerk is **not** a runtime dependency (MULTI bypassed it, AUDIT_03 §3; habiba never used it for the voice path).
+
+### 3.6 Product sovereignty & dependency tiers `[NEW — explicit product mandate]`
+
+Do not rebuild AWS. Do not hand the company to one SaaS. Split every dependency into a **tier** so a block, price spike, or API break cannot take the product down.
+
+| Tier | What lives here | Rule |
+|---|---|---|
+| **0 — Company IP (always local)** | FSM, Silero+energy VAD, barge-in lock, language router, chunker/normalizer, provider registry, session mint, prompts, redaction | Never delegated to LiveKit Agents, Retell, or any vendor orchestrator. This *is* the product. Harvest: File 2 (v3/MULTI barge-in), File 3 registry (habiba), File 4 router (MULTI). |
+| **1 — Local-first, cloud-optional** | faster-whisper / Whisper.cpp STT; Piper/Coqui/XTTS TTS; Ollama/vLLM LLM; embeddings; Postgres + Redis + **pgvector**; HMAC secrets on disk or in DB | Ship a working single-node stack with no GPU and no paid STT/TTS/LLM keys (degraded quality/latency is allowed). Promote a cloud adapter only when measured CER/TTFT/credits beat the local path. |
+| **2 — Multi-vendor cloud (never one name)** | Commercial STT/LLM/TTS/S2S | `FailoverRouter` (File 3 §5) **requires ≥2 `enabled` providers per critical category per language**, or 1 commercial + 1 local. Single-entry lists (`ur STT: [gladia]` only, `ur TTS: [uplift]` only — the habiba/v3 harvest shape) are a **startup error**, not a config style. |
+| **3 — Commodity we will not rebuild** | PSTN DIDs, optional SFU, GPU rental | Dual-home: two SIP trunks (Telnyx + generic/Nayatel/Twilio as peers, File 7); LiveKit Cloud is optional; a self-hosted LiveKit OSS / mediasoup adapter is a later `MediaSFUAdapter`, not a v1 blocker. AUDIT_05 §3 already lists self-hosted SFU as a four-repo gap — we do not pretend to ship one on day one, and we do not make Cloud SFU load-bearing. |
+
+**Kill-switch tests** (must pass before calling a deployment production):
+
+| If this is blocked | The system still… |
+|---|---|
+| LiveKit Cloud / `livekit-client` | Serves browser + PSTN on native WS + Direct SIP |
+| Gladia | Transcribes via Deepgram **or** local Whisper |
+| Uplift | Speaks Urdu via the next TTS in the chain (MULTI already failsover Uplift→Google→ElevenLabs, AUDIT_03 §2) **plus** a local Piper/Coqui voice |
+| Groq or Gemini | Completes turns on the other LLM, then local vLLM/Ollama |
+| Telnyx | Dials/receives on the second SIP trunk |
+| A single cloud region | Control plane + Redis + Postgres are self-hostable; no Clerk, no Retell runtime |
+
+**Secrets posture:** tenant and platform provider keys stay in UCVE's secrets layer (env / DB / later KMS). The client SDK remains zero-secret (habiba pattern, AUDIT_04 §4). Audio sent to a Tier-2 vendor is a contracted subprocess, not the store of record — transcripts and recordings land in our Postgres (File 5).
+
+**S2S** (Gemini Live / OpenAI Realtime, File 3 §5) is an optional fast path, never the only conversation mode: tool-calling, RAG, and languages without an S2S voice (Uplift Urdu, AUDIT_01/04 §2 TTS) stay on the cascaded pipeline.
 
 ---
 
@@ -302,15 +330,15 @@ Target: **<450ms end-to-end** from user speech-end to first audio byte played (T
 ```text
 unified-core-voice-engine/
 ├── control-plane/       # habiba-pattern: mint, quota, RLS config, admin
-├── worker-managed/       # LiveKit AgentSession worker (managed transport plane)
-├── worker-raw/            # Cascaded-pipeline worker (raw PCM WS plane)
-├── core/                  # Shared: registry, FSM, VAD, language router, RAG, MCP host
-├── telephony-gateway/      # SIP/Telnyx bridge, transcoding
+├── worker-raw/            # Sovereign plane: cascaded pipeline + native WS + Direct SIP (File 1 §3.6)
+├── worker-managed/        # Optional SFU media adapter (LiveKit) — not required to ship
+├── core/                  # Shared IP: registry, FSM, VAD, language router, RAG, MCP host
+├── telephony-gateway/      # Dual-home SIP, transcoding (File 7 §4.1)
 ├── sdk/{python,typescript,flutter}/
 ├── post-call/              # Structured extraction (awaazlabs-pattern), webhooks
 ├── admin-dashboard/
 ├── tests/
-└── infra/                  # Docker, Helm, Terraform
+└── infra/                  # docker compose first; Helm/Terraform for scale
 ```
 
 ---
@@ -327,3 +355,4 @@ unified-core-voice-engine/
 | Telephony, transcoding, WebRTC/SIP/Twilio signaling | `07_TELEPHONY_AND_TRANSPORT_INFRASTRUCTURE.md` |
 | Agent builder schema, API, SDK method signatures | `08_UNIVERSAL_AGENT_BUILDER_AND_SDK_SPEC.md` |
 | Directory tree, sprints, benchmarks, deployment, autonomy directive | `09_DEVELOPER_IMPLEMENTATION_ROADMAP_AND_AUTONOMY_RULES.md` |
+| Product sovereignty, vendor kill-switches, local-first tiers | this file §3.6 (mirrored in File 3 §5.2, File 7 §3.1, File 9 §5 #18–20) |

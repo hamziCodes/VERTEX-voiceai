@@ -121,9 +121,11 @@ REAL_ESTATE_EXAMPLE = TenantExtractionSchema(
 
 class ExtractionService:
     """Generalizes awaazlabs' Groq extraction pattern (transcript-crm-poc/
-    index.ts, AUDIT_02 §1). Validation-on-output already exists in awaazlabs
-    and is retained: 'validation exists (transcript-crm-poc/index.ts:74-76)
-    and alerts on errors' (AUDIT_02 §5)."""
+    index.ts, AUDIT_02 §1) **through File 3's FailoverRouter**, not a
+    hardcoded Groq client. Awaazlabs is Groq-only with no retry
+    (AUDIT_02 §5–6) — that is the lock-in to avoid. Validation-on-output
+    already exists in awaazlabs and is retained: 'validation exists
+    (transcript-crm-poc/index.ts:74-76) and alerts on errors' (AUDIT_02 §5)."""
 
     async def extract(
         self, transcript: list[DiarizedTurn], schema: TenantExtractionSchema
@@ -307,7 +309,7 @@ class LongitudinalMemoryService:
         general RAG retrieval mechanics this reuses."""
 ```
 
-Storage: pgvector or Qdrant, consistent with the RAG store already specified in File 1's context diagram — this is the same vector store, not a separate system, since longitudinal caller memory and general knowledge-base RAG (File 6) are both retrieval problems over the same infrastructure.
+Storage: **pgvector in platform Postgres by default** (File 6 §3.1, File 1 §3.6). Qdrant is an optional scale-out adapter behind the same retriever — not a second source of truth.
 
 ---
 

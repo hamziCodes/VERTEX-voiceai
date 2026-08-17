@@ -24,7 +24,7 @@ Two of the four repos enable acoustic code-switching for Urdu; one deliberately 
 
 ### 2.1 Acoustic layer (STT-side)
 
-Handled entirely by the STT provider adapter's `code_switching` flag (File 3 §2). No in-house acoustic language-ID model is built here — Gladia streaming STT is used by three of four repos (AUDIT_01/03/04 §2), with `code_switching=True` only in v3 and multilingual (AUDIT_01/03 §2 STT); habiba's Gladia path sets CS off with a measured CER rationale (AUDIT_04 §2). Deepgram appears as an alternate `en` STT provider in habiba's capability table (AUDIT_04 §2 STT); CS/LID behavior for Deepgram is **NOT VERIFIED** (AUDIT_04 §5). Building a custom acoustic LID model is explicitly **out of scope** for the initial roadmap (File 9) since no legacy repo attempted one and provider-native language tagging has evidenced production use in the Gladia-backed repos.
+Handled entirely by the STT provider adapter's `code_switching` flag (File 3 §2). No in-house acoustic language-ID model is built here — Gladia streaming STT is used by three of four repos (AUDIT_01/03/04 §2), with `code_switching=True` only in v3 and multilingual (AUDIT_01/03 §2 STT); habiba's Gladia path sets CS off with a measured CER rationale (AUDIT_04 §2). Deepgram appears as an alternate `en` STT provider in habiba's capability table (AUDIT_04 §2 STT); CS/LID behavior for Deepgram is **NOT VERIFIED** (AUDIT_04 §5). **UCVE does not treat Gladia as the acoustic layer.** File 1 §3.6 requires a second STT (Deepgram and/or local `faster_whisper`) so a Gladia outage or region block cannot freeze Urdu. Building a custom acoustic LID model remains **out of scope** for the initial roadmap (File 9).
 
 ### 2.2 Text-layer language routing
 

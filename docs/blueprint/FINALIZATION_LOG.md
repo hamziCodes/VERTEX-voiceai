@@ -273,3 +273,25 @@ Trees: `legacy_codebases/`. Audit `file:line` cites from 2026-08-14 are **almost
 | Files with live-pass corrections | **8** (01–07, 09) |
 | Files clean on live pass | **1** (File 08) |
 | Previously unverifiable flags closed | **4 / 4** |
+
+---
+
+## Pass 3 — Product sovereignty (2026-08-17)
+
+**Trigger:** explicit product mandate — standalone engine, IP kept local, cloud vendors interchangeable, no single throat to choke. Not an audit error; a policy layer on top of the harvest.
+
+**Grounding:** File 3 already had `FailoverRouter` and habiba's registry; File 1 already had a raw WS plane; MULTI already failsover TTS. Legacy **defaults** were still single-vendor (v3 Gladia+Gemini+Uplift; habiba ur gladia+gemini+uplift; habiba orchestrator = LiveKit `AgentSession`, AUDIT_04 §6). This pass makes diversity a **startup/production rule**, not a future nicety.
+
+| File | Change |
+|---|---|
+| 01 | Dual-plane rewrite: sovereign WS+SIP default; LiveKit optional media. New **§3.6** tiers 0–3 + kill-switch table. C4 adds local Whisper/Piper and dual trunks. Directory preview puts `worker-raw` first. |
+| 02 | §3.2: SFU interruption knobs are adapter hints; FSM stays Tier 0. |
+| 03 | Example chains require ≥2 routes including local ids; anti-pattern #4 single-vendor lists. |
+| 04 | Acoustic layer not Gladia-only. |
+| 05 | Extraction via FailoverRouter; pgvector default. |
+| 06 | pgvector-in-Postgres default; Qdrant optional. |
+| 07 | LiveKit plane optional; dual-home `SIPTrunkConfig`; outbound must not require `create_sip_participant`. |
+| 08 | `providerConfig` `minItems: 2`; `sip_trunks`; SDK default native WS. |
+| 09 | Phases 1–3 sovereign-first; compose as the product; anti-patterns #18–20; autonomy §6.2 sovereignty bullet. |
+
+No `legacy_codebases/` edits. No monorepo scaffolding.

@@ -116,7 +116,9 @@ class ConversationalFillerSynth:
 
 ### 3.1 Vector store
 
-Consistent with File 5 §8 — the same pgvector/Qdrant instance serves both longitudinal caller memory and general tenant knowledge-base RAG. Two separate concerns, one piece of infrastructure:
+Default: **pgvector in the same Postgres** already used for sessions/tenants (File 1 §3.3, §3.6 Tier 1) — one operational surface, no extra SaaS. Qdrant is an optional scale-out adapter behind the same `RAGRetriever` interface, not the store of record.
+
+Consistent with File 5 §8 — the same vector instance serves both longitudinal caller memory and general tenant knowledge-base RAG. Embeddings: local model by default; a cloud embedder is a File 3 provider with the same ≥2-route rule.
 
 ```python
 class KnowledgeBaseChunk(BaseModel):

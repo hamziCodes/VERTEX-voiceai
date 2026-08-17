@@ -160,9 +160,9 @@ sequenceDiagram
 
 **Deliberate fix, not inherited:** v3 has a documented gap where the *utterance that triggered the barge-in* is discarded — `_on_transcript` ignores final transcripts arriving during `_speaking_until`, so the user has to repeat themselves (AUDIT_01 §3: "the barge-in utterance that triggered VAD is **not** used as the next turn's user text"). UCVE's Turn Manager explicitly buffers the STT stream through the barge-in transition and re-submits the first post-interruption final transcript as the new turn's input — this is a correctness fix, not a legacy pattern.
 
-### 3.2 Sequence (managed transport / LiveKit plane)
+### 3.2 Sequence (managed transport / optional SFU plane)
 
-For the LiveKit-mediated plane, barge-in is delegated to LiveKit's own interruption detector rather than reimplemented — habiba's approach (AUDIT_04 §3: "IMPLEMENTED via LiveKit AgentSession, not custom queue flush") is kept as-is for that plane, configured with:
+When an optional LiveKit (or other SFU) adapter is in use, **media** interruption may use the SFU's detector — habiba's LiveKit knobs (AUDIT_04 §3: "IMPLEMENTED via LiveKit AgentSession, not custom queue flush"):
 
 | Parameter | Value | Provenance |
 |---|---|---|
@@ -171,7 +171,7 @@ For the LiveKit-mediated plane, barge-in is delegated to LiveKit's own interrupt
 | `resume_false_interruption` | `False` — don't resume the old sentence after a false interrupt | AUDIT_04 §3 |
 | `endpointing.min_delay` | `0.2s` | AUDIT_04 §2 VAD |
 
-UCVE's Turn Manager still emits the same abstract `control.barge_in` event on this plane (via the transport gateway, File 1 §3.4; vocabulary in File 8 §3) so downstream consumers (analytics, post-call pipeline) see a consistent event vocabulary regardless of which plane handled the call.
+Those knobs are **hints to the media adapter**, not a substitute for File 2's FSM. UCVE's Turn Manager still owns `BARGE_IN_VERIFY` / `control.barge_in` (File 1 §3.6 Tier 0; vocabulary File 8 §3). If the SFU is down, the sovereign plane already runs the full v3/MULTI lock protocol (§3.1). Do not inherit habiba's "hard to run without LiveKit" coupling (AUDIT_04 §6).
 
 ### 3.3 Atomicity guarantee
 
