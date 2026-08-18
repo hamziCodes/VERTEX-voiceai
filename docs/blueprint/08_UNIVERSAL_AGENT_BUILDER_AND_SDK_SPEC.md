@@ -74,12 +74,12 @@ File 8 of 9. Grounded primarily in `habiba-sdk-agent`, the only legacy repo with
     "providerConfig": {
       "type": "object",
       "properties": {
-        "stt": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } },
-        "llm": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } },
-        "tts": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } },
+        "stt": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" }, "minItems": 2 } },
+        "llm": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" }, "minItems": 2 } },
+        "tts": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" }, "minItems": 2 } },
         "s2s": { "type": "object", "properties": { "enabled": { "type": "boolean", "default": false } } }
       },
-      "description": "See File 3 §5.2 for the priority-chain config shape this mirrors"
+      "description": "Priority chains (File 3 §5.2). minItems 2 enforces File 1 §3.6 — commercial+commercial or commercial+local. Local ids: faster_whisper, piper, ollama."
     },
     "toolConfig": {
       "type": "object",
@@ -112,6 +112,7 @@ File 8 of 9. Grounded primarily in `habiba-sdk-agent`, the only legacy repo with
       "type": "object",
       "properties": {
         "inbound_dids": { "type": "array", "items": { "type": "string" } },
+        "sip_trunks": { "type": "array", "minItems": 1, "description": "Production: ≥2 trunks (File 1 §3.6, File 7 §4.1)" },
         "outbound_enabled": { "type": "boolean", "default": false },
         "calling_window": { "type": "object", "description": "File 7 §4.2 CallingWindow" }
       }
@@ -285,7 +286,9 @@ class UCVEVoiceClient:
     """Mirrors habiba's @awaazlabs-uva/voice zero-secret pattern
     (AUDIT_04 §2 transport) — the SDK never holds provider API keys,
     only a publishableKey + agentId, exchanged for a session token via
-    the tenant's own host backend (not directly to UCVE control plane)."""
+    the tenant's own host backend. Default transport is native UCVE WS
+    (File 1 §3.6); LiveKit is an optional media backend, not the SDK's
+    identity."""
 
     def __init__(self, publishable_key: str, agent_id: str, session_endpoint: str): ...
 

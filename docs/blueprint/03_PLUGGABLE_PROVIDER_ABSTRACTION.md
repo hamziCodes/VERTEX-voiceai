@@ -54,9 +54,12 @@ class VADConfig(BaseModel):
 class BaseVADProvider(ABC):
     @abstractmethod
     async def feed(self, frame: bytes) -> "VADEvent | None":
-        """Returns an event only on a state *transition* (speech-start /
-        speech-end), matching v3's semantics — NOT every speech frame.
-        AUDIT_01 §2: 'returns True only on speech-start transition'."""
+        """Returns an event only on a state *transition*, NOT every speech
+        frame. v3's `feed()` returns True **only on speech-start**
+        (`silero_service.py:117–121`; AUDIT_01 §2) — it does not emit
+        speech-end. UCVE emits both `speech_start` and `speech_end` so
+        turn-commit does not have to infer offset from silence counters
+        alone."""
 
     @abstractmethod
     def reset(self) -> None: ...
@@ -94,12 +97,16 @@ class Transcript(BaseModel):
     is_final: bool
     language: str | None = None
     confidence: float | None = None          # UCVE turn manager consumes this when
-                                              # present. AUDIT_01 §5: GladiaTranscript
-                                              # has `language` but orchestrator never
-                                              # reads it; confidence threshold unused.
-                                              # Exact Gladia confidence field shape
-                                              # was NOT VERIFIED beyond the unused-
-                                              # threshold note — treat as optional.
+                                              # present. Live v3 `GladiaTranscript`
+                                              # (`gladia_service.py:63–70`) has
+                                              # `language` but **no** `confidence`
+                                              # field; orchestrator never reads
+                                              # `language` (`websocket.py:234–299`).
+                                              # MULTI `interfaces.Transcript` declares
+                                              # optional `confidence` but Gladia never
+                                              # fills it. Habiba persist/SDK emit
+                                              # `{role,text,at}` / `{text,final,speaker}`
+                                              # with no confidence. Treat as optional.
 
 
 class BaseSTTProvider(ABC):
@@ -330,7 +337,9 @@ class ProviderRegistry:
         """Looks up the capability table (habiba's capabilities.py pattern,
         AUDIT_04 §2) to find an `enabled` provider for (category, language).
         Falls back through a configured priority order, never silently to
-        `testing`-status providers unless explicitly opted in."""
+        `testing`-status providers unless explicitly opted in.
+        File 1 §3.6: `resolve` must be able to return a *chain*, not a
+        singleton — FailoverRouter consumes that chain."""
 ```
 
 ---
@@ -375,29 +384,34 @@ class FailoverRouter:
 
 ```yaml
 # tenant agent config excerpt — see File 8 for the full builder schema
+# File 1 §3.6: a one-name list is a startup error. Local adapters are
+# first-class registry ids, not a separate "offline mode" fork.
 providers:
   stt:
     ur:
-      priority: [gladia]
+      priority: [gladia, faster_whisper]   # commercial CER + local kill-switch
       code_switching: false   # habiba's measured-CER decision, AUDIT_04 §2, as a default
     en:
-      priority: [deepgram, gladia]  # habiba capability table pattern, AUDIT_04 §2 STT
+      priority: [deepgram, gladia, faster_whisper]  # habiba table + local
   llm:
     default:
-      priority: [groq, gemini]      # Groq first for TTFT (File 1 §4 latency budget)
+      priority: [groq, gemini, ollama]      # Groq TTFT, Gemini backup, local degraded
   tts:
     ur:
-      priority: [uplift]
+      priority: [uplift, piper]             # never Uplift-only (v3/habiba harvest shape)
     en:
-      priority: [cartesia, elevenlabs, rime]   # habiba's en capability set, AUDIT_04 §2 TTS
+      priority: [cartesia, elevenlabs, piper]
   s2s:
-    enabled: false   # opt-in per tenant; falls back to cascaded pipeline
+    enabled: false   # opt-in; cascaded pipeline is the product (File 1 §3.6)
 ```
+
+> Corrected during sovereignty pass: earlier example had `ur STT: [gladia]` and `ur TTS: [uplift]` — that is exactly the single-vendor outage the product mandate forbids. Local ids (`faster_whisper`, `piper`, `ollama`) are `[NEW]` adapters; MULTI's TTS failover (AUDIT_03 §2) is the harvested commercial pattern.
 
 ---
 
 ## 6. Anti-Patterns Rejected
 
 1. **Hardcoded temperature/max_tokens as module constants.** v3 hardcodes `temperature=0.7` and `max_output_tokens=1000` directly in `gemini_service.py` (AUDIT_01 §6 technical debt table). These are `LLMConfig` fields now, tenant-overridable via the builder schema (File 8).
-2. **API keys embedded in request URLs.** Multilingual's Google TTS service builds its endpoint URL with the key as a query parameter at import time (AUDIT_03 §5). All provider adapters in UCVE authenticate via headers set at request time, sourced from the secrets layer (File 9 roadmap, infra section), never baked into a URL string.
+2. **API keys embedded in request URLs.** Multilingual's Google TTS service builds its endpoint URL with the key as a query parameter (AUDIT_03 §5 cited `google_service.py:16`; live request is `:75`; `:16` is unused). All provider adapters in UCVE authenticate via headers set at request time, sourced from the secrets layer (File 9 roadmap, infra section), never baked into a URL string.
 3. **Capability/adapter mismatch left unreconciled.** Habiba's own capability table still lists a deprecated model (`gemini-2.5-flash`) that the adapter code silently remaps to a different default (AUDIT_04 §6: "Capability table still lists `gemini-2.5-flash` as ur/en default model — mismatch with adapter remap"). UCVE's registry validates at startup that every capability-table entry resolves to a real, currently-valid adapter configuration, and fails loudly on mismatch rather than silently remapping.
+4. **Single-vendor priority lists.** v3 is Gladia+Gemini+Uplift with no STT/LLM retry (AUDIT_01 §1, §6). Habiba's ur path is gladia+gemini+uplift only (AUDIT_04 §2). UCVE treats a critical category/language with fewer than two `enabled` routes (commercial+commercial or commercial+local) as a **configuration error** at mint time (File 1 §3.6). The registry's "no silent fallback" rule (AUDIT_04 §6) still applies to *unknown* provider ids; it does not mean "one provider is fine."

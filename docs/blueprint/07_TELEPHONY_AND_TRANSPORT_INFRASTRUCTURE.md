@@ -11,7 +11,7 @@ The original audit protocol assumed `awazlabs` had "enterprise-grade... barge-in
 - **awaazlabs has zero telephony transport code.** It receives Retell AI's *post-call* webhooks; Retell owns the entire real-time voice/telephony leg externally (AUDIT_02 §1: "Inbound voice is owned by Retell AI (external)... Audio never enters this codebase as PCM"). There is no SIP, no WebSocket audio, no TwiML in this repo (AUDIT_02 §4: "NOT IMPLEMENTED / ABSENT" for TwiML/Twilio Media Streams and SIP/Asterisk both).
 - **habiba-sdk-agent's telephony is Telnyx + LiveKit SIP, not Twilio/Asterisk.** A repo-wide grep for `twilio|asterisk` returned zero matches (AUDIT_04 §1 scope note, header). The real path is Telnyx PSTN trunks terminating as SIP participants inside LiveKit rooms (AUDIT_04 §1 dependency diagram: "Telnyx[Telnyx PSTN] -->|SIP| LK[LiveKit Cloud]").
 
-**Implication for UCVE:** the `TwilioMediaStreamTransport` and `DirectSIPTransport` adapters specified in File 1 §3.4 are genuinely new build work, not extractions from existing code, except where Telnyx's pattern (webhook auth, SIP participant resolution) directly informs the `DirectSIPTransport` design. Do not assume Twilio-specific code exists anywhere in the audited codebases to port from.
+**Implication for UCVE:** `TwilioMediaStreamTransport` and a LiveKit-free `DirectSIPTransport` are new build work. Habiba informs Telnyx webhook auth and DID→agent resolve (AUDIT_04 §3 step 9), not a requirement to keep LiveKit on the call path. Do not assume Twilio-specific code exists in the audited trees to port from.
 
 ---
 
@@ -52,17 +52,17 @@ Telephony legs (Twilio Media Streams, generic SIP/RTP) typically deliver 20ms fr
 
 ## 3. WebRTC Signaling & Media Flow
 
-### 3.1 Managed plane (LiveKit) — adopted as-is from habiba
+### 3.1 Optional managed media plane (LiveKit / future SFU) — harvested from habiba, not load-bearing
 
-| Component | Habiba pattern | Citation |
+Habiba's production WebRTC path is LiveKit Cloud (AUDIT_04 §1). UCVE **may** run that path as a `LiveKitWebRTCTransport` adapter. It is **not** required to place a call (File 1 §1, §3.6).
+
+| Component | Habiba pattern | UCVE posture |
 |---|---|---|
-| SFU | LiveKit Cloud (external managed service) | AUDIT_04 §1 dependency diagram |
-| Session token | Short-TTL (120s) room-join-only JWT, minted by control plane | AUDIT_04 §3 handshake step 5 |
-| Client join | `livekit-client` Room connect with token + wsUrl | AUDIT_04 §2 transport, `sdk/src/index.ts:264-311` |
-| Data channels | LiveKit DataReceived events, used for legacy Habiba `metrics_updated` passthrough (UCVE wire name: `metric`, File 8 §3) | AUDIT_04 §4 |
-| ICE/STUN/TURN | Handled by LiveKit Cloud infrastructure, not configured in-repo | Out of scope per AUDIT_04 §2 (LiveKit internals not verifiable statically) |
-
-**UCVE addition `[NEW]`:** the master mandate calls for LiveKit/Daily bridge integration specs generally, not lock-in to one vendor. The `LiveKitWebRTCTransport` adapter (File 1 §3.4) should be built against an internal `MediaSFUAdapter` interface so a future `DailyWebRTCTransport` is a peer implementation, not a rewrite — same reasoning as the transport gateway abstraction itself.
+| SFU | LiveKit Cloud (external managed service) | Optional. `MediaSFUAdapter` so Daily or self-hosted LiveKit OSS / mediasoup is a peer later. AUDIT_05 §3: no in-repo SFU in any of the four — we do not invent one for v1, and we do not make Cloud SFU the product. |
+| Session token | Short-TTL (120s) room-join-only JWT | Used only when this adapter is selected |
+| Client join | `livekit-client` Room connect (`sdk/src/index.ts:198–202`) | Sovereign SDK speaks UCVE events (File 8 §3) over native WS first; LiveKit client is an optional transport backend |
+| Data channels | Habiba `metrics_updated` → UCVE `metric` | Same vocabulary on every adapter |
+| ICE/STUN/TURN | LiveKit Cloud | If this adapter is off, N/A; if on, still not in-repo (AUDIT_04 §2) |
 
 ### 3.2 Raw plane (custom WebSocket) — adopted from v3/multilingual
 
@@ -78,22 +78,19 @@ Telephony legs (Twilio Media Streams, generic SIP/RTP) typically deliver 20ms fr
 
 ## 4. SIP Trunk Gateway
 
-### 4.1 Adopted from habiba/Telnyx
+### 4.1 Adopted from habiba/Telnyx — generalized to dual-home trunks
+
+Habiba's live dialer is Telnyx-edged LiveKit SIP (AUDIT_04 §4; `telephony_service.py:999–1183`). UCVE keeps that as **one** `DirectSIPTransport` configuration, not the only trunk. File 1 §3.6: production telephony requires two independently reachable SIP destinations (Telnyx + `generic_pta` / Twilio SIP / second Telnyx account in another region). DID inventory may stay on Telnyx; call completion must not.
 
 ```python
 class SIPTrunkConfig(BaseModel):
-    provider: Literal["telnyx", "generic_pta"]   # generic_pta covers non-Telnyx
-                                                    # PTA-licensed trunks (Nayatel/
-                                                    # Wateen/PTCL pattern referenced
-                                                    # in the user's own prior PSTN
-                                                    # integration work, kept as a
-                                                    # named option here)
+    provider: Literal["telnyx", "generic_pta", "twilio_sip"]
     trunk_credentials_ref: str                     # secrets-layer reference, never
                                                      # inline (File 3 §6 anti-pattern)
-    webhook_public_key: str                         # Telnyx public-key webhook
-                                                     # verification, AUDIT_04 §4:
-                                                     # "POST /webhooks/telephony/telnyx
-                                                     # — Telnyx public key (env)"
+    webhook_public_key: str | None = None            # Telnyx public-key webhook
+                                                     # verification, AUDIT_04 §4
+    priority: int = 0                                # FailoverRouter-equivalent for PSTN
+    role: Literal["primary", "secondary"] = "primary"
 
 
 class SIPParticipantResolver:
@@ -107,9 +104,7 @@ class SIPParticipantResolver:
 
 ### 4.2 Outbound / warm transfer
 
-**Gap identified:** warm transfer, supervisor whisper, AMD/voicemail-drop campaign orchestration, and calling-window compliance gates are not evidenced as full UCVE-scope features in any of the four audits (AUDIT_05 §3 does not list them as checked-for collective gaps). Habiba **does** enumerate telephony routes including `outbound-calls` (AUDIT_04 §4: `telephony_routes.py` connect/rotate/numbers/SIP/outbound-calls/etc.) — so "no outbound surface at all" would be incorrect — but campaign AMD, warm-transfer, and whisper as specified below remain `[NEW]` build work required by the master mandate's Outbound Campaign Orchestrator and Live Call Monitoring requirements:
-
-> Corrected during finalization pass: earlier text claimed habiba telephony was "inbound PSTN→LiveKit only" and that "no legacy repo implements outbound calling"; AUDIT_04 §4 lists `outbound-calls` among portal/machine routes.
+**Gap identified:** warm transfer, supervisor whisper, AMD/voicemail-drop campaign orchestration, and calling-window compliance gates are not implemented in any of the four trees. Habiba **does** implement a **one-shot outbound PSTN dialer** that is LiveKit-coupled: `create_outbound_call` (`telephony_service.py:999–1183`) dispatches a named LiveKit worker then `create_sip_participant` toward a Telnyx edge. That is **one** adapter. UCVE's sovereign outbound path is `DirectSIPTransport` placing the call from `worker-raw` without LiveKit (File 1 §3.6). Telnyx remains inventory/SIP plumbing, not `/v2/calls`. `escalate_to_human` today only inserts `escalations` (`worker/tools.py:91–113`) — SIP bridge is `[NEW]`.
 
 ```python
 class WarmTransferService:

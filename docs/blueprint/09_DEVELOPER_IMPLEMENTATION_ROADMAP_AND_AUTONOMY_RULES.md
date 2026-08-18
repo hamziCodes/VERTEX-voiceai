@@ -1,6 +1,6 @@
 # 09 — Developer Implementation Roadmap & Autonomy Rules
 
-File 9 of 9 — the last file to read, and the one that governs how the previous eight get built.
+File 9 of 9 — the last engineering file to read. For a non-technical map of the product, start at `00_PRODUCT_OVERVIEW.md`.
 
 ---
 
@@ -17,13 +17,13 @@ unified-core-voice-engine/
 │   ├── app.py
 │   ├── secrets.py
 │   └── tests/
-├── worker-managed/                         # LiveKit AgentSession worker (File 1 §2.2)
-│   ├── main.py
-│   ├── providers/
-│   └── tests/
-├── worker-raw/                             # Cascaded-pipeline worker, raw PCM plane
+├── worker-raw/                             # Sovereign cascaded worker (File 1 §3.6)
 │   ├── main.py
 │   ├── orchestration/
+│   └── tests/
+├── worker-managed/                         # Optional LiveKit media adapter — not required to ship
+│   ├── main.py
+│   ├── providers/
 │   └── tests/
 ├── core/                                   # Shared across both worker planes
 │   ├── transport/                          # File 1 §3.4 BaseTransportGateway + adapters
@@ -80,21 +80,23 @@ unified-core-voice-engine/
 
 Six phases, ordered by dependency, not by file number — File 1's topology is the prerequisite for everything, but the phases pull specific pieces from multiple blueprint files at once because that's how the actual build dependency graph runs.
 
-### Phase 1 — Core Engine
-- `core/fsm/` (File 2 §2), `core/transport/native_websocket.py` + `livekit_webrtc.py` (File 1 §3.4, File 7 §3)
+### Phase 1 — Core Engine (sovereign plane first)
+- `core/fsm/` (File 2 §2), `core/transport/native_websocket.py` (File 1 §3.4, File 7 §3.2)
 - Bounded queues with standardized overflow policy (File 2 §1.1)
-- Barge-in protocol, both planes (File 2 §3)
-- **Exit criteria:** a session can connect on either plane, hold a turn-taking conversation with one hardcoded STT/LLM/TTS provider each, and survive a barge-in without audio bleed-through.
+- Barge-in protocol on the **in-process** plane (File 2 §3.1) — not LiveKit-delegated
+- **Exit criteria:** a session can connect on native WS, hold a turn-taking conversation, and survive barge-in without audio bleed-through, **with LiveKit unconfigured**. Optional `livekit_webrtc.py` may exist as a stub; it is not an exit gate.
 
 ### Phase 2 — Provider Adapters
 - `core/providers/` full registry + failover router (File 3 §4, §5)
 - Language router + normalizer (File 4 §2, §3)
-- **Exit criteria:** swapping STT/LLM/TTS provider is a config change, not a code change; a forced provider failure triggers failover within the configured circuit-breaker window.
+- Local adapters registered: `faster_whisper`, `piper` (or Coqui), `ollama` — even if quality is behind commercial
+- **Exit criteria:** swapping STT/LLM/TTS is a config change; a **forced kill of the primary** vendor (Gladia / Groq / Uplift) still completes a turn via the next route within the circuit-breaker window. A one-name priority list fails startup (File 1 §3.6, File 3 §6 #4).
 
 ### Phase 3 — Telephony Bridge
-- `telephony-gateway/` (File 7 §2–4), starting with `DirectSIPTransport` since Telnyx's existing pattern (habiba) is the closest ground truth to build from
-- `TwilioMediaStreamTransport` as a second adapter once the transport abstraction is proven with one telephony adapter
-- **Exit criteria:** an inbound PSTN call reaches the same pipeline core as a browser call, with correct μ-law↔PCM16 transcoding and no frame-size mismatches (File 7 §2.2).
+- `telephony-gateway/` (File 7 §2–4), `DirectSIPTransport` first (habiba Telnyx pattern as *one* trunk)
+- Second trunk adapter (`generic_pta` or Twilio SIP) before calling PSTN "production"
+- `TwilioMediaStreamTransport` as an additional media adapter once one SIP path is proven
+- **Exit criteria:** inbound PSTN reaches the same pipeline core as native WS, with μ-law↔PCM16 transcoding (File 7 §2.2), **without requiring LiveKit** for the call to connect. LiveKit SIP remains optional convenience.
 
 ### Phase 4 — MCP / RAG Layer
 - `core/mcp/`, `core/rag/` (File 6)
@@ -165,11 +167,11 @@ Metric-emission points already exist as a pattern in three of four legacy repos 
 
 - Control plane: horizontally scalable, stateless (session state moved to Redis per File 1 §3.3, closing habiba's in-process rate-limiter gap, AUDIT_04 §5)
 - Workers (both planes): scale on active-session count, not CPU alone, since Silero inference is pooled per-process (File 1 §3.2) and process count directly bounds concurrent session capacity
-- GPU note: none of the four legacy repos use GPU inference anywhere (Silero runs CPU-only in all cases, `torch` CPU wheels explicitly in v3's `requirements.txt`, AUDIT_01 §2: "torch 2.11.0+cpu... pinned, extra-index CPU wheel"). UCVE's default deployment is CPU-only; GPU is only relevant if a self-hosted LLM (vLLM/Ollama, mentioned as an optional provider in File 3) is deployed, which is a separate, optional infrastructure track.
+- GPU note: none of the four legacy repos use GPU inference anywhere (Silero runs CPU-only, AUDIT_01 §2). **Default deploy is CPU-only, self-hosted Postgres + Redis + the worker-raw image** (File 1 §3.6 Tier 0–1). GPU (vLLM) and LiveKit Cloud are optional tracks, not the install path. Helm/Terraform exist for scale; `docker compose` of control-plane + worker-raw + postgres + redis must be a documented, tested single-node product.
 
 ### 4.3 CI/CD
 
-Adopt habiba's GitHub Actions structure wholesale — it's the only one of the four with in-repo CI (AUDIT_04 §1: `.github/workflows/{ci,deploy-staging,deploy-prod,release-sdk,refresh-voice-previews}.yml`) — extended to cover the full monorepo's new services, not just the worker/control-plane/SDK split habiba had.
+Adopt habiba's GitHub Actions structure wholesale — it's the only one of the four with in-repo CI (AUDIT_04 §1: `.github/workflows/{ci,deploy-staging,deploy-prod,release-sdk,refresh-voice-previews}.yml`) — extended to the full monorepo. Staging/prod deploys must **not** assume a single cloud account (LiveKit Cloud project, one STT key, one SIP carrier) as the only green path; CI should run the kill-switch matrix in File 1 §3.6 against mocks.
 
 ---
 
@@ -180,12 +182,12 @@ Every one of these was a specific, cited bug or gap in a legacy repo. This is th
 | # | Anti-pattern | Source repo | File where the fix is specified |
 |---|---|---|---|
 | 1 | Sync blocking calls on event loop at session init (also: sync DB inside async tool handlers) | v3, habiba tools | File 1 §3.2, File 2 §5.1, File 6 §2.2 |
-| 2 | Unbounded queues | v3, multilingual | File 2 §1.1 |
+| 2 | Unbounded queues | v3 (MULTI queues are bounded; MULTI still has unbounded `ReplayableAsyncIterator._consumed` per turn) | File 2 §1.1 |
 | 3 | Fire-and-forget on a must-await callback | multilingual | File 2 §5.2 |
 | 4 | Secrets embedded in URLs | multilingual | File 2 §5.3, File 3 §6 |
-| 5 | Unbounded per-session resource construction | v3, multilingual | File 2 §5.4 |
+| 5 | Unbounded per-session resource construction | v3 Silero+HTTP; multilingual TTS HTTP (Silero is pooled) | File 2 §5.4 |
 | 6 | Invalid FSM transition logged but still applied | multilingual | File 2 §2.2 |
-| 7 | STT confidence field collected but never read | v3 | File 3 §2 (Transcript model), File 5 §4 |
+| 7 | STT `language` collected but never read (v3); `confidence` never collected in any of the four | v3 (language); all four (confidence) | File 3 §2 (Transcript model), File 5 §4 |
 | 8 | Fail-open auth secrets | awaazlabs | File 5 §6 |
 | 9 | Idempotency gaps (missing required field still "succeeds") | awaazlabs | File 5 §6 |
 | 10 | No retry/backoff on inter-service HTTP forwarding | awaazlabs | File 5 §6 |
@@ -196,6 +198,9 @@ Every one of these was a specific, cited bug or gap in a legacy repo. This is th
 | 15 | Barge-in discards the triggering utterance | v3 | File 2 §3.1 |
 | 16 | Aggressive word-count TTS split cutting mid-code-switch | v3, multilingual | File 4 §3.2 |
 | 17 | No zero-retention/PII redaction path | all four | File 5 §9 |
+| 18 | Single-vendor STT/LLM/TTS (or LiveKit as the orchestrator) | v3 chain; habiba ur path + AgentSession | File 1 §3.6, File 3 §5.2 / §6 #4, File 2 §3.2 |
+| 19 | Single PSTN carrier as the only way to place/receive a call | habiba Telnyx+LiveKit SIP | File 7 §4.1, File 1 §3.6 |
+| 20 | Extra SaaS for vectors/auth when Postgres+HMAC already exist | Clerk bypass (MULTI); Qdrant-as-required | File 6 §3.1, File 1 §3.5–§3.6 |
 
 ---
 
@@ -218,6 +223,7 @@ Specifically:
 Autonomy is not unlimited. The following are **not** subject to opportunistic reinterpretation without an explicit, documented reason:
 
 - The **child-safety, security, and compliance postures** established across Files 5, 6, and 7 (DATA-framing of untrusted content, fail-closed secrets, PII redaction ordering, calling-window enforcement) are load-bearing safety properties, not style preferences. Changing them requires the same rigor as changing them would in a security review — a written rationale, not a silent refactor.
+- The **product-sovereignty rules** in File 1 §3.6 (Tier 0 IP stays in-process; ≥2 routes per critical vendor category; native WS + Direct SIP must work with LiveKit unconfigured) are load-bearing. Convenience adapters (LiveKit Cloud, Gladia, Uplift, Telnyx, Groq) may be added or swapped; they may not become the only path.
 - The **evidence-based citation discipline** that produced this blueprint should carry forward into its implementation: when Cursor deviates from a documented decision, it should say so in code comments or commit messages with the same "here's what I found, here's why" rigor the audits themselves used — not silently diverge.
 - **Zero-modification of the original four legacy repos** (Rule 1 of the audit protocol) no longer applies once this blueprint phase begins — implementation necessarily means writing new code in the new monorepo (§1) — but the legacy repos remain the historical reference; don't delete or overwrite them, since File-level citations throughout this blueprint depend on them still being inspectable for provenance-checking during the build.
 

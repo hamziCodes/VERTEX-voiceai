@@ -24,7 +24,7 @@ Two of the four repos enable acoustic code-switching for Urdu; one deliberately 
 
 ### 2.1 Acoustic layer (STT-side)
 
-Handled entirely by the STT provider adapter's `code_switching` flag (File 3 §2). No in-house acoustic language-ID model is built here — Gladia streaming STT is used by three of four repos (AUDIT_01/03/04 §2), with `code_switching=True` only in v3 and multilingual (AUDIT_01/03 §2 STT); habiba's Gladia path sets CS off with a measured CER rationale (AUDIT_04 §2). Deepgram appears as an alternate `en` STT provider in habiba's capability table (AUDIT_04 §2 STT); CS/LID behavior for Deepgram is **NOT VERIFIED** (AUDIT_04 §5). Building a custom acoustic LID model is explicitly **out of scope** for the initial roadmap (File 9) since no legacy repo attempted one and provider-native language tagging has evidenced production use in the Gladia-backed repos.
+Handled entirely by the STT provider adapter's `code_switching` flag (File 3 §2). No in-house acoustic language-ID model is built here — Gladia streaming STT is used by three of four repos (AUDIT_01/03/04 §2), with `code_switching=True` only in v3 and multilingual (AUDIT_01/03 §2 STT); habiba's Gladia path sets CS off with a measured CER rationale (AUDIT_04 §2). Deepgram appears as an alternate `en` STT provider in habiba's capability table (AUDIT_04 §2 STT); CS/LID behavior for Deepgram is **NOT VERIFIED** (AUDIT_04 §5). **UCVE does not treat Gladia as the acoustic layer.** File 1 §3.6 requires a second STT (Deepgram and/or local `faster_whisper`) so a Gladia outage or region block cannot freeze Urdu. Building a custom acoustic LID model remains **out of scope** for the initial roadmap (File 9).
 
 ### 2.2 Text-layer language routing
 
@@ -36,11 +36,13 @@ class LanguageRouterConfig(BaseModel):
                                                           # AUDIT_03 §3 language
     debounce_consecutive_detections_required: int = 2   # for utterances below
                                                           # the word threshold
-    fallback_language: str = "en"                        # multilingual default
-                                                          # when STT returns an
-                                                          # unrecognized code,
-                                                          # AUDIT_03 §5: "Fallback
-                                                          # language 'en' if unknown"
+    fallback_language: str = "en"                        # LanguageRegistry.get()
+                                                          # default when *looked up*
+                                                          # by code (`language_registry.py:133–136`).
+                                                          # The router itself does NOT
+                                                          # apply this on unrecognized
+                                                          # STT tags — it keeps current
+                                                          # (`language_router.py:26–34`).
 
 
 class LanguageRouter:
@@ -70,10 +72,11 @@ class LanguageProfile(BaseModel):
     vad_silence_override_ms: int | None = None    # ur/ar: 800ms override,
                                                     # AUDIT_03 §2 VAD
     tts_voice_id: str
-    tts_first_chunk_word_count: int = 2           # multilingual's aggressive
-                                                    # first-chunk split for fast
-                                                    # TTFB, AUDIT_03 §5 — NOTE the
-                                                    # tradeoff below
+    tts_first_chunk_word_count: int = 2           # NOT a YAML field — hardcoded in
+                                                    # `groq_service.py:42–43` (YAML
+                                                    # `chunk_min_words` is 10/12).
+                                                    # Aggressive first-chunk split for
+                                                    # fast TTFB — NOTE the tradeoff below
     script_direction: str = "ltr"                  # "rtl" for ur/ar
 ```
 

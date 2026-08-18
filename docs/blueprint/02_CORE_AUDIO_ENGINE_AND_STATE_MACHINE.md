@@ -15,7 +15,7 @@ Every legacy repo used bounded `asyncio.Queue`s at transport boundaries — this
 | Inbound (mic→VAD/STT) | maxsize 100 | drop-oldest | **drop-oldest**, maxsize 100 | AUDIT_01 §5, AUDIT_03 §5 both use drop-oldest here — correct choice, since stale mic audio is worse than a gap |
 | VAD queue | maxsize 50 (v3) / 200 (multilingual) | drop-oldest (v3) / **drop-newest** (multilingual, `put_nowait` fails silently) | **drop-oldest**, maxsize 100 | AUDIT_03 §5 explicitly flags multilingual's drop-newest as inconsistent with v3 — UCVE standardizes on drop-oldest everywhere inbound so VAD always sees the most recent audio |
 | Outbound (TTS→client) | maxsize 200 | **blocking put** (backpressure) | **blocking put**, maxsize 200 | AUDIT_01 §5: "Sender backpressure — `await queue.put` blocks TTS" — correct: dropping *outgoing speech* would create audible corruption; better to backpressure the TTS producer |
-| Transcript queue (STT→turn manager) | **unbounded** in v3; multilingual `_SentenceBridge` already maxsize 50 | n/a / put can block | **bounded**, maxsize 200, drop-oldest-partial/keep-all-final | AUDIT_01 §5 flags `_transcript_queue` and `_SentenceBridge._q` as **UNBOUNDED**; AUDIT_03 §3/§5: `_SentenceBridge` maxsize 50 (not unbounded) — UCVE still bounds any remaining STT→turn queues. Finals are never dropped (policy in this cell); only partials are subject to the bound. |
+| Transcript queue (STT→turn manager) | **unbounded** in v3 (`_transcript_queue`); multilingual Gladia transcript queue maxsize 50 | n/a / put can block | **bounded**, maxsize 200, drop-oldest-partial/keep-all-final | Live: v3 `gladia_service.py:131` `asyncio.Queue()` (no maxsize); MULTI `gladia_service.py` transcript callbacks + session path are bounded. Do **not** conflate this with `_SentenceBridge` — that is LLM-sentence→TTS (`websocket.py:33–36` unbounded in v3; MULTI `session.py:25–27` maxsize 50). Finals are never dropped (policy in this cell); only partials are subject to the bound. |
 
 ### 1.2 Resampling
 
@@ -160,9 +160,9 @@ sequenceDiagram
 
 **Deliberate fix, not inherited:** v3 has a documented gap where the *utterance that triggered the barge-in* is discarded — `_on_transcript` ignores final transcripts arriving during `_speaking_until`, so the user has to repeat themselves (AUDIT_01 §3: "the barge-in utterance that triggered VAD is **not** used as the next turn's user text"). UCVE's Turn Manager explicitly buffers the STT stream through the barge-in transition and re-submits the first post-interruption final transcript as the new turn's input — this is a correctness fix, not a legacy pattern.
 
-### 3.2 Sequence (managed transport / LiveKit plane)
+### 3.2 Sequence (managed transport / optional SFU plane)
 
-For the LiveKit-mediated plane, barge-in is delegated to LiveKit's own interruption detector rather than reimplemented — habiba's approach (AUDIT_04 §3: "IMPLEMENTED via LiveKit AgentSession, not custom queue flush") is kept as-is for that plane, configured with:
+When an optional LiveKit (or other SFU) adapter is in use, **media** interruption may use the SFU's detector — habiba's LiveKit knobs (AUDIT_04 §3: "IMPLEMENTED via LiveKit AgentSession, not custom queue flush"):
 
 | Parameter | Value | Provenance |
 |---|---|---|
@@ -171,7 +171,7 @@ For the LiveKit-mediated plane, barge-in is delegated to LiveKit's own interrupt
 | `resume_false_interruption` | `False` — don't resume the old sentence after a false interrupt | AUDIT_04 §3 |
 | `endpointing.min_delay` | `0.2s` | AUDIT_04 §2 VAD |
 
-UCVE's Turn Manager still emits the same abstract `control.barge_in` event on this plane (via the transport gateway, File 1 §3.4; vocabulary in File 8 §3) so downstream consumers (analytics, post-call pipeline) see a consistent event vocabulary regardless of which plane handled the call.
+Those knobs are **hints to the media adapter**, not a substitute for File 2's FSM. UCVE's Turn Manager still owns `BARGE_IN_VERIFY` / `control.barge_in` (File 1 §3.6 Tier 0; vocabulary File 8 §3). If the SFU is down, the sovereign plane already runs the full v3/MULTI lock protocol (§3.1). Do not inherit habiba's "hard to run without LiveKit" coupling (AUDIT_04 §6).
 
 ### 3.3 Atomicity guarantee
 
@@ -206,12 +206,12 @@ This section exists because the audits found specific bugs that a naive re-synth
 **Synchronous blocking calls on the event loop at session-init time.** v3 does synchronous `open(prompt_path)` and a full `torch.hub.load` per session on the event loop (AUDIT_01 §5 blocking table). UCVE loads all such resources once at process startup (model pool, File 1 §3.2) or via `asyncio.to_thread`.
 
 ### 5.2 Fire-and-forget on must-await callbacks
-**Fire-and-forget task creation for callbacks that must be awaited.** Multilingual's sentence-dispatch callback uses `create_task` where its own `Protocol` interface says it MUST be awaited (AUDIT_03 §5: "Sentence callbacks: fire-and-forget `create_task` (protocol said MUST await)"). UCVE's callback contracts are enforced with `await`, and any deliberate fire-and-forget use is explicitly named (`spawn_background_task`) so it's never accidental.
+**Fire-and-forget task creation for callbacks that must be awaited.** Multilingual's sentence-dispatch callback uses `create_task` where its own `Protocol` interface says it MUST be awaited (AUDIT_03 §5; live `groq_service.py:143–146` and the same break on Gladia transcript callbacks at `gladia_service.py:375–378`). UCVE's callback contracts are enforced with `await`, and any deliberate fire-and-forget use is explicitly named (`spawn_background_task`) so it's never accidental.
 
 ### 5.3 Secrets embedded in URLs
-**Secrets embedded in URLs.** Multilingual's Google TTS URL embeds the API key in the query string at import time (AUDIT_03 §5). UCVE never places credentials in a URL; always header-based auth via the provider adapter (File 3).
+**Secrets embedded in URLs.** Multilingual's Google TTS request URL embeds the API key in the query string (AUDIT_03 §5 cited `google_service.py:16`, which is a dead module-level constant; the live request is `google_service.py:75`). UCVE never places credentials in a URL; always header-based auth via the provider adapter (File 3).
 
 ### 5.4 Unbounded per-session resource construction
-**Unbounded per-session resource construction.** v3 and multilingual both construct fresh model/HTTP-client instances per session rather than pooling (AUDIT_01 §5 concurrency: "no max-sessions, no per-tenant quotas... each session constructs its own Silero model"). UCVE pools at the process level (File 1 §3.2) and enforces habiba-style quota admission (File 1 §3.5) on every plane, not just the managed one.
+**Unbounded per-session resource construction.** v3 constructs a fresh Silero model + Uplift HTTP client per session (AUDIT_01 §5; live `websocket.py:70–71`). Multilingual **does** pool Silero process-wide (`SileroModelPool`) but still constructs three TTS HTTP sessions per WebSocket session (`tts_manager.py:153–158`). UCVE pools at the process level (File 1 §3.2) and enforces habiba-style quota admission (File 1 §3.5) on every plane, not just the managed one.
 
 > Corrected during finalization pass: renumbered as §5.1–§5.4 so File 9 §5 anti-pattern checklist links resolve.
