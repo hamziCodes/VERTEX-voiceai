@@ -1,0 +1,12 @@
+# Runtime profile: standard (default production)
+# Phase 31 — 25 active sessions per worker
+
+name: standard
+max_sessions_per_worker: 25
+silero_pool_size: 4
+asyncio_worker_tasks: 8
+redis_memory_mb: 1024
+postgres_conn_pool: 20
+max_provider_streams: 50
+worker_ram_gb: 8
+worker_vcpu: 4

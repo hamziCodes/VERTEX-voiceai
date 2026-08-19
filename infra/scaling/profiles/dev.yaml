@@ -1,0 +1,12 @@
+# Runtime profile: dev
+# Phase 31 — local compose and CI
+
+name: dev
+max_sessions_per_worker: 5
+silero_pool_size: 2
+asyncio_worker_tasks: 4
+redis_memory_mb: 512
+postgres_conn_pool: 5
+max_provider_streams: 10
+worker_ram_gb: 4
+worker_vcpu: 2

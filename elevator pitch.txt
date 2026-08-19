@@ -1,0 +1,6 @@
+PART 1 — Non-Technical Elevator Pitch
+VERTEX Voice AI Engine is a universal, modular voice platform and plug-in SDK that lets businesses run natural, low-latency phone and web conversations in 
+multiple languages—including seamless English–Urdu switching—without being locked into a single AI vendor. Developers and B2B teams connect it to existing 
+apps, websites, phone systems, or APIs through the SDK; non-technical users use a self-serve visual agent builder to create, customize, and deploy voice 
+agents on demand. After each call, the platform captures structured outcomes and can route them to CRM and business tools, with compliance controls for 
+regulated industries.

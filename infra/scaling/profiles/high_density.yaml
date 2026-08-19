@@ -1,0 +1,12 @@
+# Runtime profile: high_density
+# Phase 31 — explicit opt-in; requires Phase 02 buffer review + Phase 33 load evidence
+
+name: high_density
+max_sessions_per_worker: 40
+silero_pool_size: 6
+asyncio_worker_tasks: 12
+redis_memory_mb: 2048
+postgres_conn_pool: 30
+max_provider_streams: 80
+worker_ram_gb: 16
+worker_vcpu: 8
