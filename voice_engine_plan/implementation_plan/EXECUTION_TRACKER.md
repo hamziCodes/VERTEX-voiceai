@@ -21,7 +21,7 @@ Status values: `PENDING` / `IN_PROGRESS` / `READY_FOR_MANUAL_TEST` / `COMPLETED`
 | 14 | Usage Metering and Tenant Quotas | COMPLETED | test_phase_14_usage_metering.py | No — resolved (80/100% caps; per-session flush; 2min heartbeat; test_call_sec sandbox kind) | 2026-08-21 |
 | 15 | Multilingual Language Registry and Routing Policies | COMPLETED | test_phase_15_multilingual_registry.py | No — resolved (ar/ms measure-only; language-add workflow; RTL required) | 2026-08-21 |
 | 16 | Text Normalization and Pronunciation Layer | COMPLETED | test_phase_16_text_normalization.py | No — resolved (2 retries→fallback; SSML [LATER]; English pass-through) | 2026-08-21 |
-| 17 | Real-Time Orchestration Pipeline Integration | IN_PROGRESS | test_phase_17_pipeline_integration.py | No — resolved (VAD wired; Redis hot state; basic reconnect [LATER] full) | |
+| 17 | Real-Time Orchestration Pipeline Integration | COMPLETED | test_phase_17_pipeline_integration.py | No — resolved (VAD wired; Redis hot state; basic reconnect [LATER] full) | 2026-08-21 |
 | 18 | Telephony/SIP Base (Telnyx + Direct SIP Sovereign Path) | IN_PROGRESS | test_phase_18_telephony_sip_base.py | No — resolved (exit=DirectSIP not LiveKit; caller ID required; inbound-only) | |
 | 19 | Telephony Abstraction and Secondary Trunk Readiness | IN_PROGRESS | test_phase_19_telephony_abstraction.py | No — resolved (single trunk default; DirectSIP outbound [LATER]; Twilio stub) | |
 | 20 | Post-Call Intelligence Core Record Schema | IN_PROGRESS | test_phase_20_post_call_record_schema.py | No — resolved (tier recording; dual-channel; memory_embed stub; **caller_id E.164**) | |

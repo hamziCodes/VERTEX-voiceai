@@ -72,10 +72,10 @@ class FailoverRouter:
 
     def __init__(
         self,
-        priority: list[str],
+        priority: list[str] | None = None,
         config: CircuitBreakerConfig | None = None,
     ) -> None:
-        self.priority = list(priority)
+        self.priority = list(priority or ["primary", "secondary"])
         self.config = config or CircuitBreakerConfig()
         self.health_map: dict[str, ProviderHealthState] = {
             pid: ProviderHealthState(pid, rolling_window_size=self.config.rolling_window_size)
