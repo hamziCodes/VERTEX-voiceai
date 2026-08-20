@@ -48,3 +48,43 @@ async def test_tts_honors_cancel_token(interfaces_module) -> None:
     async for chunk in provider.synthesize_stream("hi", TTSConfig(voice_id="test"), token):
         chunks.append(chunk)
     assert chunks == []
+
+
+def test_abc_cannot_be_instantiated(interfaces_module) -> None:
+    from core.providers.interfaces.llm import BaseLLMProvider  # type: ignore
+    from core.providers.interfaces.s2s import BaseSpeechToSpeechProvider  # type: ignore
+    from core.providers.interfaces.stt import BaseSTTProvider  # type: ignore
+    from core.providers.interfaces.tts import BaseTTSProvider  # type: ignore
+    from core.providers.interfaces.vad import BaseVADProvider  # type: ignore
+
+    for abc_cls in (
+        BaseVADProvider,
+        BaseSTTProvider,
+        BaseLLMProvider,
+        BaseTTSProvider,
+        BaseSpeechToSpeechProvider,
+    ):
+        with pytest.raises(TypeError):
+            abc_cls()  # type: ignore
+
+
+def test_all_null_adapters_health_check(interfaces_module) -> None:
+    from core.providers.adapters.null_llm import NullLLMProvider  # type: ignore
+    from core.providers.adapters.null_s2s import NullS2SProvider  # type: ignore
+    from core.providers.adapters.null_stt import NullSTTProvider  # type: ignore
+    from core.providers.adapters.null_tts import NullTTSProvider  # type: ignore
+    from core.providers.adapters.null_vad import NullVADProvider  # type: ignore
+
+    assert NullVADProvider().health_check() is True
+    assert NullSTTProvider().health_check() is True
+    assert NullLLMProvider().health_check() is True
+    assert NullTTSProvider().health_check() is True
+    assert NullS2SProvider().health_check() is True
+
+
+def test_stt_config_validation_rejects_empty_language(interfaces_module) -> None:
+    from core.providers.interfaces.stt import STTConfig  # type: ignore
+
+    with pytest.raises(ValueError):
+        STTConfig(language="")
+
