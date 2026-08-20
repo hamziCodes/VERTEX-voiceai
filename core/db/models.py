@@ -66,12 +66,14 @@ class Session:
 
 @dataclass
 class SessionTranscript:
-    """Session queryable transcript JSONB record."""
+    """Session queryable transcript JSONB record (dual-column persist)."""
 
     id: str
     session_id: str
     tenant_id: str
     turns: list[dict[str, Any]] = field(default_factory=list)
+    transcript_raw_encrypted: str | None = None
+    transcript_redacted: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
 

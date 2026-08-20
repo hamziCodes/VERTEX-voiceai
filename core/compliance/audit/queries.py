@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from core.compliance.audit.models import AuditEvent
+from core.compliance.audit.writer import shared_audit_logs
 
 
 class AuditQueries:
     """Read-only audit query engine enforcing tenant boundary and platform_admin cross-tenant access."""
 
     def __init__(self, logs: list[AuditEvent] | None = None) -> None:
-        self._logs = logs or []
+        self._logs = logs if logs is not None else shared_audit_logs()
 
     def query_tenant_audit_logs(
         self, tenant_id: str, requester_tenant_id: str

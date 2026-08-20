@@ -39,12 +39,15 @@ class SessionRepository:
     async def save_transcript(
         self, tenant_id: str, transcript: SessionTranscript
     ) -> SessionTranscript:
-        """Persist structured transcript JSONB record."""
+        """Persist structured transcript JSONB record (dual columns preferred)."""
         if not tenant_id:
             raise PermissionError("Missing tenant_id in query context.")
         if transcript.tenant_id != tenant_id:
             raise PermissionError("Transcript tenant_id mismatch with query context.")
 
+        # Keep legacy `turns` mirrored from redacted when redacted present.
+        if transcript.transcript_redacted and not transcript.turns:
+            transcript.turns = list(transcript.transcript_redacted)
         self._transcripts[transcript.session_id] = transcript
         return transcript
 

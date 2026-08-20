@@ -1,34 +1,100 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>UCVE Web Client Demo</title>
+  <meta charset="UTF-8" />
+  <title>UCVE AudioWorklet Demo</title>
+  <style>
+    body { font-family: Georgia, serif; margin: 2rem; background: #0f1419; color: #e7ecf1; }
+    button { margin-right: 0.5rem; padding: 0.6rem 1rem; }
+    #status { margin-top: 1rem; opacity: 0.85; }
+  </style>
 </head>
 <body>
-  <h1>UCVE Real-Time Talking Session Web Client</h1>
-  <button id="connectBtn">Connect Session</button>
-  <button id="disconnectBtn">Disconnect</button>
-  <div id="status">Status: Disconnected</div>
-
-  <script>
-    const connectBtn = document.getElementById('connectBtn');
-    const disconnectBtn = document.getElementById('disconnectBtn');
-    const statusDiv = document.getElementById('status');
+  <h1>UCVE</h1>
+  <p>Local AudioWorklet demo — mic PCM16 @ 16 kHz → worker WS.</p>
+  <button id="startBtn">Start call</button>
+  <button id="stopBtn">Stop</button>
+  <div id="status">Status: idle</div>
+  <script type="module">
+    const statusEl = document.getElementById('status');
     let ws = null;
+    let audioCtx = null;
+    let workletNode = null;
+    let playTime = 0;
 
-    connectBtn.onclick = () => {
-      const token = prompt('Enter session JWT token:');
-      if (!token) return;
-      ws = new WebSocket(`ws://localhost:8080/ws/audio?token=${token}`);
-      ws.binaryType = 'arraybuffer';
+    async function mint() {
+      const tenantId = localStorage.getItem('ucve_tenant_id') || '00000000-0000-0000-0000-000000000001';
+      const agentId = localStorage.getItem('ucve_agent_id') || '00000000-0000-0000-0000-0000000000a1';
+      const resp = await fetch('http://127.0.0.1:8090/mint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenant_id: tenantId, agent_id: agentId }),
+      });
+      if (!resp.ok) throw new Error('mint failed: ' + resp.status);
+      return resp.json();
+    }
 
-      ws.onopen = () => { statusDiv.textContent = 'Status: Connected'; };
-      ws.onclose = () => { statusDiv.textContent = 'Status: Disconnected'; };
-      ws.onerror = (err) => { console.error('WS Error', err); };
+    function playPcm16(buf) {
+      if (!audioCtx) return;
+      const samples = new Int16Array(buf);
+      const f32 = new Float32Array(samples.length);
+      for (let i = 0; i < samples.length; i++) f32[i] = samples[i] / 32768;
+      const audioBuf = audioCtx.createBuffer(1, f32.length, 16000);
+      audioBuf.copyToChannel(f32, 0);
+      const src = audioCtx.createBufferSource();
+      src.buffer = audioBuf;
+      src.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+      if (playTime < now) playTime = now;
+      src.start(playTime);
+      playTime += audioBuf.duration;
+    }
+
+    document.getElementById('startBtn').onclick = async () => {
+      try {
+        statusEl.textContent = 'Status: minting…';
+        const minted = await mint();
+        const wsUrl = (minted.ws_url || 'ws://127.0.0.1:8081/ws/audio') +
+          (minted.ws_url?.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(minted.token);
+        // Fix: ws_url already path; append token query
+        const url = new URL(minted.ws_url || 'ws://127.0.0.1:8081/ws/audio');
+        url.searchParams.set('token', minted.token);
+
+        audioCtx = new AudioContext({ sampleRate: 16000 });
+        await audioCtx.audioWorklet.addModule('./pcm-worklet.js');
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const src = audioCtx.createMediaStreamSource(stream);
+        workletNode = new AudioWorkletNode(audioCtx, 'pcm16-capture');
+        src.connect(workletNode);
+
+        ws = new WebSocket(url.toString());
+        ws.binaryType = 'arraybuffer';
+        ws.onopen = () => { statusEl.textContent = 'Status: connected'; };
+        ws.onmessage = (ev) => {
+          if (typeof ev.data === 'string') {
+            try {
+              const msg = JSON.parse(ev.data);
+              if (msg.event_type === 'ping') {
+                ws.send(JSON.stringify({ event_type: 'pong', timestamp_ms: Date.now(), payload: {} }));
+              }
+            } catch (_) {}
+            return;
+          }
+          playPcm16(ev.data);
+        };
+        workletNode.port.onmessage = (ev) => {
+          if (ws && ws.readyState === WebSocket.OPEN) ws.send(ev.data);
+        };
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = 'Status: error ' + e.message;
+      }
     };
 
-    disconnectBtn.onclick = () => {
+    document.getElementById('stopBtn').onclick = () => {
       if (ws) ws.close();
+      if (audioCtx) audioCtx.close();
+      statusEl.textContent = 'Status: stopped';
     };
   </script>
 </body>

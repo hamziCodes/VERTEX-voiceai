@@ -2,6 +2,15 @@
 
 Status values: `PENDING` / `IN_PROGRESS` / `READY_FOR_MANUAL_TEST` / `COMPLETED`
 
+## Foundation Hardening Gate
+
+| Program | Status | Sign-off Date | Notes |
+|---|---|---|---|
+| `FOUNDATION_HARDENING` | `IN_PROGRESS` | — | H0–H6 code complete; awaiting compose/demo for `FOUNDATION_READY` |
+| `FOUNDATION_READY` | blocked | — | Phases **18–35 must not execute** until this is signed — see `docs/runbooks/FOUNDATION_READY.md` |
+
+---
+
 | Phase | Name | Status | Test Script | Human Intervention Required | Sign-off Date |
 |---|---|---|---|---|---|
 | 00 | Monorepo Planning Baseline | COMPLETED | test_phase_00_monorepo_baseline.py | No — resolved (uv; top-level layout; TS SDK → Phase 28) | 2026-08-20 |
@@ -22,21 +31,21 @@ Status values: `PENDING` / `IN_PROGRESS` / `READY_FOR_MANUAL_TEST` / `COMPLETED`
 | 15 | Multilingual Language Registry and Routing Policies | COMPLETED | test_phase_15_multilingual_registry.py | No — resolved (ar/ms measure-only; language-add workflow; RTL required) | 2026-08-21 |
 | 16 | Text Normalization and Pronunciation Layer | COMPLETED | test_phase_16_text_normalization.py | No — resolved (2 retries→fallback; SSML [LATER]; English pass-through) | 2026-08-21 |
 | 17 | Real-Time Orchestration Pipeline Integration | COMPLETED | test_phase_17_pipeline_integration.py | No — resolved (VAD wired; Redis hot state; basic reconnect [LATER] full) | 2026-08-21 |
-| 18 | Telephony/SIP Base (Telnyx + Direct SIP Sovereign Path) | IN_PROGRESS | test_phase_18_telephony_sip_base.py | No — resolved (exit=DirectSIP not LiveKit; caller ID required; inbound-only) | |
-| 19 | Telephony Abstraction and Secondary Trunk Readiness | IN_PROGRESS | test_phase_19_telephony_abstraction.py | No — resolved (single trunk default; DirectSIP outbound [LATER]; Twilio stub) | |
-| 20 | Post-Call Intelligence Core Record Schema | IN_PROGRESS | test_phase_20_post_call_record_schema.py | No — resolved (tier recording; dual-channel; memory_embed stub; **caller_id E.164**) | |
-| 21 | Structured Extraction and CRM Dispatch Contracts | IN_PROGRESS | test_phase_21_crm_dispatch.py | No — resolved (review queue stub; WhatsApp stub; max_fields per-tenant) | |
-| 22 | Real-Time MCP Tooling Integration Layer | IN_PROGRESS | test_phase_22_mcp_tooling.py | No — resolved (HTTP/SSE default; 3s timeout+fallback; serial v1) | |
-| 23 | Real-Time RAG and Knowledge Ingestion Contracts | IN_PROGRESS | test_phase_23_realtime_rag.py | No — resolved (tier embedder; 400/64 chunks; conservative 0.08 speculative) | |
-| 24 | Latency Budget Enforcement and SLO Policies | IN_PROGRESS | test_phase_24_latency_slo.py | No — resolved (warn-only v1; client playback_started; S2S [LATER]) | |
-| 25 | Error Taxonomy and Alerting Strategy | IN_PROGRESS | test_phase_25_error_alerting.py | No — resolved (generic client errors; DLQ 30d; email/webhook v1) | |
-| 26 | Self-Serve Agent Builder Domain Model | IN_PROGRESS | test_phase_26_agent_builder_domain.py | No — resolved (autosave 30s; config pin at mint; marketplace [LATER]) | |
-| 27 | Self-Serve Agent Builder UX Flow Spec | IN_PROGRESS | test_phase_27_agent_builder_ux.py | No — resolved (standalone SPA; sandbox test calls; no outbound UI) | |
-| 28 | SDK/API Surface and Versioning Strategy | IN_PROGRESS | test_phase_28_sdk_api_surface.py | No — resolved (Flutter roadmap; @ucve/voice-livekit separate; self-hosted /docs) | |
-| 29 | External Developer Experience and Documentation Spec | IN_PROGRESS | test_phase_29_developer_experience.py | No — resolved (in-repo Markdown; three audience paths; no external doc SaaS) | |
-| 30 | Deployment Topology and Environment Strategy | IN_PROGRESS | test_phase_30_deployment_topology.py | No — resolved (docker compose default; torch explicit; LiveKit optional profile) | |
-| 31 | Scaling and Runtime Resource Profiles | IN_PROGRESS | test_phase_31_scaling_profiles.py | No — resolved (session-count scale; standard profile default; no scale-to-zero) | |
-| 32 | Security Hardening and Threat Controls | IN_PROGRESS | test_phase_32_security_hardening.py | No — resolved (anti-pattern pytest; pentest readiness doc; WAF [LATER]) | |
-| 33 | End-to-End Validation Harness and Test Matrix | IN_PROGRESS | test_phase_33_e2e_validation.py | No — resolved (mock E2E PR; real provider nightly [LATER]; sovereign default suite) | |
-| 34 | Release Governance and Operational Runbooks | IN_PROGRESS | test_phase_34_release_governance.py | No — resolved (manual prod gate; in-repo runbooks; SDK lockstep minor) | |
-| 35 | Stage-2 Plan Folder Finalization | IN_PROGRESS | test_phase_35_plan_finalization.py | No — resolved (README + integrity script; zero open ambiguities 00–34) | |
+| 18 | Telephony/SIP Base (Telnyx + Direct SIP Sovereign Path) | PENDING | test_phase_18_telephony_sip_base.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 19 | Telephony Abstraction and Secondary Trunk Readiness | PENDING | test_phase_19_telephony_abstraction.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 20 | Post-Call Intelligence Core Record Schema | PENDING | test_phase_20_post_call_record_schema.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 21 | Structured Extraction and CRM Dispatch Contracts | PENDING | test_phase_21_crm_dispatch.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 22 | Real-Time MCP Tooling Integration Layer | PENDING | test_phase_22_mcp_tooling.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 23 | Real-Time RAG and Knowledge Ingestion Contracts | PENDING | test_phase_23_realtime_rag.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 24 | Latency Budget Enforcement and SLO Policies | PENDING | test_phase_24_latency_slo.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 25 | Error Taxonomy and Alerting Strategy | PENDING | test_phase_25_error_alerting.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 26 | Self-Serve Agent Builder Domain Model | PENDING | test_phase_26_agent_builder_domain.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 27 | Self-Serve Agent Builder UX Flow Spec | PENDING | test_phase_27_agent_builder_ux.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 28 | SDK/API Surface and Versioning Strategy | PENDING | test_phase_28_sdk_api_surface.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 29 | External Developer Experience and Documentation Spec | PENDING | test_phase_29_developer_experience.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 30 | Deployment Topology and Environment Strategy | PENDING | test_phase_30_deployment_topology.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 31 | Scaling and Runtime Resource Profiles | PENDING | test_phase_31_scaling_profiles.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 32 | Security Hardening and Threat Controls | PENDING | test_phase_32_security_hardening.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 33 | End-to-End Validation Harness and Test Matrix | PENDING | test_phase_33_e2e_validation.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 34 | Release Governance and Operational Runbooks | PENDING | test_phase_34_release_governance.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 35 | Stage-2 Plan Folder Finalization | PENDING | test_phase_35_plan_finalization.py | **BLOCKED** until `FOUNDATION_READY` | |

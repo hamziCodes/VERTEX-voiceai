@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-import hmac
 import hashlib
+import hmac
 import time
 
 from core.redis.nonce_store import NonceStore
+
+__all__ = [
+    "NonceStore",
+    "expected_signature",
+    "verify_mint_signature",
+]
 
 
 def expected_signature(
@@ -34,7 +40,7 @@ def verify_mint_signature(
 
     now = time.time()
     if abs(now - ts_float) > max_age_sec:
-        return False  # Expired timestamp outside replay window
+        return False
 
     expected = expected_signature(secret, tenant_id, ts, nonce, agent_id)
     return hmac.compare_digest(expected, signature)

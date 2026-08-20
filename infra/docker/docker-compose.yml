@@ -1,5 +1,5 @@
-# UCVE single-node stack (Phase 30)
-# Usage: docker compose --env-file .env up -d
+# UCVE single-node stack (Foundation Hardening H0+)
+# Usage: docker compose --env-file .env.example up -d --build
 
 services:
   postgres:
@@ -38,8 +38,18 @@ services:
     ports:
       - "8080:8080"
     environment:
+      UCVE_ENV: ${UCVE_ENV:-development}
       DATABASE_URL: postgresql://${POSTGRES_USER:-ucve}:${POSTGRES_PASSWORD:-ucve_dev}@postgres:5432/${POSTGRES_DB:-ucve}
       REDIS_URL: redis://redis:6379/0
+      UCVE_JWT_SECRET: ${UCVE_JWT_SECRET:-dev-only-replace-me-jwt-32chars-min}
+      UCVE_MINT_HMAC_SECRET: ${UCVE_MINT_HMAC_SECRET:-dev-only-replace-me-mint-hmac-32}
+      UCVE_METRICS_BEARER: ${UCVE_METRICS_BEARER:-dev-only-replace-me-metrics-bearer}
+      UCVE_WS_PUBLIC_URL: ${UCVE_WS_PUBLIC_URL:-ws://localhost:8081/ws/audio}
+      UCVE_MASTER_KEY: ${UCVE_MASTER_KEY:-}
+      AWS_KMS_KEY_ID: ${AWS_KMS_KEY_ID:-}
+      PLATFORM_GLADIA_API_KEY: ${PLATFORM_GLADIA_API_KEY:-}
+      PLATFORM_GROQ_API_KEY: ${PLATFORM_GROQ_API_KEY:-}
+      PLATFORM_UPLIFT_API_KEY: ${PLATFORM_UPLIFT_API_KEY:-}
       OTEL_EXPORTER_ENABLED: ${OTEL_EXPORTER_ENABLED:-false}
     depends_on:
       postgres:
@@ -59,8 +69,16 @@ services:
     ports:
       - "8081:8081"
     environment:
+      UCVE_ENV: ${UCVE_ENV:-development}
       DATABASE_URL: postgresql://${POSTGRES_USER:-ucve}:${POSTGRES_PASSWORD:-ucve_dev}@postgres:5432/${POSTGRES_DB:-ucve}
       REDIS_URL: redis://redis:6379/0
+      UCVE_JWT_SECRET: ${UCVE_JWT_SECRET:-dev-only-replace-me-jwt-32chars-min}
+      UCVE_WS_PUBLIC_URL: ${UCVE_WS_PUBLIC_URL:-ws://localhost:8081/ws/audio}
+      UCVE_MASTER_KEY: ${UCVE_MASTER_KEY:-}
+      AWS_KMS_KEY_ID: ${AWS_KMS_KEY_ID:-}
+      PLATFORM_GLADIA_API_KEY: ${PLATFORM_GLADIA_API_KEY:-}
+      PLATFORM_GROQ_API_KEY: ${PLATFORM_GROQ_API_KEY:-}
+      PLATFORM_UPLIFT_API_KEY: ${PLATFORM_UPLIFT_API_KEY:-}
       UCVE_RUNTIME_PROFILE: ${UCVE_RUNTIME_PROFILE:-dev}
       UCVE_ENABLE_LIVEKIT: "false"
       OMP_NUM_THREADS: "1"

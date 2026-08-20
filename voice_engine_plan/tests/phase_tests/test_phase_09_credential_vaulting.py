@@ -96,10 +96,11 @@ def test_audit_hook_called_on_resolve(vault_module) -> None:
     assert audit_calls[0] == ("t-audit", "groq", "resolve_cached") or audit_calls[0] == ("t-audit", "groq", "resolve_decrypted")
 
 
-def test_platform_key_fallback(vault_module) -> None:
+def test_platform_key_fallback(vault_module, monkeypatch) -> None:
     SecretVault = vault_module.SecretVault
+    monkeypatch.setenv("PLATFORM_GLADIA_API_KEY", "sk-platform-gladia-from-env")
     v = SecretVault()
-    # No tenant BYOK key set, key_tier="platform" -> falls back to platform default key
+    # No tenant BYOK key set, key_tier="platform" -> falls back to env platform key
     platform_key = v.resolve(tenant_id="t-smb", provider_id="gladia", key_tier="platform")
-    assert platform_key == "sk-platform-gladia-default"
+    assert platform_key == "sk-platform-gladia-from-env"
 

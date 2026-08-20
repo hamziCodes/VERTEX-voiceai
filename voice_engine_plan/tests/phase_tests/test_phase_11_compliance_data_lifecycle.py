@@ -55,9 +55,11 @@ def test_gdpr_erasure_cascade() -> None:
     from core.compliance.erasure import ErasureOrchestrator
 
     orchestrator = ErasureOrchestrator()
+    orchestrator.register_session_fixture("tenant-gdpr-123", "sess-gdpr-1")
     record = orchestrator.execute_tenant_erasure("tenant-gdpr-123")
     assert record["status"] == "completed"
-    assert "session_transcripts" in record["cascaded_artifacts"]
+    assert "sessions" in record["cascaded_artifacts"]
+    assert not orchestrator.has_session("sess-gdpr-1")
 
 
 def test_retention_days_calculation() -> None:

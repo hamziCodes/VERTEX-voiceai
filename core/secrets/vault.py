@@ -13,22 +13,14 @@ from core.secrets.kms.local_dev import LocalDevKMSBackend
 
 
 class PlatformSecrets:
-    """Fallback provider API keys for platform-managed tenant tier."""
-
-    _platform_defaults: dict[str, str] = {
-        "gladia": "sk-platform-gladia-default",
-        "deepgram": "sk-platform-deepgram-default",
-        "groq": "sk-platform-groq-default",
-        "uplift": "sk-platform-uplift-default",
-        "cartesia": "sk-platform-cartesia-default",
-    }
+    """Fallback provider API keys for platform-managed tenant tier (env only)."""
 
     @classmethod
     def get_platform_key(cls, provider_id: str) -> str | None:
         env_key = os.getenv(f"PLATFORM_{provider_id.upper()}_API_KEY")
-        if env_key:
-            return env_key
-        return cls._platform_defaults.get(provider_id.lower())
+        if env_key and env_key.strip():
+            return env_key.strip()
+        return None
 
 
 class SecretVault:

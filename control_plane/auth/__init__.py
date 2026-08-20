@@ -7,7 +7,14 @@ from control_plane.auth.api_keys import APIKeyManager
 from control_plane.auth.hmac_mint import NonceStore, expected_signature, verify_mint_signature
 from control_plane.auth.jwt import issue_session_jwt, verify_session_jwt
 from control_plane.auth.middleware import enforce_rbac
-from control_plane.auth.oidc_hook import OIDCProvider, OIDCProviderStub
+from control_plane.auth.oidc_hook import (
+    OIDCNotConfigured,
+    OIDCProvider,
+    OIDCProviderStub,
+    authenticate_token,
+    get_oidc_provider,
+    register_oidc_provider,
+)
 from control_plane.auth.rate_limit import RateLimiter
 from control_plane.auth.rbac import RBACManager
 
@@ -29,5 +36,9 @@ __all__ = [
     "RateLimiter",
     "OIDCProvider",
     "OIDCProviderStub",
+    "OIDCNotConfigured",
+    "authenticate_token",
+    "get_oidc_provider",
+    "register_oidc_provider",
     "enforce_rbac",
 ]

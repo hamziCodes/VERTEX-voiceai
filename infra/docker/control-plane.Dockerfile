@@ -1,19 +1,34 @@
-# control-plane: API + mint + OpenAPI docs (Phase 30 stub)
+# control-plane image — builds from underscore package dir control_plane/
 
 FROM python:3.12-slim
 
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    UCVE_ENV=development
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY control-plane/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir fastapi uvicorn
+COPY core/pyproject.toml /app/core/pyproject.toml
+COPY core/ /app/core/
+COPY control_plane/pyproject.toml /app/control_plane/pyproject.toml
+COPY control_plane/ /app/control_plane/
 
-COPY control-plane/ /app/control-plane/
+RUN pip install --no-cache-dir \
+    "fastapi>=0.115.0" \
+    "uvicorn[standard]>=0.32.0" \
+    "httpx>=0.27.0" \
+    "PyJWT>=2.9.0" \
+    "redis>=5.0.0" \
+    "psycopg[binary]>=3.2.0" \
+    "pydantic>=2.9.0" \
+    "cryptography>=43.0.0" \
+    "PyYAML>=6.0.2" \
+    "websockets>=13.0" \
+    "numpy>=2.0.0"
 
 EXPOSE 8080
 

@@ -14,7 +14,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 @pytest.fixture(scope="module")
 def auth_module():
+    import os
+
+    os.environ.setdefault("UCVE_ENV", "test")
     from control_plane import auth  # type: ignore
+
     return auth
 
 
@@ -57,24 +61,39 @@ def test_expired_timestamp_rejected(auth_module) -> None:
     assert is_valid is False
 
 
-def test_session_mint_success_and_jwt_generation(auth_module) -> None:
+def test_session_mint_success_and_jwt_generation(auth_module, monkeypatch) -> None:
+    import asyncio
     import time
-    from control_plane.routes.session import handle_session_mint
 
-    secret = "dev-mint-secret"
-    ts = str(int(time.time()))
-    nonce = "nonce_mint_123"
-    sig = auth_module.expected_signature(secret, "t-tenant-1", ts, nonce, "agent-007")
+    from control_plane.routes.session import MintContext, handle_session_mint
+    from core.db.models import Agent, Tenant
 
-    status_code, body = handle_session_mint("t-tenant-1", ts, nonce, "agent-007", sig, secret=secret)
-    assert status_code == 200
-    assert "token" in body
-    assert body["status"] == "success"
+    monkeypatch.setenv("UCVE_ENV", "test")
 
-    # Verify JWT payload
-    payload = auth_module.verify_session_jwt(body["token"])
-    assert payload["tenant_id"] == "t-tenant-1"
-    assert payload["action"] == "roomJoin"
+    async def _run() -> None:
+        ctx = MintContext()
+        await ctx.tenant_repo.create_tenant(Tenant(id="t-tenant-1", name="T1"))
+        await ctx.tenant_repo.save_agent(
+            Agent(id="agent-007", tenant_id="t-tenant-1", name="007")
+        )
+        secret = "dev-mint-secret"
+        ts = str(int(time.time()))
+        nonce = "nonce_mint_123"
+        sig = auth_module.expected_signature(secret, "t-tenant-1", ts, nonce, "agent-007")
+
+        status_code, body = await handle_session_mint(
+            "t-tenant-1", ts, nonce, "agent-007", sig, secret=secret, ctx=ctx
+        )
+        assert status_code == 200
+        assert "token" in body
+        assert body["status"] == "success"
+        assert "ws_url" in body
+
+        payload = auth_module.verify_session_jwt(body["token"])
+        assert payload["tenant_id"] == "t-tenant-1"
+        assert payload["action"] == "roomJoin"
+
+    asyncio.run(_run())
 
 
 def test_rbac_matrix_enforcement(auth_module) -> None:

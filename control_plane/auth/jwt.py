@@ -1,11 +1,35 @@
-"""UCVE JWT Token Generator & Validator."""
+"""UCVE JWT Token Generator & Validator (PyJWT HS256)."""
 
 from __future__ import annotations
 
-import base64
-import json
+import os
 import time
 from typing import Any
+
+import jwt
+
+from core.runtime.env import is_test_env
+
+_TEST_DEFAULT_SECRET = "ucve-jwt-secret-test-only-32b!!"
+_REQUIRED_ACTION = "roomJoin"
+
+
+class JWTConfigurationError(ValueError):
+    """Raised when JWT signing secret cannot be resolved safely."""
+
+
+def resolve_jwt_secret(secret: str | None = None) -> str:
+    """Resolve HS256 secret: explicit arg → env → test-only default."""
+    if secret:
+        return secret
+    env_secret = (os.environ.get("UCVE_JWT_SECRET") or "").strip()
+    if env_secret:
+        return env_secret
+    if is_test_env():
+        return _TEST_DEFAULT_SECRET
+    raise JWTConfigurationError(
+        "UCVE_JWT_SECRET is required when UCVE_ENV is not 'test'."
+    )
 
 
 def issue_session_jwt(
@@ -13,38 +37,37 @@ def issue_session_jwt(
     session_id: str,
     agent_id: str,
     ttl_sec: int = 120,
-    secret: str = "ucve-jwt-secret",
+    secret: str | None = None,
 ) -> str:
-    """Issue short-lived room join JWT token for WebSocket connection (TTL default 120s)."""
-    now = int(time.time())
+    """Issue short-lived roomJoin JWT (HS256, default TTL 120s)."""
+    signing_secret = resolve_jwt_secret(secret)
+    iat = int(time.time())
     payload = {
         "sub": session_id,
         "tenant_id": tenant_id,
         "agent_id": agent_id,
-        "action": "roomJoin",
-        "iat": now,
-        "exp": now + ttl_sec,
+        "action": _REQUIRED_ACTION,
+        "iat": iat,
+        "exp": iat + ttl_sec,
     }
-    header = {"alg": "HS256", "typ": "JWT"}
-
-    b64_header = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
-    b64_payload = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
-    sig = base64.urlsafe_b64encode(f"{b64_header}.{b64_payload}.{secret}".encode()).decode().rstrip("=")
-
-    return f"{b64_header}.{b64_payload}.{sig}"
+    return jwt.encode(payload, signing_secret, algorithm="HS256")
 
 
-def verify_session_jwt(token: str, secret: str = "ucve-jwt-secret") -> dict[str, Any]:
-    """Verify and decode room join JWT token."""
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise ValueError("Invalid JWT token format.")
+def verify_session_jwt(token: str, secret: str | None = None) -> dict[str, Any]:
+    """Verify signature + exp and require action == roomJoin."""
+    signing_secret = resolve_jwt_secret(secret)
+    try:
+        payload = jwt.decode(
+            token,
+            signing_secret,
+            algorithms=["HS256"],
+            options={"require": ["exp", "iat", "sub", "action"]},
+        )
+    except jwt.ExpiredSignatureError as exc:
+        raise ValueError("JWT token expired.") from exc
+    except jwt.InvalidTokenError as exc:
+        raise ValueError(f"Invalid JWT token: {exc}") from exc
 
-    b64_header, b64_payload, sig = parts
-    payload_json = base64.urlsafe_b64decode(b64_payload + "==").decode()
-    payload = json.loads(payload_json)
-
-    if time.time() > payload.get("exp", 0):
-        raise ValueError("JWT token expired.")
-
+    if payload.get("action") != _REQUIRED_ACTION:
+        raise ValueError("JWT action must be 'roomJoin'.")
     return payload
