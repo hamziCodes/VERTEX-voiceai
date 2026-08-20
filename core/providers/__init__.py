@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from core.providers import adapters, interfaces
 from core.providers.circuit_breaker import CircuitBreakerConfig, CircuitState
+from core.providers.config_schema import AgentProviderConfig, ProviderChainConfig
 from core.providers.exceptions import (
     CircuitBreakerOpenError,
     ConfigurationError,
@@ -21,9 +22,12 @@ __all__ = [
     "ProviderHealthState",
     "CircuitBreakerConfig",
     "CircuitState",
+    "AgentProviderConfig",
+    "ProviderChainConfig",
     "ConfigurationError",
     "NoProviderAvailableError",
     "ProviderTimeoutError",
     "CircuitBreakerOpenError",
 ]
+
 

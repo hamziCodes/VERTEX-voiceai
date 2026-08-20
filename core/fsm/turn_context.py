@@ -11,6 +11,8 @@ class TurnContext:
     """Stateful context for a voice conversation session and turn tracking."""
 
     session_id: str
+    tenant_id: str = "default"
     current_language: str = "en"
     turn_index: int = 0
     degraded_flags: dict[str, Any] = field(default_factory=dict)
+
