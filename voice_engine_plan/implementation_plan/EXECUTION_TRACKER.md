@@ -18,7 +18,7 @@ Status values: `PENDING` / `IN_PROGRESS` / `READY_FOR_MANUAL_TEST` / `COMPLETED`
 | 11 | Compliance Data Lifecycle (Retention/Deletion/Redaction) | COMPLETED | test_phase_11_compliance_data_lifecycle.py | No — resolved (dual columns; retention defaults; daily purge; regex limitation) | 2026-08-21 |
 | 12 | Compliance Audit Trail and Access Logging | COMPLETED | test_phase_12_compliance_audit_trail.py | No — resolved (HMAC actor; platform_admin cross-tenant; on_audit_event stub; SIEM [LATER]) | 2026-08-21 |
 | 13 | AuthN/AuthZ for Dashboard, API, and SDK | COMPLETED | test_phase_13_auth_access_control.py | No — resolved (built-in+OIDC hook; WSS ?token=; 120/min rate limit) | 2026-08-21 |
-| 14 | Usage Metering and Tenant Quotas | IN_PROGRESS | test_phase_14_usage_metering.py | No — resolved (80/100% caps; per-session flush; 2min heartbeat; test_call_sec sandbox kind) | |
+| 14 | Usage Metering and Tenant Quotas | COMPLETED | test_phase_14_usage_metering.py | No — resolved (80/100% caps; per-session flush; 2min heartbeat; test_call_sec sandbox kind) | 2026-08-21 |
 | 15 | Multilingual Language Registry and Routing Policies | IN_PROGRESS | test_phase_15_multilingual_registry.py | No — resolved (ar/ms measure-only; language-add workflow; RTL required) | |
 | 16 | Text Normalization and Pronunciation Layer | IN_PROGRESS | test_phase_16_text_normalization.py | No — resolved (2 retries→fallback; SSML [LATER]; English pass-through) | |
 | 17 | Real-Time Orchestration Pipeline Integration | IN_PROGRESS | test_phase_17_pipeline_integration.py | No — resolved (VAD wired; Redis hot state; basic reconnect [LATER] full) | |
