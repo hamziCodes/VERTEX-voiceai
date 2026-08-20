@@ -1,0 +1,34 @@
+# UCVE Standard Buffer & Backpressure Configuration Table
+# Blueprint File 02 §1.1
+
+queues:
+  inbound_mic:
+    maxsize: 100
+    overflow: drop_oldest
+    description: "Raw microphone frames from transport edge"
+
+  vad_internal:
+    maxsize: 100
+    overflow: drop_oldest
+    description: "Normalised 16 kHz frames entering Silero VAD window"
+
+  transcript_partial:
+    maxsize: 200
+    overflow: drop_oldest
+    description: "Interim partial STT hypothesis stream"
+
+  transcript_final:
+    maxsize: 0 # Unbounded
+    overflow: block
+    high_watermark_alert: 500
+    description: "Finalized STT transcripts — zero drop guarantee"
+
+  outbound_tts:
+    maxsize: 200
+    overflow: block
+    description: "Synthesised PCM16 audio chunks bound for client"
+
+  sentence_bridge:
+    maxsize: 50
+    overflow: drop_oldest
+    description: "Interim sentence boundary buffer before LLM dispatch"
