@@ -1,0 +1,20 @@
+[
+  {
+    "name": "markdown_strip",
+    "input": "**Order** status: `active`",
+    "language": "en",
+    "expected_text": "Order status: active"
+  },
+  {
+    "name": "numeral_spoken_ur",
+    "input": "1234",
+    "language": "ur",
+    "expected_text": "ایک ہزار دو سو چونتیس"
+  },
+  {
+    "name": "english_in_urdu_passthrough",
+    "input": "Aapka Order AI status active hai",
+    "language": "ur",
+    "expected_needs_regen": false
+  }
+]
