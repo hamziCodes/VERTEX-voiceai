@@ -1,0 +1,69 @@
+# UCVE FSM Transition Matrix (Blueprint File 02 §2.1)
+
+states:
+  - CONNECTING
+  - LISTENING
+  - USER_SPEAKING
+  - PROCESSING_INFERENCE
+  - TOOL_EXECUTING
+  - AGENT_SPEAKING
+  - BARGE_IN_VERIFY
+  - BARGE_IN_INTERRUPTED
+  - DISCONNECTED
+
+transitions:
+  - from: CONNECTING
+    to: LISTENING
+    event: session_admitted
+
+  - from: LISTENING
+    to: USER_SPEAKING
+    event: vad_speech_start
+
+  - from: LISTENING
+    to: PROCESSING_INFERENCE
+    event: stt_final
+
+  - from: USER_SPEAKING
+    to: PROCESSING_INFERENCE
+    event: vad_speech_end
+
+  - from: PROCESSING_INFERENCE
+    to: AGENT_SPEAKING
+    event: tts_first_byte
+
+  - from: PROCESSING_INFERENCE
+    to: TOOL_EXECUTING
+    event: tool_call_start
+
+  - from: TOOL_EXECUTING
+    to: PROCESSING_INFERENCE
+    event: tool_result
+
+  - from: AGENT_SPEAKING
+    to: LISTENING
+    event: tts_drained
+
+  - from: AGENT_SPEAKING
+    to: BARGE_IN_VERIFY
+    event: vad_speech_start
+
+  - from: AGENT_SPEAKING
+    to: BARGE_IN_INTERRUPTED
+    event: barge_confirmed
+
+  - from: BARGE_IN_VERIFY
+    to: BARGE_IN_INTERRUPTED
+    event: barge_confirmed
+
+  - from: BARGE_IN_VERIFY
+    to: AGENT_SPEAKING
+    event: barge_false_alarm
+
+  - from: BARGE_IN_VERIFY
+    to: AGENT_SPEAKING
+    event: barge_verify_timeout
+
+  - from: BARGE_IN_INTERRUPTED
+    to: PROCESSING_INFERENCE
+    event: stt_final
