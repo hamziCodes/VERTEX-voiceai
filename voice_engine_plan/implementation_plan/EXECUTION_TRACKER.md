@@ -4,7 +4,7 @@ Status values: `PENDING` / `IN_PROGRESS` / `READY_FOR_MANUAL_TEST` / `COMPLETED`
 
 | Phase | Name | Status | Test Script | Human Intervention Required | Sign-off Date |
 |---|---|---|---|---|---|
-| 00 | Monorepo Planning Baseline | IN_PROGRESS | test_phase_00_monorepo_baseline.py | No — resolved (uv; top-level layout; TS SDK → Phase 28) | |
+| 00 | Monorepo Planning Baseline | COMPLETED | test_phase_00_monorepo_baseline.py | No — resolved (uv; top-level layout; TS SDK → Phase 28) | 2026-08-20 |
 | 01 | Canonical Audio Types and Frame Contracts | IN_PROGRESS | test_phase_01_canonical_audio_types.py | No — resolved (branded IDs; µs timestamps; 640-sample frame cap) | |
 | 02 | Stream Buffering and Backpressure Policy | IN_PROGRESS | test_phase_02_stream_buffering.py | No — resolved (watermark 0.85; sentence_bridge 120ms) | |
 | 03 | Core Session FSM and Turn Lifecycle | IN_PROGRESS | test_phase_03_session_fsm.py | No — resolved (USER_SPEAKING; reconnect Phase 17; serial tools v1) | |
