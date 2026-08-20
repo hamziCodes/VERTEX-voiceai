@@ -1,0 +1,35 @@
+# UCVE Minimal Valid Provider Chain Configuration Fixture
+# Enforces Blueprint File 03 §6 (Minimum 2 providers per critical category)
+
+chains:
+  - category: stt
+    language: en
+    priority:
+      - deepgram
+      - gladia
+
+  - category: stt
+    language: ur
+    priority:
+      - gladia
+      - whisper_sovereign
+
+  - category: llm
+    language: en
+    priority:
+      - groq_llama3
+      - vllm_sovereign
+
+  - category: tts
+    language: en
+    priority:
+      - uplift
+      - cartesia
+
+  - category: vad
+    language: en
+    priority:
+      - silero
+      - energy_fallback
+
+allow_testing_providers: false

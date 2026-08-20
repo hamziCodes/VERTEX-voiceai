@@ -3,5 +3,27 @@
 from __future__ import annotations
 
 from core.providers import adapters, interfaces
+from core.providers.circuit_breaker import CircuitBreakerConfig, CircuitState
+from core.providers.exceptions import (
+    CircuitBreakerOpenError,
+    ConfigurationError,
+    NoProviderAvailableError,
+    ProviderTimeoutError,
+)
+from core.providers.failover import FailoverRouter, ProviderHealthState
+from core.providers.registry import ProviderRegistry
 
-__all__ = ["interfaces", "adapters"]
+__all__ = [
+    "interfaces",
+    "adapters",
+    "ProviderRegistry",
+    "FailoverRouter",
+    "ProviderHealthState",
+    "CircuitBreakerConfig",
+    "CircuitState",
+    "ConfigurationError",
+    "NoProviderAvailableError",
+    "ProviderTimeoutError",
+    "CircuitBreakerOpenError",
+]
+

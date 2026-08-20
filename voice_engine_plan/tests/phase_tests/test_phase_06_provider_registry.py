@@ -52,3 +52,43 @@ async def test_failover_uses_secondary(registry_module) -> None:
     result = await router.call_with_failover(category="tts", language="en", invoke_fn=invoke)
     assert result == "ok"
     assert calls == ["primary", "secondary"]
+
+
+def test_circuit_breaker_trips_and_recovers(registry_module) -> None:
+    CircuitBreakerConfig = registry_module.CircuitBreakerConfig
+    CircuitState = registry_module.CircuitState
+    ProviderHealthState = registry_module.ProviderHealthState
+
+    cfg = CircuitBreakerConfig(failure_threshold=3, cooldown_seconds=0.1)
+    health = ProviderHealthState("test_provider")
+    assert health.circuit_state == CircuitState.CLOSED
+
+    # 3 consecutive failures -> trips OPEN
+    for _ in range(3):
+        health.record_failure(cfg)
+    assert health.circuit_state == CircuitState.OPEN
+    assert health.should_allow_request(cfg) is False
+
+    # Simulate cooldown passing
+    import time
+    time.sleep(0.12)
+    assert health.should_allow_request(cfg) is True
+    assert health.circuit_state == CircuitState.HALF_OPEN
+
+    # Record success -> resets to CLOSED
+    health.record_success(latency_ms=15.0)
+    assert health.circuit_state == CircuitState.CLOSED
+
+
+@pytest.mark.asyncio
+async def test_all_providers_failing_raises_no_provider_available(registry_module) -> None:
+    FailoverRouter = registry_module.FailoverRouter
+    NoProviderAvailableError = registry_module.NoProviderAvailableError
+
+    async def always_fail(provider_id: str) -> str:
+        raise RuntimeError("dead")
+
+    router = FailoverRouter(priority=["p1", "p2"])
+    with pytest.raises(NoProviderAvailableError):
+        await router.call_with_failover(category="stt", language="en", invoke_fn=always_fail)
+
