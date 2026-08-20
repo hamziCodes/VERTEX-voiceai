@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UCVESystemLogRecord",
+  "description": "JSON schema for UCVE structured application logs",
+  "type": "object",
+  "required": [
+    "timestamp",
+    "level",
+    "event"
+  ],
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of log emit"
+    },
+    "level": {
+      "type": "string",
+      "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+      "description": "Log severity level"
+    },
+    "event": {
+      "type": "string",
+      "description": "Structured log event message (redacted)"
+    },
+    "call_id": {
+      "type": "string",
+      "description": "Unique call UUID correlation ID"
+    },
+    "tenant_id": {
+      "type": "string",
+      "description": "Tenant isolation ID"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Session correlation ID"
+    },
+    "phase": {
+      "type": "string",
+      "description": "Pipeline execution phase ID"
+    },
+    "latency_ms": {
+      "type": "number",
+      "description": "Operation latency in milliseconds"
+    },
+    "provider_id": {
+      "type": "string",
+      "description": "AI Provider ID"
+    },
+    "error_code": {
+      "type": "string",
+      "description": "Canonical error classification code"
+    }
+  },
+  "additionalProperties": true
+}

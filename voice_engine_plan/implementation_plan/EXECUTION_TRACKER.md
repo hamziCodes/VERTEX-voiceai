@@ -11,7 +11,7 @@ Status values: `PENDING` / `IN_PROGRESS` / `READY_FOR_MANUAL_TEST` / `COMPLETED`
 | 04 | Barge-In Arbitration and Recovery Rules | COMPLETED | test_phase_04_barge_in.py | No — resolved (TTS pause; 300ms window; in-process plane) | 2026-08-20 |
 | 05 | Provider Interface Contracts (VAD/STT/LLM/TTS/S2S) | COMPLETED | test_phase_05_provider_interfaces.py | No — resolved (S2S stub; native TTS rate; transport resample) | 2026-08-20 |
 | 06 | Provider Registry, Circuit Breakers, and Fallback Router | COMPLETED | test_phase_06_provider_registry.py | No — resolved (5-fail/50%/30s breaker; demotion deferred to Phase 24 warn-only opt-in) | 2026-08-20 |
-| 07 | Observability Foundations (Logs, Metrics, Traces) | IN_PROGRESS | test_phase_07_observability.py | No — resolved (OTel wired/export off; stdout JSON; /metrics control-plane; auth param redaction) | |
+| 07 | Observability Foundations (Logs, Metrics, Traces) | COMPLETED | test_phase_07_observability.py | No — resolved (OTel wired/export off; stdout JSON; /metrics control-plane; auth param redaction) | 2026-08-20 |
 | 08 | Multi-Tenant Core Data Model and Isolation Boundaries | IN_PROGRESS | test_phase_08_multi_tenant_data_model.py | No — resolved (self-managed Postgres; JSONB+S3 split) | |
 | 09 | Tenant Credential Vaulting and Secret Access Patterns | IN_PROGRESS | test_phase_09_credential_vaulting.py | No — resolved (pluggable KMS; 5–15m cache; platform+BYOK tiers) | |
 | 10 | Compliance Architecture and Data Classification Model | IN_PROGRESS | test_phase_10_compliance_architecture.py | No — resolved (PCI reserved; standard default; hipaa_baa_acknowledged_at gate) | |
