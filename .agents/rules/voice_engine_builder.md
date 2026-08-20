@@ -73,7 +73,8 @@ Re-run integrity script after tracker edits.
 - **Concise output:** Summarize deliverables and paste CLI test summary — do not dump full diffs/files unless asked.
 - **No unilateral assumptions:** Unmapped edge cases or vendor ambiguity → halt and present tradeoffs; do not guess.
 - **One phase per task** unless user explicitly requests a batch.
-- **Commits:** Only when user asks.
+- **Commits & Push:** Automatically commit and push to branch `hamza` after completing every phase (NO COAUTHORS).
+
 
 ## 4. Resolved Terminology (Strict)
 

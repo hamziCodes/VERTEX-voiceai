@@ -48,3 +48,15 @@ class ControlEvent:
             timestamp_ms=float(data.get("timestamp_ms", 0.0)),
             payload=dict(data.get("payload", {})),
         )
+
+
+def ControlEventBargeIn(
+    timestamp_ms: float = 0.0, reason: str = "barge_in_committed"
+) -> ControlEvent:
+    """Factory helper for creating wire control.barge_in events."""
+    return ControlEvent(
+        event_type=ControlEventType.BARGE_IN,
+        timestamp_ms=timestamp_ms,
+        payload={"reason": reason},
+    )
+

@@ -88,15 +88,28 @@ Must print `OK: 36 phases, tests, and trackers verified.`
 
 Re-run integrity script.
 
-### 6. Report (Concise)
+### 6. Commit & Push (Mandatory)
+
+Automatically commit and push deliverables, test updates, and tracker changes to `hamza` branch:
+
+```bash
+git add .
+git commit -m "phase XX [description] done" -m "Deliverables implemented:" -m "..."
+git push origin hamza
+```
+
+*Note: NO COAUTHORS lines permitted.*
+
+### 7. Report (Concise)
 
 Return to user:
 
-1. Phase XX status
+1. Phase XX status & commit hash
 2. Deliverables created/modified (paths only)
 3. Pytest summary (passed/failed/skipped counts)
 4. Integrity script result
 5. Next recommended phase (XX+1 if sequential)
+
 
 ## Phase 00 Quick Start
 
