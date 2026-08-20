@@ -7,16 +7,16 @@ from pathlib import Path
 
 import pytest
 
+import time
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.fixture(scope="module")
 def auth_module():
-    try:
-        from control_plane.auth import hmac_mint  # type: ignore
-    except ImportError as exc:
-        pytest.skip(f"Phase 13 implementation pending: {exc}")
-    return hmac_mint
+    from control_plane import auth  # type: ignore
+    return auth
+
 
 
 def test_phase_plan_artifact_exists() -> None:
@@ -42,8 +42,68 @@ def test_hmac_signature_matches_habiba_format(auth_module) -> None:
 
 @pytest.mark.asyncio
 async def test_replay_nonce_rejected(auth_module) -> None:
-    if not os.getenv("REDIS_URL"):
-        pytest.skip("REDIS_URL not set")
     store = auth_module.NonceStore()
     await store.mark_used("tenant", "nonce-1", ttl_sec=60)
     assert await store.is_used("tenant", "nonce-1") is True
+
+
+def test_expired_timestamp_rejected(auth_module) -> None:
+    secret = "my-secret"
+    old_ts = str(int(time.time()) - 120)  # 2 minutes ago
+    sig = auth_module.expected_signature(secret, "t1", old_ts, "n1", "a1")
+    is_valid = auth_module.verify_mint_signature(
+        secret, "t1", old_ts, "n1", "a1", sig, max_age_sec=60
+    )
+    assert is_valid is False
+
+
+def test_session_mint_success_and_jwt_generation(auth_module) -> None:
+    import time
+    from control_plane.routes.session import handle_session_mint
+
+    secret = "dev-mint-secret"
+    ts = str(int(time.time()))
+    nonce = "nonce_mint_123"
+    sig = auth_module.expected_signature(secret, "t-tenant-1", ts, nonce, "agent-007")
+
+    status_code, body = handle_session_mint("t-tenant-1", ts, nonce, "agent-007", sig, secret=secret)
+    assert status_code == 200
+    assert "token" in body
+    assert body["status"] == "success"
+
+    # Verify JWT payload
+    payload = auth_module.verify_session_jwt(body["token"])
+    assert payload["tenant_id"] == "t-tenant-1"
+    assert payload["action"] == "roomJoin"
+
+
+def test_rbac_matrix_enforcement(auth_module) -> None:
+    RBACManager = auth_module.RBACManager
+
+    # Viewer cannot write agents
+    assert RBACManager.check_permission("tenant_viewer", "agent", "write") is False
+    # Editor can write agents
+    assert RBACManager.check_permission("tenant_editor", "agent", "write") is True
+    # Admin can perform any action
+    assert RBACManager.check_permission("platform_admin", "agent", "write") is True
+
+
+def test_rate_limiter_exceeded_429(auth_module) -> None:
+    limiter = auth_module.RateLimiter(limit_per_min=2)
+    assert limiter.is_allowed("tenant-rate-1") is True
+    assert limiter.is_allowed("tenant-rate-1") is True
+    assert limiter.is_allowed("tenant-rate-1") is False  # 3rd request blocked
+
+
+def test_api_key_generation_and_scope_verification(auth_module) -> None:
+    mgr = auth_module.APIKeyManager()
+    raw_key, key_id = mgr.generate_api_key("t1", "SDK Key", scopes=["session:mint", "agent:read"])
+
+    # Valid key with required scope
+    rec = mgr.verify_api_key(raw_key, required_scope="session:mint")
+    assert rec["tenant_id"] == "t1"
+
+    # Missing scope fails
+    with pytest.raises(PermissionError):
+        mgr.verify_api_key(raw_key, required_scope="agent:write")
+
