@@ -1,0 +1,10 @@
+code: ms
+name: Malay
+directive_prompt_path: core/prompts/directives/ms.txt
+vad_silence_override_ms: 500
+tts_voice_id: cartesia-ms-v1
+tts_first_chunk_word_count: 3
+script_direction: ltr
+code_switching_default: false
+redaction_script_coverage: full
+cs_measure_only: true

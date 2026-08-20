@@ -1,0 +1,27 @@
+[
+  {
+    "name": "immediate_switch_3_words",
+    "initial_language": "en",
+    "turns": [
+      {"text": "kya haal hai aapka", "language": "ur"}
+    ],
+    "expected_final_language": "ur"
+  },
+  {
+    "name": "consecutive_switch_short_phrase",
+    "initial_language": "en",
+    "turns": [
+      {"text": "haan ji", "language": "ur"},
+      {"text": "kya hai", "language": "ur"}
+    ],
+    "expected_final_language": "ur"
+  },
+  {
+    "name": "unsupported_language_keeps_current",
+    "initial_language": "en",
+    "turns": [
+      {"text": "bonjour le monde", "language": "fr"}
+    ],
+    "expected_final_language": "en"
+  }
+]

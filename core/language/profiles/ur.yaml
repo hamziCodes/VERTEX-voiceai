@@ -1,0 +1,10 @@
+code: ur
+name: Urdu
+directive_prompt_path: core/prompts/directives/ur.txt
+vad_silence_override_ms: 800
+tts_voice_id: ur-standard-1
+tts_first_chunk_word_count: 2
+script_direction: rtl
+code_switching_default: false
+redaction_script_coverage: regex_partial
+cs_measure_only: false
