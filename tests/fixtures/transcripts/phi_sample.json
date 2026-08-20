@@ -1,0 +1,16 @@
+{
+  "session_id": "synthetic-phi-session-123",
+  "tenant_id": "synthetic-tenant-456",
+  "turns": [
+    {
+      "speaker": "user",
+      "text": "Hello, my phone number is 555-123-4567 and my SSN is 000-12-3456.",
+      "timestamp_ms": 100.0
+    },
+    {
+      "speaker": "assistant",
+      "text": "Thank you. I have updated your record.",
+      "timestamp_ms": 1500.0
+    }
+  ]
+}

@@ -30,7 +30,42 @@ def test_phase_plan_artifact_exists() -> None:
 
 def test_phone_redacted_from_transcript(redaction_module) -> None:
     RedactionService = redaction_module.RedactionService
-    policy = redaction_module.RedactionPolicy(redact_pii_in_transcript=True)
-    turns = [{"speaker": "user", "text": "Call 555-123-4567"}]
+    RedactionPolicy = redaction_module.RedactionPolicy
+    policy = RedactionPolicy(redact_pii_in_transcript=True)
+    turns = [{"speaker": "user", "text": "Call 555-123-4567 please"}]
     out = RedactionService().redact_transcript(turns, policy)
     assert "555-123-4567" not in out[0]["text"]
+
+
+def test_legal_hold_blocks_retention_purge() -> None:
+    from core.compliance.legal_hold import LegalHoldManager
+    from core.compliance.retention import RetentionScheduler
+
+    hold_mgr = LegalHoldManager()
+    hold_mgr.set_legal_hold("session-hold-123", hold=True)
+
+    scheduler = RetentionScheduler(legal_hold_mgr=hold_mgr)
+    sessions = [{"session_id": "session-hold-123"}, {"session_id": "session-normal-456"}]
+
+    purged_count = scheduler.purge_expired_sessions(sessions)
+    assert purged_count == 1  # session-hold-123 was blocked from purge
+
+
+def test_gdpr_erasure_cascade() -> None:
+    from core.compliance.erasure import ErasureOrchestrator
+
+    orchestrator = ErasureOrchestrator()
+    record = orchestrator.execute_tenant_erasure("tenant-gdpr-123")
+    assert record["status"] == "completed"
+    assert "session_transcripts" in record["cascaded_artifacts"]
+
+
+def test_retention_days_calculation() -> None:
+    import datetime
+    from core.compliance.retention import RetentionScheduler
+
+    scheduler = RetentionScheduler()
+    started = datetime.datetime(2026, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    purge_after = scheduler.calculate_purge_after(started, retention_days=30)
+    assert purge_after == datetime.datetime(2026, 1, 31, 12, 0, 0, tzinfo=datetime.timezone.utc)
+
