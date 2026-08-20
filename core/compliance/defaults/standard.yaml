@@ -1,0 +1,7 @@
+tier: standard
+allow_cloud_llm: true
+allow_cloud_stt: true
+require_baa: false
+min_retention_days: 1
+max_retention_days: 90
+encryption_required: true

@@ -14,7 +14,7 @@ Status values: `PENDING` / `IN_PROGRESS` / `READY_FOR_MANUAL_TEST` / `COMPLETED`
 | 07 | Observability Foundations (Logs, Metrics, Traces) | COMPLETED | test_phase_07_observability.py | No — resolved (OTel wired/export off; stdout JSON; /metrics control-plane; auth param redaction) | 2026-08-20 |
 | 08 | Multi-Tenant Core Data Model and Isolation Boundaries | COMPLETED | test_phase_08_multi_tenant_data_model.py | No — resolved (self-managed Postgres; JSONB+S3 split) | 2026-08-21 |
 | 09 | Tenant Credential Vaulting and Secret Access Patterns | COMPLETED | test_phase_09_credential_vaulting.py | No — resolved (pluggable KMS; 5–15m cache; platform+BYOK tiers) | 2026-08-21 |
-| 10 | Compliance Architecture and Data Classification Model | IN_PROGRESS | test_phase_10_compliance_architecture.py | No — resolved (PCI reserved; standard default; hipaa_baa_acknowledged_at gate) | |
+| 10 | Compliance Architecture and Data Classification Model | COMPLETED | test_phase_10_compliance_architecture.py | No — resolved (PCI reserved; standard default; hipaa_baa_acknowledged_at gate) | 2026-08-21 |
 | 11 | Compliance Data Lifecycle (Retention/Deletion/Redaction) | IN_PROGRESS | test_phase_11_compliance_data_lifecycle.py | No — resolved (dual columns; retention defaults; daily purge; regex limitation) | |
 | 12 | Compliance Audit Trail and Access Logging | IN_PROGRESS | test_phase_12_compliance_audit_trail.py | No — resolved (HMAC actor; platform_admin cross-tenant; on_audit_event stub; SIEM [LATER]) | |
 | 13 | AuthN/AuthZ for Dashboard, API, and SDK | IN_PROGRESS | test_phase_13_auth_access_control.py | No — resolved (built-in+OIDC hook; WSS ?token=; 120/min rate limit) | |

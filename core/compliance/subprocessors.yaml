@@ -1,0 +1,44 @@
+# UCVE Subprocessor & Tier-2 Vendor Registry Template
+
+subprocessors:
+  gladia:
+    name: "Gladia STT"
+    category: "stt"
+    data_classes_sent: ["raw_audio", "phi", "pii"]
+    baa_available: true
+    regions: ["us-east-1", "eu-west-1"]
+
+  deepgram:
+    name: "Deepgram STT"
+    category: "stt"
+    data_classes_sent: ["raw_audio", "phi", "pii"]
+    baa_available: true
+    regions: ["us-east-1"]
+
+  groq:
+    name: "Groq Cloud LLM"
+    category: "llm"
+    data_classes_sent: ["llm_prompt", "phi", "pii"]
+    baa_available: false
+    regions: ["us-west-2"]
+
+  uplift:
+    name: "Uplift TTS"
+    category: "tts"
+    data_classes_sent: ["llm_response", "phi", "pii"]
+    baa_available: false
+    regions: ["us-east-1"]
+
+  cartesia:
+    name: "Cartesia TTS"
+    category: "tts"
+    data_classes_sent: ["llm_response", "phi", "pii"]
+    baa_available: true
+    regions: ["us-east-1"]
+
+  vllm_sovereign:
+    name: "Sovereign In-VPC vLLM"
+    category: "llm"
+    data_classes_sent: ["llm_prompt", "phi", "pii"]
+    baa_available: true
+    regions: ["local_vpc"]

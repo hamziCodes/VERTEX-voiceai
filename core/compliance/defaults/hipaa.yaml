@@ -1,0 +1,7 @@
+tier: hipaa
+allow_cloud_llm: false
+allow_cloud_stt: true
+require_baa: true
+min_retention_days: 30
+max_retention_days: 2555
+encryption_required: true

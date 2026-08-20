@@ -38,6 +38,42 @@ def test_hipaa_blocks_non_baa_subprocessor(compliance_module) -> None:
     tiers = compliance_module.tiers
     policy = tiers.policy_for(tiers.ComplianceTier.HIPAA)
     allowed = compliance_module.classification.SubprocessorRegistry.is_allowed(
-        "groq", data_class=compliance_module.classification.DataClass.PHI, policy=policy
+        "groq", data_class=compliance_module.classification.DataClass.PHI, policy=policy, has_signed_baa=False
     )
-    assert allowed is False or policy.require_baa is True
+    assert allowed is False
+
+
+def test_unknown_field_defaults_to_pii(compliance_module) -> None:
+    registry = compliance_module.classification.DataClassificationRegistry.load_defaults()
+    dclass = registry.classify(compliance_module.classification.ArtifactType.PROVIDER_PAYLOAD, field_path="unknown_custom_field")
+    assert dclass in (compliance_module.classification.DataClass.PII, compliance_module.classification.DataClass.PHI)
+
+
+def test_tenant_override_merges_correctly(compliance_module) -> None:
+    loader = compliance_module.tenant_profile.TenantComplianceProfileLoader
+    policy = loader.load_effective_policy(
+        tier=compliance_module.tiers.ComplianceTier.STANDARD,
+        policy_overrides={"max_retention_days": 14},
+    )
+    assert policy.max_retention_days == 14
+    assert policy.allow_cloud_llm is True
+
+
+def test_hipaa_cloud_llm_gate_with_baa_timestamp(compliance_module) -> None:
+    import datetime
+    loader = compliance_module.tenant_profile.TenantComplianceProfileLoader
+
+    # Without BAA timestamp -> cloud LLM blocked
+    policy_no_baa = loader.load_effective_policy(
+        tier=compliance_module.tiers.ComplianceTier.HIPAA,
+        hipaa_baa_acknowledged_at=None,
+    )
+    assert policy_no_baa.allow_cloud_llm is False
+
+    # With BAA timestamp -> cloud LLM allowed
+    policy_baa = loader.load_effective_policy(
+        tier=compliance_module.tiers.ComplianceTier.HIPAA,
+        hipaa_baa_acknowledged_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+    assert policy_baa.allow_cloud_llm is True
+
