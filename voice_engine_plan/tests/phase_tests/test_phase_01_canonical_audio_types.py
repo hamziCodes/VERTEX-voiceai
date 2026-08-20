@@ -58,3 +58,31 @@ def test_resampler_8k_to_16k_output_length(audio_types_module) -> None:
     out = resampler.process(pcm_8k)
     # Expect ~2x samples (within ±2 bytes for alignment)
     assert abs(len(out) - len(pcm_8k) * 2) <= 2
+
+
+def test_control_event_json_round_trip() -> None:
+    from core.types.events import ControlEvent, ControlEventType
+
+    event = ControlEvent(
+        event_type=ControlEventType.PLAYBACK_STARTED,
+        timestamp_ms=123.45,
+        payload={"stream_id": "test_1"},
+    )
+    json_str = event.to_json()
+    recovered = ControlEvent.from_json(json_str)
+    assert recovered.event_type == ControlEventType.PLAYBACK_STARTED
+    assert recovered.timestamp_ms == 123.45
+    assert recovered.payload == {"stream_id": "test_1"}
+
+
+def test_audio_frame_frozen_immutability(audio_types_module) -> None:
+    AudioFrame = audio_types_module.AudioFrame
+    frame = AudioFrame(
+        pcm16=b"\x00\x00" * 16,
+        sample_rate=16000,
+        timestamp_ms=10.0,
+        sequence=1,
+    )
+    with pytest.raises(AttributeError):
+        frame.sequence = 2  # type: ignore
+
