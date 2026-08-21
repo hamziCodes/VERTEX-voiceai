@@ -47,10 +47,10 @@ async def _load_session_config(token_payload: dict[str, Any]) -> PipelineSession
     if session is not None:
         compliance_tier = session.compliance_tier
     tenant = await ctx.tenant_repo.get_tenant(tenant_id)
-    profile = ctx.tenant_repo._compliance_profiles.get(tenant_id)  # noqa: SLF001
+    profile = getattr(ctx.tenant_repo, "_compliance_profiles", {}).get(tenant_id)
     if profile is not None:
-        compliance_tier = profile.compliance_tier
-        hipaa_baa = profile.hipaa_baa_acknowledged_at is not None
+        compliance_tier = getattr(profile, "compliance_tier", compliance_tier)
+        hipaa_baa = getattr(profile, "hipaa_baa_acknowledged_at", None) is not None
     _ = tenant
     return PipelineSessionConfig(
         session_id=session_id,
@@ -80,8 +80,8 @@ async def ws_audio(websocket: WebSocket) -> None:
     try:
         payload = verify_session_jwt(token)
         config = await _load_session_config(payload)
-    except Exception:
-        await websocket.close(code=4401, reason="invalid token")
+    except Exception as exc:
+        await websocket.close(code=4401, reason=f"invalid token: {exc}")
         return
 
     await transport.send_control_event(
