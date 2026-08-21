@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 import uuid
+from pathlib import Path
+
+# Bootstrap project root into sys.path
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 import httpx
 from fastapi import FastAPI
@@ -29,7 +36,7 @@ class MintRequest(BaseModel):
 
 @app.post("/mint")
 async def mint(body: MintRequest) -> dict:
-    secret = os.environ.get("UCVE_MINT_HMAC_SECRET", "dev-mint-secret")
+    secret = os.environ.get("UCVE_MINT_HMAC_SECRET", "dev-only-replace-me-mint-hmac-32")
     cp = os.environ.get("UCVE_CONTROL_PLANE_URL", "http://127.0.0.1:8080")
     ts = str(int(time.time()))
     nonce = uuid.uuid4().hex

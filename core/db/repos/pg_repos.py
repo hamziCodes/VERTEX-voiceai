@@ -23,6 +23,7 @@ class PostgresTenantRepository:
         conn = self._connection()
         own = self._conn is None
         try:
+            TenantScopedDBSession(tenant.id).set_app_tenant_id(conn)
             conn.execute(
                 """
                 INSERT INTO tenants (id, name, key_tier, allow_testing_providers, allowed_origins)

@@ -18,13 +18,19 @@ from core.redis.nonce_store import NonceStore
 from core.types.ids import generate_session_id
 
 
+from core.db.repos.pg_repos import (
+    build_session_repository,
+    build_tenant_repository,
+)
+
+
 @dataclass
 class MintContext:
-    """Injectable dependencies for session mint (in-memory until H3 Postgres)."""
+    """Injectable dependencies for session mint."""
 
     nonce_store: NonceStore = field(default_factory=NonceStore)
-    tenant_repo: TenantRepository = field(default_factory=TenantRepository)
-    session_repo: SessionRepository = field(default_factory=SessionRepository)
+    tenant_repo: Any = field(default_factory=build_tenant_repository)
+    session_repo: Any = field(default_factory=build_session_repository)
     quota: QuotaEnforcer = field(default_factory=QuotaEnforcer)
     rate_limiter: RateLimiter = field(default_factory=lambda: RateLimiter(limit_per_min=120))
     mint_rejections: list[dict[str, Any]] = field(default_factory=list)
