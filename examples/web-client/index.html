@@ -2,40 +2,608 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>UCVE AudioWorklet Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UCVE — Sovereign Voice AI Developer Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
-    body { font-family: Georgia, serif; margin: 2rem; background: #0f1419; color: #e7ecf1; }
-    button { margin-right: 0.5rem; padding: 0.6rem 1rem; }
-    #status { margin-top: 1rem; opacity: 0.85; }
+    :root {
+      --bg-dark: #0a0d12;
+      --panel-bg: rgba(18, 24, 38, 0.75);
+      --panel-border: rgba(255, 255, 255, 0.08);
+      --accent-cyan: #00f2fe;
+      --accent-blue: #4facfe;
+      --accent-purple: #7f00ff;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-dark);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(0, 242, 254, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(127, 0, 255, 0.05) 0%, transparent 40%);
+    }
+
+    header {
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--panel-border);
+      background: rgba(10, 13, 18, 0.8);
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-logo {
+      width: 2.25rem;
+      height: 2.25rem;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      border-radius: 0.5rem;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: #fff;
+      box-shadow: 0 0 20px rgba(0, 242, 254, 0.3);
+    }
+
+    .brand-title h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      background: linear-gradient(to right, #fff, var(--text-muted));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-title p {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .status-badge {
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(148, 163, 184, 0.1);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      color: var(--text-muted);
+      transition: all 0.3s ease;
+    }
+
+    .status-badge.connected {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: var(--accent-green);
+    }
+
+    .status-badge.minting {
+      background: rgba(245, 158, 11, 0.15);
+      border-color: rgba(245, 158, 11, 0.4);
+      color: var(--accent-amber);
+    }
+
+    .status-badge.error {
+      background: rgba(244, 63, 94, 0.15);
+      border-color: rgba(244, 63, 94, 0.4);
+      color: var(--accent-rose);
+    }
+
+    .status-dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .status-badge.connected .status-dot {
+      box-shadow: 0 0 8px var(--accent-green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    main {
+      flex: 1;
+      padding: 1.5rem 2rem;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 1.5rem;
+    }
+
+    .card {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 0.85rem;
+      padding: 1.25rem;
+      backdrop-filter: blur(16px);
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    }
+
+    .card-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    button {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.5rem;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: all 0.2s ease;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+      color: #000;
+      box-shadow: 0 4px 14px rgba(0, 242, 254, 0.3);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(0, 242, 254, 0.4);
+    }
+
+    .btn-danger {
+      background: rgba(244, 63, 94, 0.15);
+      border: 1px solid rgba(244, 63, 94, 0.4);
+      color: var(--accent-rose);
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: rgba(244, 63, 94, 0.25);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--panel-border);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .btn-secondary.active {
+      background: rgba(245, 158, 11, 0.2);
+      border-color: rgba(245, 158, 11, 0.5);
+      color: var(--accent-amber);
+    }
+
+    /* Audio Meter & Visualizer */
+    .visualizer-container {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--panel-border);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    canvas {
+      width: 100%;
+      height: 60px;
+      border-radius: 0.35rem;
+    }
+
+    .meter-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .meter-bar {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .meter-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-green));
+      transition: width 0.05s ease-out;
+    }
+
+    /* Metrics Grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+    }
+
+    .metric-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--panel-border);
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+    }
+
+    .metric-value {
+      font-family: var(--font-mono);
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      margin-top: 0.25rem;
+    }
+
+    .metric-title {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    /* Console Logs Window */
+    .console-panel {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .console-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--panel-border);
+    }
+
+    .console-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .btn-sm {
+      padding: 0.35rem 0.65rem;
+      font-size: 0.75rem;
+    }
+
+    .console-logs {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--panel-border);
+      border-radius: 0.5rem;
+      margin-top: 0.75rem;
+      padding: 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      line-height: 1.5;
+      overflow-y: auto;
+      max-height: 520px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .log-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      word-break: break-all;
+    }
+
+    .log-time {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      user-select: none;
+    }
+
+    .log-tag {
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .tag-mint { background: rgba(0, 242, 254, 0.15); color: var(--accent-cyan); }
+    .tag-ws { background: rgba(79, 172, 254, 0.15); color: var(--accent-blue); }
+    .tag-audio { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); }
+    .tag-vad { background: rgba(127, 0, 255, 0.15); color: #c084fc; }
+    .tag-stt { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
+    .tag-llm { background: rgba(236, 72, 153, 0.15); color: #f472b6; }
+    .tag-tts { background: rgba(14, 165, 233, 0.15); color: #38bdf8; }
+    .tag-error { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); }
+    .tag-ping { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
+
+    .log-msg {
+      color: var(--text-main);
+    }
+
+    /* Simulate Text Input Bar */
+    .input-bar {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
+    .input-bar input {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--panel-border);
+      border-radius: 0.5rem;
+      padding: 0.6rem 0.85rem;
+      color: #fff;
+      font-family: var(--font-sans);
+      font-size: 0.85rem;
+    }
+
+    .input-bar input:focus {
+      outline: none;
+      border-color: var(--accent-cyan);
+    }
   </style>
 </head>
 <body>
-  <h1>UCVE</h1>
-  <p>Local AudioWorklet demo — mic PCM16 @ 16 kHz → worker WS.</p>
-  <button id="startBtn">Start call</button>
-  <button id="stopBtn">Stop</button>
-  <div id="status">Status: idle</div>
+
+  <header>
+    <div class="brand">
+      <div class="brand-logo">V</div>
+      <div class="brand-title">
+        <h1>UCVE VOICE ENGINE</h1>
+        <p>Sovereign Multi-Tenant Real-Time Voice AI</p>
+      </div>
+    </div>
+    <div id="statusBadge" class="status-badge">
+      <span class="status-dot"></span>
+      <span id="statusText">IDLE</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Left Sidebar: Controls & Visualizers -->
+    <div class="card">
+      <div class="card-title">
+        <span>Session Controls</span>
+      </div>
+
+      <div class="btn-group">
+        <button id="startBtn" class="btn-primary">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 1A5 5 0 1 1 8 3a5 5 0 0 1 0 10z"/></svg>
+          Start Voice Session
+        </button>
+        <button id="muteBtn" class="btn-secondary" disabled>
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/></svg>
+          <span id="muteText">Mute Mic</span>
+        </button>
+        <button id="stopBtn" class="btn-danger" disabled>
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
+          End Session
+        </button>
+      </div>
+
+      <div class="card-title">
+        <span>Live Vocal Visualizer</span>
+      </div>
+
+      <div class="visualizer-container">
+        <canvas id="waveformCanvas"></canvas>
+        <div class="meter-label">
+          <span>Mic Volume Level</span>
+          <span id="meterPercent">0%</span>
+        </div>
+        <div class="meter-bar">
+          <div id="meterFill" class="meter-fill"></div>
+        </div>
+      </div>
+
+      <div class="card-title">
+        <span>Session Metrics</span>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-title">PCM Frames</div>
+          <div id="metricFrames" class="metric-value">0</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Audio Out (KB)</div>
+          <div id="metricBytes" class="metric-value">0</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">RTT Ping</div>
+          <div id="metricRtt" class="metric-value">-- ms</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">VAD Status</div>
+          <div id="metricVad" class="metric-value" style="font-size:0.9rem;">SILENCE</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Content: Console Logs & Simulation -->
+    <div class="card console-panel">
+      <div class="console-header">
+        <div class="card-title">
+          <span>Developer Event Stream</span>
+        </div>
+        <div class="console-actions">
+          <button id="copyLogBtn" class="btn-secondary btn-sm">Copy Logs</button>
+          <button id="clearLogBtn" class="btn-secondary btn-sm">Clear</button>
+        </div>
+      </div>
+
+      <div id="consoleLogs" class="console-logs">
+        <div class="log-entry">
+          <span class="log-time">00:00:00</span>
+          <span class="log-tag tag-ws">SYSTEM</span>
+          <span class="log-msg">UCVE Developer Console ready. Click "Start Voice Session" to connect.</span>
+        </div>
+      </div>
+
+      <div class="input-bar">
+        <input id="textTurnInput" type="text" placeholder="Simulate text turn (e.g., Hello Assistant)..." disabled />
+        <button id="sendTurnBtn" class="btn-secondary" disabled>Send Turn</button>
+      </div>
+    </div>
+  </main>
+
   <script type="module">
-    const statusEl = document.getElementById('status');
+    const statusBadge = document.getElementById('statusBadge');
+    const statusText = document.getElementById('statusText');
+    const startBtn = document.getElementById('startBtn');
+    const muteBtn = document.getElementById('muteBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const muteText = document.getElementById('muteText');
+    const consoleLogs = document.getElementById('consoleLogs');
+    const meterFill = document.getElementById('meterFill');
+    const meterPercent = document.getElementById('meterPercent');
+    const metricFrames = document.getElementById('metricFrames');
+    const metricBytes = document.getElementById('metricBytes');
+    const metricRtt = document.getElementById('metricRtt');
+    const metricVad = document.getElementById('metricVad');
+    const textTurnInput = document.getElementById('textTurnInput');
+    const sendTurnBtn = document.getElementById('sendTurnBtn');
+    const canvas = document.getElementById('waveformCanvas');
+    const ctxCanvas = canvas.getContext('2d');
+
     let ws = null;
     let audioCtx = null;
     let workletNode = null;
     let playTime = 0;
+    let isMuted = false;
+    let totalFrames = 0;
+    let totalBytesSent = 0;
+    let pingStartTime = 0;
+
+    // Resize Canvas
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+
+    function setStatus(state, label) {
+      statusText.textContent = label;
+      statusBadge.className = 'status-badge ' + state;
+    }
+
+    function addLog(tag, message, tagClass = 'tag-ws') {
+      const now = new Date();
+      const timeStr = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `
+        <span class="log-time">${timeStr}</span>
+        <span class="log-tag ${tagClass}">${tag}</span>
+        <span class="log-msg">${escapeHtml(message)}</span>
+      `;
+      consoleLogs.appendChild(entry);
+      consoleLogs.scrollTop = consoleLogs.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // Canvas Waveform Animation Data
+    let waveformData = new Float32Array(32).fill(0);
+    function drawWaveform() {
+      ctxCanvas.clearRect(0, 0, canvas.width, canvas.height);
+      ctxCanvas.fillStyle = 'rgba(0, 242, 254, 0.2)';
+      const barWidth = canvas.width / waveformData.length;
+      for (let i = 0; i < waveformData.length; i++) {
+        const val = waveformData[i];
+        const h = Math.max(4, val * canvas.height);
+        const x = i * barWidth;
+        const y = (canvas.height - h) / 2;
+        ctxCanvas.fillStyle = val > 0.4 ? '#00f2fe' : 'rgba(0, 242, 254, 0.35)';
+        ctxCanvas.fillRect(x, y, barWidth - 2, h);
+      }
+      requestAnimationFrame(drawWaveform);
+    }
+    drawWaveform();
 
     async function mint() {
       const tenantId = localStorage.getItem('ucve_tenant_id') || '00000000-0000-0000-0000-000000000001';
       const agentId = localStorage.getItem('ucve_agent_id') || '00000000-0000-0000-0000-0000000000a1';
+      addLog('MINT', `Minting session for tenant=${tenantId.substring(0,8)}... agent=${agentId.substring(0,8)}...`, 'tag-mint');
+      
       const resp = await fetch('http://127.0.0.1:8090/mint', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tenant_id: tenantId, agent_id: agentId }),
       });
-      if (!resp.ok) throw new Error('mint failed: ' + resp.status);
-      return resp.json();
+      if (!resp.ok) throw new Error('Mint signature HTTP error: ' + resp.status);
+      const data = await resp.json();
+      addLog('MINT', `Session minted successfully. Session ID: ${data.session_id || 'OK'}`, 'tag-mint');
+      return data;
+    }
+
+    function calculateRms(pcm16Buffer) {
+      const samples = new Int16Array(pcm16Buffer);
+      let sum = 0;
+      for (let i = 0; i < samples.length; i++) {
+        const norm = samples[i] / 32768;
+        sum += norm * norm;
+      }
+      return Math.sqrt(sum / samples.length);
     }
 
     function playPcm16(buf) {
       if (!audioCtx) return;
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
       const samples = new Int16Array(buf);
       const f32 = new Float32Array(samples.length);
       for (let i = 0; i < samples.length; i++) f32[i] = samples[i] / 32768;
@@ -50,15 +618,20 @@
       playTime += audioBuf.duration;
     }
 
-    document.getElementById('startBtn').onclick = async () => {
+    startBtn.onclick = async () => {
       try {
-        statusEl.textContent = 'Status: minting…';
+        setStatus('minting', 'MINTING TOKEN');
+        startBtn.disabled = true;
+        
         const minted = await mint();
         let wsUrl = minted.ws_url || 'ws://127.0.0.1:8081/ws/audio';
         wsUrl += (wsUrl.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(minted.token);
 
-        audioCtx = new AudioContext({ sampleRate: 16000 });
+        addLog('WS', `Connecting WebSocket to ${wsUrl.split('?')[0]}`, 'tag-ws');
+
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
         await audioCtx.audioWorklet.addModule('./pcm-worklet.js');
+        
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const src = audioCtx.createMediaStreamSource(stream);
         workletNode = new AudioWorkletNode(audioCtx, 'pcm16-capture');
@@ -66,32 +639,156 @@
 
         ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
-        ws.onopen = () => { statusEl.textContent = 'Status: connected'; };
+
+        ws.onopen = () => {
+          setStatus('connected', 'CONNECTED (LISTENING)');
+          addLog('WS', 'WebSocket transport established. Sovereign pipeline active.', 'tag-ws');
+          muteBtn.disabled = false;
+          stopBtn.disabled = false;
+          textTurnInput.disabled = false;
+          sendTurnBtn.disabled = false;
+        };
+
         ws.onmessage = (ev) => {
           if (typeof ev.data === 'string') {
             try {
               const msg = JSON.parse(ev.data);
-              if (msg.event_type === 'ping') {
+              const eventType = msg.event_type || msg.type;
+              
+              if (eventType === 'ping') {
+                pingStartTime = performance.now();
                 ws.send(JSON.stringify({ event_type: 'pong', timestamp_ms: Date.now(), payload: {} }));
+                addLog('PING', 'Server ping received -> pong sent', 'tag-ping');
+              } else if (eventType === 'control.pong' || eventType === 'pong') {
+                const rtt = Math.round(performance.now() - pingStartTime);
+                metricRtt.textContent = `${rtt} ms`;
+              } else if (eventType === 'transcript' || eventType === 'stt') {
+                addLog('STT', `Transcript: "${msg.payload?.text || JSON.stringify(msg)}"`, 'tag-stt');
+              } else if (eventType === 'llm_chunk' || eventType === 'llm') {
+                addLog('LLM', `LLM Output: ${msg.payload?.text || JSON.stringify(msg)}`, 'tag-llm');
+              } else if (eventType === 'metric') {
+                addLog('METRIC', `Event: ${msg.payload?.kind || eventType}`, 'tag-ws');
+              } else {
+                addLog('EVENT', `${eventType}: ${JSON.stringify(msg)}`, 'tag-ws');
               }
             } catch (_) {}
             return;
           }
+
+          // Incoming PCM Audio Response (TTS / Echo)
+          const pcmBytes = ev.data.byteLength;
+          addLog('AUDIO_IN', `Received ${pcmBytes} bytes PCM16 audio response`, 'tag-tts');
           playPcm16(ev.data);
         };
-        workletNode.port.onmessage = (ev) => {
-          if (ws && ws.readyState === WebSocket.OPEN) ws.send(ev.data);
+
+        ws.onerror = (err) => {
+          addLog('ERROR', 'WebSocket error encountered', 'tag-error');
+          setStatus('error', 'WS ERROR');
         };
+
+        ws.onclose = (ev) => {
+          setStatus('', 'DISCONNECTED');
+          addLog('WS', `WebSocket closed (code ${ev.code}, reason: ${ev.reason || 'normal'})`, 'tag-ws');
+          cleanup();
+        };
+
+        workletNode.port.onmessage = (ev) => {
+          if (isMuted) return;
+          const pcmBuffer = ev.data;
+          
+          // Calculate RMS level for visualizer
+          const rms = calculateRms(pcmBuffer);
+          const percent = Math.min(100, Math.round(rms * 250));
+          meterFill.style.width = percent + '%';
+          meterPercent.textContent = percent + '%';
+
+          // Update Canvas Waveform Array
+          for (let i = 0; i < waveformData.length - 1; i++) {
+            waveformData[i] = waveformData[i + 1];
+          }
+          waveformData[waveformData.length - 1] = Math.min(1.0, rms * 4);
+
+          // Update VAD status badge
+          if (rms > 0.04) {
+            metricVad.textContent = 'SPEECH';
+            metricVad.style.color = 'var(--accent-cyan)';
+          } else {
+            metricVad.textContent = 'SILENCE';
+            metricVad.style.color = 'var(--text-muted)';
+          }
+
+          totalFrames++;
+          totalBytesSent += pcmBuffer.byteLength;
+          metricFrames.textContent = totalFrames;
+          metricBytes.textContent = Math.round(totalBytesSent / 1024);
+
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(pcmBuffer);
+          }
+        };
+
       } catch (e) {
         console.error(e);
-        statusEl.textContent = 'Status: error ' + e.message;
+        addLog('ERROR', e.message, 'tag-error');
+        setStatus('error', 'ERROR');
+        cleanup();
       }
     };
 
-    document.getElementById('stopBtn').onclick = () => {
-      if (ws) ws.close();
-      if (audioCtx) audioCtx.close();
-      statusEl.textContent = 'Status: stopped';
+    muteBtn.onclick = () => {
+      isMuted = !isMuted;
+      if (isMuted) {
+        muteText.textContent = 'Unmute Mic';
+        muteBtn.classList.add('active');
+        meterFill.style.width = '0%';
+        meterPercent.textContent = 'MUTED';
+        addLog('AUDIO', 'Microphone muted', 'tag-audio');
+      } else {
+        muteText.textContent = 'Mute Mic';
+        muteBtn.classList.remove('active');
+        addLog('AUDIO', 'Microphone unmuted', 'tag-audio');
+      }
+    };
+
+    function cleanup() {
+      if (ws) { ws.close(); ws = null; }
+      if (audioCtx) { audioCtx.close(); audioCtx = null; }
+      startBtn.disabled = false;
+      muteBtn.disabled = true;
+      stopBtn.disabled = true;
+      textTurnInput.disabled = true;
+      sendTurnBtn.disabled = true;
+      meterFill.style.width = '0%';
+      meterPercent.textContent = '0%';
+      metricVad.textContent = 'IDLE';
+    }
+
+    stopBtn.onclick = () => {
+      addLog('WS', 'User initiated session teardown.', 'tag-ws');
+      cleanup();
+    };
+
+    document.getElementById('clearLogBtn').onclick = () => {
+      consoleLogs.innerHTML = '';
+    };
+
+    document.getElementById('copyLogBtn').onclick = () => {
+      const text = Array.from(consoleLogs.querySelectorAll('.log-entry'))
+        .map(el => el.innerText).join('\n');
+      navigator.clipboard.writeText(text);
+      addLog('SYSTEM', 'Console logs copied to clipboard.', 'tag-ws');
+    };
+
+    sendTurnBtn.onclick = () => {
+      const text = textTurnInput.value.trim();
+      if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ event_type: 'user_turn', payload: { text: text } }));
+      addLog('STT', `Injected User Text Turn: "${text}"`, 'tag-stt');
+      textTurnInput.value = '';
+    };
+
+    textTurnInput.onkeydown = (e) => {
+      if (e.key === 'Enter') sendTurnBtn.click();
     };
   </script>
 </body>
