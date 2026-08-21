@@ -13,9 +13,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from typing import Any
+
 import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from control_plane.auth.hmac_mint import expected_signature
@@ -35,7 +38,7 @@ class MintRequest(BaseModel):
 
 
 @app.post("/mint")
-async def mint(body: MintRequest) -> dict:
+async def mint(body: MintRequest) -> dict[str, Any]:
     secret = os.environ.get("UCVE_MINT_HMAC_SECRET", "dev-only-replace-me-mint-hmac-32")
     cp = os.environ.get("UCVE_CONTROL_PLANE_URL", "http://127.0.0.1:8080")
     ts = str(int(time.time()))
@@ -50,14 +53,21 @@ async def mint(body: MintRequest) -> dict:
                 "X-Nonce": nonce,
                 "X-Agent-Id": body.agent_id,
                 "X-Signature": sig,
-                "Origin": os.environ.get("UCVE_DEMO_ORIGIN", "http://127.0.0.1:5173"),
+                "Origin": os.environ.get("UCVE_DEMO_ORIGIN", "http://127.0.0.1:8090"),
             },
         )
         resp.raise_for_status()
-        return resp.json()
+        res_data: dict[str, Any] = resp.json()
+        return res_data
+
+
+web_client_dir = REPO_ROOT / "examples" / "web-client"
+if web_client_dir.is_dir():
+    app.mount("/", StaticFiles(directory=str(web_client_dir), html=True), name="web_client")
 
 
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="127.0.0.1", port=8090)
+

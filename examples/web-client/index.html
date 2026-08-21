@@ -54,11 +54,8 @@
       try {
         statusEl.textContent = 'Status: minting…';
         const minted = await mint();
-        const wsUrl = (minted.ws_url || 'ws://127.0.0.1:8081/ws/audio') +
-          (minted.ws_url?.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(minted.token);
-        // Fix: ws_url already path; append token query
-        const url = new URL(minted.ws_url || 'ws://127.0.0.1:8081/ws/audio');
-        url.searchParams.set('token', minted.token);
+        let wsUrl = minted.ws_url || 'ws://127.0.0.1:8081/ws/audio';
+        wsUrl += (wsUrl.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(minted.token);
 
         audioCtx = new AudioContext({ sampleRate: 16000 });
         await audioCtx.audioWorklet.addModule('./pcm-worklet.js');
@@ -67,7 +64,7 @@
         workletNode = new AudioWorkletNode(audioCtx, 'pcm16-capture');
         src.connect(workletNode);
 
-        ws = new WebSocket(url.toString());
+        ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
         ws.onopen = () => { statusEl.textContent = 'Status: connected'; };
         ws.onmessage = (ev) => {
