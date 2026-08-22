@@ -122,10 +122,9 @@ async def handle_session_mint(
 
     tenant = await mint_ctx.tenant_repo.get_tenant(tenant_id)
     if tenant is None:
-        # Auto-provision only for isolated unit tests that omit seeding.
-        # Production/H2 path must pre-create tenants.
-        if os.environ.get("UCVE_ENV", "development").lower() == "test":
-            tenant = Tenant(id=tenant_id, name=f"test-{tenant_id}")
+        # Auto-provision for test or development mode when seeding demo tenant.
+        if os.environ.get("UCVE_ENV", "development").lower() in ("test", "development"):
+            tenant = Tenant(id=tenant_id, name=f"dev-{tenant_id}")
             await mint_ctx.tenant_repo.create_tenant(tenant)
         else:
             _record_rejection(mint_ctx, tenant_id, 401, "unknown tenant")
@@ -138,7 +137,7 @@ async def handle_session_mint(
         return 403, {"error": "Agent does not belong to tenant."}
 
     if agent is None:
-        if os.environ.get("UCVE_ENV", "development").lower() == "test":
+        if os.environ.get("UCVE_ENV", "development").lower() in ("test", "development"):
             from core.db.models import Agent
 
             agent = Agent(id=agent_id, tenant_id=tenant_id, name=agent_id)

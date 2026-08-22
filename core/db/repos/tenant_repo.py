@@ -14,6 +14,11 @@ class TenantRepository:
         self._tenants: dict[str, Tenant] = {}
         self._compliance_profiles: dict[str, TenantComplianceProfile] = {}
         self._agents: dict[str, Agent] = {}
+        # Pre-seed default demo tenant & agent for instant local dev & developer console
+        dev_tenant = Tenant(id="00000000-0000-0000-0000-000000000001", name="dev-demo-tenant")
+        dev_agent = Agent(id="00000000-0000-0000-0000-0000000000a1", tenant_id="00000000-0000-0000-0000-000000000001", name="dev-demo-agent")
+        self._tenants[dev_tenant.id] = dev_tenant
+        self._agents[dev_agent.id] = dev_agent
 
     async def create_tenant(self, tenant: Tenant) -> Tenant:
         """Persist new tenant entity."""

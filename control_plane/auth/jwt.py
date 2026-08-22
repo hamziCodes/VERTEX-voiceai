@@ -8,7 +8,7 @@ from typing import Any
 
 import jwt
 
-from core.runtime.env import is_test_env
+from core.runtime.env import is_production, is_test_env
 
 _TEST_DEFAULT_SECRET = "ucve-jwt-secret-test-only-32bytes!"
 _REQUIRED_ACTION = "roomJoin"
@@ -19,16 +19,16 @@ class JWTConfigurationError(ValueError):
 
 
 def resolve_jwt_secret(secret: str | None = None) -> str:
-    """Resolve HS256 secret: explicit arg → env → test-only default."""
+    """Resolve HS256 secret: explicit arg → env → test/dev default."""
     if secret:
         return secret
     env_secret = (os.environ.get("UCVE_JWT_SECRET") or "").strip()
     if env_secret:
         return env_secret
-    if is_test_env():
+    if not is_production():
         return _TEST_DEFAULT_SECRET
     raise JWTConfigurationError(
-        "UCVE_JWT_SECRET is required when UCVE_ENV is not 'test'."
+        "UCVE_JWT_SECRET is required when UCVE_ENV is 'production'."
     )
 
 
