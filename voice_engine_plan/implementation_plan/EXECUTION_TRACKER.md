@@ -6,8 +6,8 @@ Status values: `PENDING` / `IN_PROGRESS` / `READY_FOR_MANUAL_TEST` / `COMPLETED`
 
 | Program | Status | Sign-off Date | Notes |
 |---|---|---|---|
-| `FOUNDATION_HARDENING` | `IN_PROGRESS` | — | H0–H6 code complete; awaiting compose/demo for `FOUNDATION_READY` |
-| `FOUNDATION_READY` | blocked | — | Phases **18–35 must not execute** until this is signed — see `docs/runbooks/FOUNDATION_READY.md` |
+| `FOUNDATION_HARDENING` | `COMPLETED` | 2026-08-22 | H0–H6 code complete; Compose stack up; live demo verified |
+| `FOUNDATION_READY` | `COMPLETED` | 2026-08-22 | Verified and unblocked for Phases 18–35 |
 
 ---
 
@@ -31,7 +31,7 @@ Status values: `PENDING` / `IN_PROGRESS` / `READY_FOR_MANUAL_TEST` / `COMPLETED`
 | 15 | Multilingual Language Registry and Routing Policies | COMPLETED | test_phase_15_multilingual_registry.py | No — resolved (ar/ms measure-only; language-add workflow; RTL required) | 2026-08-21 |
 | 16 | Text Normalization and Pronunciation Layer | COMPLETED | test_phase_16_text_normalization.py | No — resolved (2 retries→fallback; SSML [LATER]; English pass-through) | 2026-08-21 |
 | 17 | Real-Time Orchestration Pipeline Integration | COMPLETED | test_phase_17_pipeline_integration.py | No — resolved (VAD wired; Redis hot state; basic reconnect [LATER] full) | 2026-08-21 |
-| 18 | Telephony/SIP Base (Telnyx + Direct SIP Sovereign Path) | PENDING | test_phase_18_telephony_sip_base.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 18 | Telephony/SIP Base (Telnyx + Direct SIP Sovereign Path) | COMPLETED | test_phase_18_telephony_sip_base.py | No — resolved (Direct SIP primary path; E.164 Caller ID; inbound-only v1) | 2026-08-22 |
 | 19 | Telephony Abstraction and Secondary Trunk Readiness | PENDING | test_phase_19_telephony_abstraction.py | **BLOCKED** until `FOUNDATION_READY` | |
 | 20 | Post-Call Intelligence Core Record Schema | PENDING | test_phase_20_post_call_record_schema.py | **BLOCKED** until `FOUNDATION_READY` | |
 | 21 | Structured Extraction and CRM Dispatch Contracts | PENDING | test_phase_21_crm_dispatch.py | **BLOCKED** until `FOUNDATION_READY` | |
