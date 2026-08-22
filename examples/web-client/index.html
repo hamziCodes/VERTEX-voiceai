@@ -599,23 +599,46 @@
       return Math.sqrt(sum / samples.length);
     }
 
+    let pcmQueue = new Int16Array(0);
+    let lastAudioLogTime = 0;
+    let audioInBatchBytes = 0;
+
     function playPcm16(buf) {
       if (!audioCtx) return;
       if (audioCtx.state === 'suspended') {
         audioCtx.resume();
       }
-      const samples = new Int16Array(buf);
-      const f32 = new Float32Array(samples.length);
-      for (let i = 0; i < samples.length; i++) f32[i] = samples[i] / 32768;
-      const audioBuf = audioCtx.createBuffer(1, f32.length, 16000);
-      audioBuf.copyToChannel(f32, 0);
-      const src = audioCtx.createBufferSource();
-      src.buffer = audioBuf;
-      src.connect(audioCtx.destination);
-      const now = audioCtx.currentTime;
-      if (playTime < now) playTime = now;
-      src.start(playTime);
-      playTime += audioBuf.duration;
+
+      // Append incoming Int16 samples to queue
+      const incoming = new Int16Array(buf);
+      const combined = new Int16Array(pcmQueue.length + incoming.length);
+      combined.set(pcmQueue, 0);
+      combined.set(incoming, pcmQueue.length);
+      pcmQueue = combined;
+
+      // Play in smooth 40ms chunks (640 samples @ 16kHz)
+      const CHUNK_SIZE = 640;
+      while (pcmQueue.length >= CHUNK_SIZE) {
+        const chunk = pcmQueue.slice(0, CHUNK_SIZE);
+        pcmQueue = pcmQueue.slice(CHUNK_SIZE);
+
+        const f32 = new Float32Array(chunk.length);
+        for (let i = 0; i < chunk.length; i++) f32[i] = chunk[i] / 32768;
+
+        const audioBuf = audioCtx.createBuffer(1, f32.length, 16000);
+        audioBuf.copyToChannel(f32, 0);
+
+        const src = audioCtx.createBufferSource();
+        src.buffer = audioBuf;
+        src.connect(audioCtx.destination);
+
+        const now = audioCtx.currentTime;
+        if (playTime < now) {
+          playTime = now + 0.03; // 30ms lookahead safety buffer
+        }
+        src.start(playTime);
+        playTime += audioBuf.duration;
+      }
     }
 
     startBtn.onclick = async () => {
@@ -677,7 +700,13 @@
 
           // Incoming PCM Audio Response (TTS / Echo)
           const pcmBytes = ev.data.byteLength;
-          addLog('AUDIO_IN', `Received ${pcmBytes} bytes PCM16 audio response`, 'tag-tts');
+          audioInBatchBytes += pcmBytes;
+          const nowTime = performance.now();
+          if (nowTime - lastAudioLogTime > 1000) {
+            addLog('AUDIO_IN', `Streaming 16kHz PCM16 audio response (${Math.round(audioInBatchBytes / 1024)} KB/sec)`, 'tag-tts');
+            lastAudioLogTime = nowTime;
+            audioInBatchBytes = 0;
+          }
           playPcm16(ev.data);
         };
 
