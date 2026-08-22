@@ -12,6 +12,9 @@ legacy_codebases/**/Antigravity/
 **/.env
 **/.env.local
 **/.env.*.local
+API KEYS VOICESDK - hamzicodes@gmai.txt
+API KEYS*
+*.txt.keys
 
 # Python
 __pycache__/
