@@ -10,7 +10,7 @@ import jwt
 
 from core.runtime.env import is_test_env
 
-_TEST_DEFAULT_SECRET = "ucve-jwt-secret-test-only-32b!!"
+_TEST_DEFAULT_SECRET = "ucve-jwt-secret-test-only-32bytes!"
 _REQUIRED_ACTION = "roomJoin"
 
 
