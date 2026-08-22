@@ -1,0 +1,14 @@
+# File 1 §4 Default Stage Latency Budgets (Target p50 < 450 ms)
+budgets:
+  stt:
+    budget_ms: 150.0
+    warn_ms: 250.0
+  rag:
+    budget_ms: 100.0
+    warn_ms: 200.0
+  llm:
+    budget_ms: 200.0
+    warn_ms: 400.0
+  tts:
+    budget_ms: 150.0
+    warn_ms: 250.0
