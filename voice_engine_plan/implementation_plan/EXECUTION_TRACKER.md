@@ -33,7 +33,7 @@ Status values: `PENDING` / `IN_PROGRESS` / `READY_FOR_MANUAL_TEST` / `COMPLETED`
 | 17 | Real-Time Orchestration Pipeline Integration | COMPLETED | test_phase_17_pipeline_integration.py | No — resolved (VAD wired; Redis hot state; basic reconnect [LATER] full) | 2026-08-21 |
 | 18 | Telephony/SIP Base (Telnyx + Direct SIP Sovereign Path) | COMPLETED | test_phase_18_telephony_sip_base.py | No — resolved (Direct SIP primary path; E.164 Caller ID; inbound-only v1) | 2026-08-22 |
 | 19 | Telephony Abstraction and Secondary Trunk Readiness | COMPLETED | test_phase_19_telephony_abstraction.py | No — resolved (BaseTelephonyTransport abstraction; failover router; single-trunk dev default) | 2026-08-22 |
-| 20 | Post-Call Intelligence Core Record Schema | PENDING | test_phase_20_post_call_record_schema.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 20 | Post-Call Intelligence Core Record Schema | COMPLETED | test_phase_20_post_call_record_schema.py | No — resolved (CallRecord Pydantic schema; dual-channel default; HIPAA recording gate) | 2026-08-22 |
 | 21 | Structured Extraction and CRM Dispatch Contracts | PENDING | test_phase_21_crm_dispatch.py | **BLOCKED** until `FOUNDATION_READY` | |
 | 22 | Real-Time MCP Tooling Integration Layer | PENDING | test_phase_22_mcp_tooling.py | **BLOCKED** until `FOUNDATION_READY` | |
 | 23 | Real-Time RAG and Knowledge Ingestion Contracts | PENDING | test_phase_23_realtime_rag.py | **BLOCKED** until `FOUNDATION_READY` | |
