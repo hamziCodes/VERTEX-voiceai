@@ -35,7 +35,7 @@ Status values: `PENDING` / `IN_PROGRESS` / `READY_FOR_MANUAL_TEST` / `COMPLETED`
 | 19 | Telephony Abstraction and Secondary Trunk Readiness | COMPLETED | test_phase_19_telephony_abstraction.py | No — resolved (BaseTelephonyTransport abstraction; failover router; single-trunk dev default) | 2026-08-22 |
 | 20 | Post-Call Intelligence Core Record Schema | COMPLETED | test_phase_20_post_call_record_schema.py | No — resolved (CallRecord Pydantic schema; dual-channel default; HIPAA recording gate) | 2026-08-22 |
 | 21 | Structured Extraction and CRM Dispatch Contracts | COMPLETED | test_phase_21_crm_dispatch.py | No — resolved (TenantExtractionSchema, VerificationService, HMAC WebhookDispatcher, HumanReviewQueue) | 2026-08-22 |
-| 22 | Real-Time MCP Tooling Integration Layer | PENDING | test_phase_22_mcp_tooling.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 22 | Real-Time MCP Tooling Integration Layer | COMPLETED | test_phase_22_mcp_tooling.py | No — resolved (MCPHost, ToolOrchestrator, BUILTIN_TOOLS, ConversationalFillerSynth, 3s timeout) | 2026-08-22 |
 | 23 | Real-Time RAG and Knowledge Ingestion Contracts | PENDING | test_phase_23_realtime_rag.py | **BLOCKED** until `FOUNDATION_READY` | |
 | 24 | Latency Budget Enforcement and SLO Policies | PENDING | test_phase_24_latency_slo.py | **BLOCKED** until `FOUNDATION_READY` | |
 | 25 | Error Taxonomy and Alerting Strategy | PENDING | test_phase_25_error_alerting.py | **BLOCKED** until `FOUNDATION_READY` | |
