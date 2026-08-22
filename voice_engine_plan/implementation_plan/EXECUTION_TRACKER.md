@@ -38,7 +38,7 @@ Status values: `PENDING` / `IN_PROGRESS` / `READY_FOR_MANUAL_TEST` / `COMPLETED`
 | 22 | Real-Time MCP Tooling Integration Layer | COMPLETED | test_phase_22_mcp_tooling.py | No — resolved (MCPHost, ToolOrchestrator, BUILTIN_TOOLS, ConversationalFillerSynth, 3s timeout) | 2026-08-22 |
 | 23 | Real-Time RAG and Knowledge Ingestion Contracts | COMPLETED | test_phase_23_realtime_rag.py | No — resolved (pgvector, SpeculativeRetrieval with <=0.08 Levenshtein threshold, tier-aware embedder) | 2026-08-22 |
 | 24 | Latency Budget Enforcement and SLO Policies | COMPLETED | test_phase_24_latency_slo.py | No — resolved (LatencyWaterfall, LatencyCollector, SLOPolicy warn-only v1, demotion opt-in) | 2026-08-22 |
-| 25 | Error Taxonomy and Alerting Strategy | PENDING | test_phase_25_error_alerting.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 25 | Error Taxonomy and Alerting Strategy | COMPLETED | test_phase_25_error_alerting.py | No — resolved (UCVEErrorCode taxonomy, ClientErrorMapper generic responses, 30d DLQ) | 2026-08-22 |
 | 26 | Self-Serve Agent Builder Domain Model | PENDING | test_phase_26_agent_builder_domain.py | **BLOCKED** until `FOUNDATION_READY` | |
 | 27 | Self-Serve Agent Builder UX Flow Spec | PENDING | test_phase_27_agent_builder_ux.py | **BLOCKED** until `FOUNDATION_READY` | |
 | 28 | SDK/API Surface and Versioning Strategy | PENDING | test_phase_28_sdk_api_surface.py | **BLOCKED** until `FOUNDATION_READY` | |
