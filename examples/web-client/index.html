@@ -620,7 +620,7 @@
       src.connect(audioCtx.destination);
 
       const now = audioCtx.currentTime;
-      if (playTime < now) playTime = now + 0.01;
+      if (playTime < now + 0.015) playTime = now + 0.035;
       src.start(playTime);
       playTime += audioBuf.duration;
     }
@@ -640,8 +640,8 @@
       combined.set(incoming, pcmQueue.length);
       pcmQueue = combined;
 
-      // Play in smooth 40ms chunks (640 samples @ 16kHz)
-      const CHUNK_SIZE = 640;
+      // Play in smooth 20ms chunks (320 samples @ 16kHz)
+      const CHUNK_SIZE = 320;
       while (pcmQueue.length >= CHUNK_SIZE) {
         const chunk = pcmQueue.slice(0, CHUNK_SIZE);
         pcmQueue = pcmQueue.slice(CHUNK_SIZE);
@@ -657,16 +657,16 @@
         src.connect(audioCtx.destination);
 
         const now = audioCtx.currentTime;
-        if (playTime < now) {
-          playTime = now + 0.02; // 20ms lookahead safety buffer
+        if (playTime < now + 0.015) {
+          playTime = now + 0.035; // 35ms gapless jitter buffer window
         }
         src.start(playTime);
         playTime += audioBuf.duration;
       }
 
-      // Schedule trailing flush for remaining samples after 100ms
+      // Schedule trailing flush for remaining samples after 40ms
       if (pcmQueue.length > 0) {
-        flushTimer = setTimeout(flushPcmQueue, 100);
+        flushTimer = setTimeout(flushPcmQueue, 40);
       }
     }
 
