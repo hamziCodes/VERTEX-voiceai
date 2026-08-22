@@ -579,11 +579,20 @@
       const agentId = localStorage.getItem('ucve_agent_id') || '00000000-0000-0000-0000-0000000000a1';
       addLog('MINT', `Minting session for tenant=${tenantId.substring(0,8)}... agent=${agentId.substring(0,8)}...`, 'tag-mint');
       
-      const resp = await fetch('http://127.0.0.1:8090/mint', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenant_id: tenantId, agent_id: agentId }),
-      });
+      let resp;
+      try {
+        resp = await fetch('http://127.0.0.1:8090/mint', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenant_id: tenantId, agent_id: agentId }),
+        });
+      } catch (err) {
+        resp = await fetch('http://127.0.0.1:8080/v1/session/mint', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenant_id: tenantId, agent_id: agentId }),
+        });
+      }
       if (!resp.ok) throw new Error('Mint signature HTTP error: ' + resp.status);
       const data = await resp.json();
       addLog('MINT', `Session minted successfully. Session ID: ${data.session_id || 'OK'}`, 'tag-mint');

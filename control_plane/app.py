@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from control_plane.audit_routes import handle_get_audit_logs
 from control_plane.auth.api_keys import APIKeyManager
+from control_plane.auth.hmac_mint import expected_signature
 from control_plane.auth.middleware import enforce_rbac
 from control_plane.metrics import handle_metrics_request
 from control_plane.routes.alerts import router as alerts_router
@@ -28,6 +31,11 @@ from control_plane.routes.telephony import router as telephony_router
 from control_plane.routes.usage import handle_get_usage
 from control_plane.secrets_routes import handle_rotate_secret
 from core.runtime.env import require_production_secrets
+
+
+class QuickMintBody(BaseModel):
+    tenant_id: str = "00000000-0000-0000-0000-000000000001"
+    agent_id: str = "00000000-0000-0000-0000-0000000000a1"
 
 
 class RotateSecretBody(BaseModel):
@@ -59,6 +67,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(title="UCVE Control Plane", version="0.1.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(telephony_router, prefix="/v1")
 app.include_router(extraction_router, prefix="/v1")
@@ -120,6 +136,31 @@ async def mint_session(
 
     extra_headers = body.pop("_headers", {}) or {}
     return JSONResponse(content=body, headers=extra_headers)
+
+
+@app.post("/mint")
+@app.post("/v1/session/mint")
+async def quick_mint_session(body: QuickMintBody, request: Request) -> JSONResponse:
+    """Developer helper endpoint for quick session minting without raw HMAC headers."""
+    ts = str(int(time.time()))
+    nonce = uuid.uuid4().hex
+    secret = _mint_secret()
+    sig = expected_signature(secret, body.tenant_id, ts, nonce, body.agent_id)
+    ctx: MintContext = request.app.state.mint_ctx
+    status, res_body = await handle_session_mint(
+        body.tenant_id,
+        ts,
+        nonce,
+        body.agent_id,
+        sig,
+        secret=secret,
+        api_key_mint=True,
+        ctx=ctx,
+    )
+    if status != 200:
+        raise HTTPException(status_code=status, detail=res_body.get("error", "mint failed"))
+    extra_headers = res_body.pop("_headers", {}) or {}
+    return JSONResponse(content=res_body, headers=extra_headers)
 
 
 @app.post("/v1/session/refresh")
