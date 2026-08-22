@@ -11,3 +11,11 @@ CREATE TABLE IF NOT EXISTS telephony_dids (
 
 CREATE INDEX IF NOT EXISTS idx_telephony_dids_did_number ON telephony_dids(did_number);
 CREATE INDEX IF NOT EXISTS idx_telephony_dids_tenant_id ON telephony_dids(tenant_id);
+
+-- RLS Tenant Isolation Policies (FIX-026)
+ALTER TABLE telephony_dids ENABLE ROW LEVEL SECURITY;
+ALTER TABLE telephony_dids FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY telephony_dids_tenant_isolation ON telephony_dids
+    FOR ALL
+    USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);

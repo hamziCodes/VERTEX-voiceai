@@ -48,6 +48,12 @@ class CallRecordAssembler:
                 )
             )
 
+        # Zero-retention & GDPR strict compliance handling (FIX-018)
+        tier_lower = compliance_tier.lower().strip()
+        if tier_lower in ("gdpr_strict", "zero_retention"):
+            # Suppress audio recording storage URI for zero-retention compliance
+            recording_uri = None
+
         recording = (
             CallRecording(
                 recording_s3_uri=recording_uri,

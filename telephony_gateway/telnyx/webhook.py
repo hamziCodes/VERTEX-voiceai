@@ -16,9 +16,11 @@ class TelnyxWebhookHandler:
     def __init__(
         self,
         telnyx_public_key: str = "",
+        hmac_secret: str = "",
         resolver: SIPParticipantResolver | None = None,
     ) -> None:
         self.public_key = telnyx_public_key
+        self.hmac_secret = hmac_secret
         self.resolver = resolver or SIPParticipantResolver()
 
     def process_event(
@@ -30,24 +32,30 @@ class TelnyxWebhookHandler:
     ) -> dict[str, Any]:
         """Process incoming Telnyx webhook payload.
 
-        Fail-closed signature validation if public_key is configured.
+        Fail-closed signature validation.
         """
-        if self.public_key:
-            valid = verify_telnyx_signature(
-                payload_bytes,
-                signature_header,
-                timestamp_header,
-                self.public_key,
-            )
-            if not valid:
-                raise ValueError("Invalid Telnyx webhook signature")
+        if not self.public_key and not self.hmac_secret:
+            raise ValueError("Telnyx public key or HMAC secret required for webhook signature verification")
+
+        valid = verify_telnyx_signature(
+            payload_bytes,
+            signature_header,
+            timestamp_header,
+            public_key=self.public_key,
+            hmac_secret=self.hmac_secret,
+        )
+        if not valid:
+            raise ValueError("Invalid Telnyx webhook signature")
 
         data = payload_json.get("data", {})
         event_type = data.get("event_type", "")
         payload = data.get("payload", {})
 
-        from_num = payload.get("from", "+15550199000")
-        to_num = payload.get("to", "+18005550199")
+        from_num = payload.get("from")
+        to_num = payload.get("to")
+        if not from_num or not to_num:
+            raise ValueError("Webhook payload missing required 'from' or 'to' phone numbers")
+
         call_id = payload.get("call_control_id", str(uuid4()))
 
         tenant_id, agent_id = self.resolver.resolve(to_num)

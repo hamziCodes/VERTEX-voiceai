@@ -1,0 +1,12 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "post-call"
+version = "0.1.0"
+description = "UCVE Post-Call Intelligence Package"
+requires-python = ">=3.12"
+dependencies = [
+    "core",
+]

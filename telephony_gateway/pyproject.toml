@@ -1,0 +1,12 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "telephony-gateway"
+version = "0.1.0"
+description = "UCVE Telephony Gateway Package"
+requires-python = ">=3.12"
+dependencies = [
+    "core",
+]

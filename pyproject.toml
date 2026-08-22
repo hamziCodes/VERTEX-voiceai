@@ -12,6 +12,8 @@ dependencies = [
     "core",
     "control-plane",
     "worker-raw",
+    "telephony-gateway",
+    "post-call",
 ]
 
 [tool.uv]
@@ -24,12 +26,14 @@ dev-dependencies = [
 ]
 
 [tool.uv.workspace]
-members = ["core", "control_plane", "worker_raw"]
+members = ["core", "control_plane", "worker_raw", "telephony_gateway", "post_call"]
 
 [tool.uv.sources]
 core = { workspace = true }
 control-plane = { workspace = true }
 worker-raw = { workspace = true }
+telephony-gateway = { workspace = true }
+post-call = { workspace = true }
 
 [tool.ruff]
 line-length = 88

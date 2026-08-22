@@ -15,12 +15,16 @@ from control_plane.audit_routes import handle_get_audit_logs
 from control_plane.auth.api_keys import APIKeyManager
 from control_plane.auth.middleware import enforce_rbac
 from control_plane.metrics import handle_metrics_request
+from control_plane.routes.alerts import router as alerts_router
+from control_plane.routes.extraction_schemas import router as extraction_router
+from control_plane.routes.knowledge_bases import router as kb_router
 from control_plane.routes.session import (
     MintContext,
     get_default_mint_context,
     handle_session_mint,
     handle_session_refresh,
 )
+from control_plane.routes.telephony import router as telephony_router
 from control_plane.routes.usage import handle_get_usage
 from control_plane.secrets_routes import handle_rotate_secret
 from core.runtime.env import require_production_secrets
@@ -55,6 +59,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="UCVE Control Plane", version="0.1.0", lifespan=lifespan)
+
+app.include_router(telephony_router, prefix="/v1")
+app.include_router(extraction_router, prefix="/v1")
+app.include_router(kb_router, prefix="/v1")
+app.include_router(alerts_router, prefix="/v1")
 
 
 @app.middleware("http")

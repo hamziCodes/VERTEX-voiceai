@@ -20,8 +20,13 @@ class RecordingPolicy:
         return True
 
     @staticmethod
-    def validate_record(compliance_tier: str, has_recording: bool) -> bool:
+    def validate_record(
+        compliance_tier: str, has_recording: bool, tenant_config: dict | None = None
+    ) -> bool:
         """Validate if record satisfies compliance recording gate."""
-        if RecordingPolicy.is_recording_required(compliance_tier) and not has_recording:
+        if (
+            RecordingPolicy.is_recording_required(compliance_tier, tenant_config)
+            and not has_recording
+        ):
             return False
         return True

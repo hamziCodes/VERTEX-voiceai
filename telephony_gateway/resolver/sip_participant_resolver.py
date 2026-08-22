@@ -25,15 +25,33 @@ class SIPParticipantResolver:
         clean_did = self.normalize_e164(did)
         self._did_map[clean_did] = (tenant_id, agent_id)
 
-    def resolve(self, to_did: str) -> tuple[UUID, UUID]:
+    def resolve(self, to_did: str, allow_default_fallback: bool = False) -> tuple[UUID, UUID]:
         """Resolve a destination DID to (tenant_id, agent_id).
 
-        Falls back to default tenant/agent if DID is unknown in dev/sandbox mode.
+        Fails closed with ValueError if destination DID is unregistered.
         """
         clean_did = self.normalize_e164(to_did)
+
+        # 1. Memory registry lookup
         if clean_did in self._did_map:
             return self._did_map[clean_did]
-        return (DEFAULT_TENANT_ID, DEFAULT_AGENT_ID)
+
+        # 2. DB query if db_session provided
+        if self.db:
+            try:
+                row = self.db.execute(
+                    "SELECT tenant_id, agent_id FROM telephony_dids WHERE phone_number = :did AND status = 'active'",
+                    {"did": clean_did},
+                ).fetchone()
+                if row:
+                    return (row[0], row[1])
+            except Exception:
+                pass
+
+        if allow_default_fallback:
+            return (DEFAULT_TENANT_ID, DEFAULT_AGENT_ID)
+
+        raise ValueError(f"Unregistered destination DID: '{clean_did}'. Call rejected (fail-closed tenant boundary)")
 
     @staticmethod
     def normalize_e164(phone_number: str) -> str:

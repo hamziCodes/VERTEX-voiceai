@@ -29,7 +29,8 @@ class DeadLetterJob(BaseModel):
 class DeadLetterQueueRepository:
     """In-memory & PostgreSQL dead-letter queue repository."""
 
-    def __init__(self) -> None:
+    def __init__(self, db_pool: Any | None = None) -> None:
+        self.db_pool = db_pool
         self._jobs: dict[UUID, DeadLetterJob] = {}
 
     def enqueue(self, tenant_id: UUID, job_type: str, payload_ref: str, error_code: UCVEErrorCode) -> DeadLetterJob:
@@ -41,6 +42,33 @@ class DeadLetterQueueRepository:
             error_code=error_code,
         )
         self._jobs[job.job_id] = job
+
+        if self.db_pool:
+            try:
+                import asyncio
+
+                async def _save_db() -> None:
+                    async with self.db_pool.acquire() as conn:
+                        await conn.execute("SET LOCAL app.current_tenant_id = $1", str(tenant_id))
+                        await conn.execute(
+                            """
+                            INSERT INTO dead_letter_queue (
+                                job_id, tenant_id, job_type, payload_ref, error_code, attempts, max_attempts, expires_at
+                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                            """,
+                            job.job_id,
+                            tenant_id,
+                            job_type,
+                            payload_ref,
+                            error_code.value,
+                            job.attempts,
+                            job.max_attempts,
+                            job.expires_at,
+                        )
+
+                asyncio.create_task(_save_db())
+            except Exception:
+                pass
         return job
 
     def get_pending_retry(self) -> list[DeadLetterJob]:

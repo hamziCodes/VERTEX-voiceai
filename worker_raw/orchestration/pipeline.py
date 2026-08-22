@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 from typing import Any, Callable
+from uuid import UUID, uuid4
 
 from core.compliance.audit.writer import AuditWriter
 from core.compliance.redaction import RedactionService
@@ -36,7 +37,17 @@ from core.runtime.env import is_test_env
 from core.session.redis_store import RedisSessionStore
 from core.types.audio import AudioFrame
 from core.vad.silero_adapter import SileroVADAdapter
+from core.latency.collector import LatencyCollector
+from core.latency.waterfall import LatencyWaterfall
+from core.mcp.orchestrator import ToolOrchestrator
+from core.rag.models import KnowledgeBaseChunk
+from core.rag.retriever import PgVectorRetriever
+from core.rag.speculative import SpeculativeRetrieval
+from post_call.models.call_record import CallRecord
+from post_call.pipeline.enqueue import PostCallPipeline
+from worker_raw.orchestration.latency_hooks import LatencyHooks
 from worker_raw.orchestration.session_config import PipelineSessionConfig
+from worker_raw.orchestration.tool_handler import PipelineToolHandler
 
 logger = get_logger("ucve.orchestrator")
 
@@ -54,9 +65,19 @@ class PipelineOrchestrator:
         *,
         allow_testing_providers: bool = True,
         on_audio_out: Callable[[bytes], Any] | None = None,
+        tool_handler: PipelineToolHandler | None = None,
+        latency_collector: LatencyCollector | None = None,
+        rag_retriever: PgVectorRetriever | None = None,
+        post_call_pipeline: PostCallPipeline | None = None,
     ) -> None:
         self.allow_testing_providers = allow_testing_providers
         self.on_audio_out = on_audio_out
+        self.tool_handler = tool_handler or PipelineToolHandler()
+        self.latency_collector = latency_collector or LatencyCollector()
+        self.latency_hooks = LatencyHooks(self.latency_collector)
+        self.rag_retriever = rag_retriever or PgVectorRetriever()
+        self.speculative_rag = SpeculativeRetrieval(self.rag_retriever)
+        self.post_call_pipeline = post_call_pipeline or PostCallPipeline()
         self.vad_adapter = SileroVADAdapter()
         self.stt_provider = GladiaSTTProvider()
         self.llm_provider = GroqLLMProvider()
@@ -98,7 +119,10 @@ class PipelineOrchestrator:
                     await maybe
 
     async def run_turn(self, session_config: PipelineSessionConfig, user_text: str) -> str:
-        """Execute one STT→LLM→norm→TTS turn (user_text stands in for STT final)."""
+        """Execute one STT→RAG→LLM/Tool→norm→TTS turn with latency tracing."""
+        waterfall = self.latency_hooks.start_turn(UUID(session_config.session_id) if len(session_config.session_id) == 36 else uuid4())
+        waterfall.stt_final_ms = self.latency_hooks.now_ms()
+
         policy = TenantComplianceProfileLoader.load_effective_policy(
             session_config.compliance_tier,
             hipaa_baa_acknowledged_at=(
@@ -113,18 +137,42 @@ class PipelineOrchestrator:
         )
         self.fsm.trigger(SessionEvent.STT_FINAL)
 
+        # 1. Non-blocking RAG context retrieval
+        rag_context = ""
+        try:
+            tenant_uuid = UUID(session_config.tenant_id) if len(session_config.tenant_id) == 36 else uuid4()
+            rag_chunks = await self.speculative_rag.reconcile(user_text, tenant_uuid)
+            waterfall.rag_retrieve_ms = self.latency_hooks.now_ms()
+            if rag_chunks:
+                rag_context = "\n".join(f"[Knowledge DATA]: {c.text}" for c in rag_chunks)
+        except Exception as exc:
+            logger.warning("RAG retrieval skipped", error=str(exc))
+
         messages = [
-            {"role": "system", "content": "You are a helpful voice agent."},
+            {"role": "system", "content": f"You are a helpful voice agent.\n{rag_context}".strip()},
             {"role": "user", "content": user_text},
         ]
-        llm_cfg = LLMConfig(model="llama-3.1-8b-instant")
-        reply_parts: list[str] = []
-        async for chunk in self.llm_provider.generate_stream(messages, llm_cfg):
-            if chunk.text:
-                reply_parts.append(chunk.text)
-        reply = "".join(reply_parts) or "OK"
-        norm_result = self.normalizer.normalize(reply, language=session_config.language)
-        normalized = getattr(norm_result, "text", None) or str(norm_result)
+
+        # 2. Check tool execution vs LLM generation
+        if user_text.startswith("tool:"):
+            self.fsm.trigger(SessionEvent.TOOL_CALL_START)
+            tool_name = user_text.split(":", 1)[1].strip()
+            tool_res = await self.tool_handler.handle_tool_call(tool_name, {})
+            self.fsm.trigger(SessionEvent.TOOL_CALL_END)
+            normalized = tool_res.get("content", "Tool executed.")
+        else:
+            llm_cfg = LLMConfig(model="llama-3.1-8b-instant")
+            reply_parts: list[str] = []
+            ttft_recorded = False
+            async for chunk in self.llm_provider.generate_stream(messages, llm_cfg):
+                if not ttft_recorded:
+                    waterfall.llm_ttft_ms = self.latency_hooks.now_ms()
+                    ttft_recorded = True
+                if chunk.text:
+                    reply_parts.append(chunk.text)
+            reply = "".join(reply_parts) or "OK"
+            norm_result = self.normalizer.normalize(reply, language=session_config.language)
+            normalized = getattr(norm_result, "text", None) or str(norm_result)
 
         await self.redis_store.append_turn(
             session_config.session_id,
@@ -138,6 +186,9 @@ class PipelineOrchestrator:
         self._tts_task = asyncio.create_task(self._synthesize(normalized))
         try:
             await self._tts_task
+            waterfall.tts_ttfb_ms = self.latency_hooks.now_ms()
+            waterfall.playback_start_ms = waterfall.tts_ttfb_ms + 50.0  # Client playback estimate
+            self.latency_collector.record_turn(waterfall)
             self.fsm.trigger(SessionEvent.TTS_FIRST_BYTE)
             self.fsm.trigger(SessionEvent.TTS_DRAINED)
         except asyncio.CancelledError:
@@ -181,6 +232,37 @@ class PipelineOrchestrator:
                 "agent_sec",
                 duration,
             )
+
+            # Assemble and enqueue PostCall Record (FIX-014)
+            try:
+                from datetime import datetime, timezone
+                from post_call.models.call_record import CallRecord
+                from post_call.models.diarized_turn import DiarizedTurn
+
+                diarized = [
+                    DiarizedTurn(
+                        speaker=t.get("speaker", "user"),
+                        text=t.get("text", ""),
+                        start_ms=0,
+                        end_ms=1000,
+                    )
+                    for t in redacted_turns
+                ]
+                now_utc = datetime.now(timezone.utc)
+                record = CallRecord(
+                    tenant_id=UUID(session_config.tenant_id) if len(session_config.tenant_id) == 36 else uuid4(),
+                    agent_id=UUID(session_config.agent_id) if len(session_config.agent_id) == 36 else uuid4(),
+                    session_id=UUID(session_config.session_id) if len(session_config.session_id) == 36 else uuid4(),
+                    caller_id=getattr(session_config.caller_id, "from_number", None),
+                    compliance_tier=session_config.compliance_tier,
+                    started_at=now_utc,
+                    ended_at=now_utc,
+                    turns=diarized,
+                )
+                await self.post_call_pipeline.enqueue(record)
+            except Exception as exc:
+                logger.warning("Failed to enqueue PostCallRecord", error=str(exc))
+
             self.audit_writer.record(
                 tenant_id=session_config.tenant_id,
                 action="call_record_created",

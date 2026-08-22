@@ -12,3 +12,11 @@ CREATE TABLE IF NOT EXISTS dead_letter_queue (
 );
 
 CREATE INDEX IF NOT EXISTS idx_dlq_tenant_expiry ON dead_letter_queue(tenant_id, expires_at);
+
+-- RLS Tenant Isolation Policies (FIX-026)
+ALTER TABLE dead_letter_queue ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dead_letter_queue FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY dead_letter_queue_tenant_isolation ON dead_letter_queue
+    FOR ALL
+    USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);

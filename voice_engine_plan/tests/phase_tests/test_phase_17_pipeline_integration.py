@@ -27,7 +27,8 @@ async def test_pipeline_orchestrator_exists() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ws_connect_and_jwt_auth() -> None:
+async def test_ws_connect_and_jwt_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UCVE_ENV", "test")
     from control_plane.auth.jwt import issue_session_jwt
     from core.transport.native_websocket import NativeWebSocketTransport
 

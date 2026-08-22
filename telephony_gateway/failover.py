@@ -25,6 +25,44 @@ class TelephonyFailoverRouter:
         # Sort by priority ascending (1 = highest)
         self.trunks: list[SIPTrunkConfig] = sorted(trunks, key=lambda t: t.priority)
 
+    @classmethod
+    async def from_db(cls, db_pool: Any, tenant_id: Any) -> TelephonyFailoverRouter:
+        """Load tenant SIP trunks from PostgreSQL sip_trunks table with RLS tenant isolation."""
+        from telephony_gateway.trunk_config import SIPTrunkConfig, SIPTrunkProvider, SIPTrunkRole
+
+        async with db_pool.acquire() as conn:
+            await conn.execute("SET LOCAL app.current_tenant_id = $1", str(tenant_id))
+            rows = await conn.fetch(
+                """
+                SELECT id, provider, priority, enabled, outbound_proxy_host
+                FROM sip_trunks
+                WHERE tenant_id = $1 AND enabled = true
+                ORDER BY priority ASC
+                """,
+                tenant_id,
+            )
+            trunks = [
+                SIPTrunkConfig(
+                    trunk_id=r["id"],
+                    provider=SIPTrunkProvider(r["provider"]),
+                    priority=r["priority"],
+                    role=SIPTrunkRole.PRIMARY if r["priority"] == 1 else SIPTrunkRole.SECONDARY,
+                    enabled=r["enabled"],
+                    outbound_proxy_host=r["outbound_proxy_host"],
+                )
+                for r in rows
+            ]
+            if not trunks:
+                # Default fallback trunk if table empty
+                trunks = [
+                    SIPTrunkConfig(
+                        provider=SIPTrunkProvider.TELNYX,
+                        priority=1,
+                        role=SIPTrunkRole.PRIMARY,
+                    )
+                ]
+            return cls(trunks)
+
     def get_active_trunk(self, health_status_map: dict[str, bool] | None = None) -> SIPTrunkConfig:
         """Return the highest priority healthy trunk.
 

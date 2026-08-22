@@ -1,4 +1,4 @@
-# worker-raw image — builds from underscore package dir worker_raw/
+# worker-raw image — builds from underscore package dir worker_raw/ (includes torch / onnxruntime)
 
 FROM python:3.12-slim
 
