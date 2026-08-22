@@ -4,8 +4,9 @@ class Pcm16CaptureProcessor extends AudioWorkletProcessor {
     if (!input || !input[0]) return true;
     const channel = input[0];
     const pcm = new Int16Array(channel.length);
+    const GAIN = 2.2;
     for (let i = 0; i < channel.length; i++) {
-      const s = Math.max(-1, Math.min(1, channel[i]));
+      const s = Math.max(-1, Math.min(1, channel[i] * GAIN));
       pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
     }
     this.port.postMessage(pcm.buffer, [pcm.buffer]);

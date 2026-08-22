@@ -602,12 +602,36 @@
     let pcmQueue = new Int16Array(0);
     let lastAudioLogTime = 0;
     let audioInBatchBytes = 0;
+    let flushTimer = null;
+
+    function flushPcmQueue() {
+      if (!audioCtx || pcmQueue.length === 0) return;
+      const chunk = pcmQueue;
+      pcmQueue = new Int16Array(0);
+
+      const f32 = new Float32Array(chunk.length);
+      for (let i = 0; i < chunk.length; i++) f32[i] = chunk[i] / 32768;
+
+      const audioBuf = audioCtx.createBuffer(1, f32.length, 16000);
+      audioBuf.copyToChannel(f32, 0);
+
+      const src = audioCtx.createBufferSource();
+      src.buffer = audioBuf;
+      src.connect(audioCtx.destination);
+
+      const now = audioCtx.currentTime;
+      if (playTime < now) playTime = now + 0.01;
+      src.start(playTime);
+      playTime += audioBuf.duration;
+    }
 
     function playPcm16(buf) {
       if (!audioCtx) return;
       if (audioCtx.state === 'suspended') {
         audioCtx.resume();
       }
+
+      if (flushTimer) clearTimeout(flushTimer);
 
       // Append incoming Int16 samples to queue
       const incoming = new Int16Array(buf);
@@ -634,10 +658,15 @@
 
         const now = audioCtx.currentTime;
         if (playTime < now) {
-          playTime = now + 0.03; // 30ms lookahead safety buffer
+          playTime = now + 0.02; // 20ms lookahead safety buffer
         }
         src.start(playTime);
         playTime += audioBuf.duration;
+      }
+
+      // Schedule trailing flush for remaining samples after 100ms
+      if (pcmQueue.length > 0) {
+        flushTimer = setTimeout(flushPcmQueue, 100);
       }
     }
 
