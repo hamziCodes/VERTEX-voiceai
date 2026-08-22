@@ -42,7 +42,7 @@ class GroqLLMProvider(BaseLLMProvider):
                 f"{self._base}/chat/completions",
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 json={
-                    "model": config.model or "llama-3.1-8b-instant",
+                    "model": config.model if (config.model and config.model != "default") else "groq/compound-mini",
                     "messages": messages,
                     "temperature": config.temperature,
                     "max_tokens": config.max_tokens,
