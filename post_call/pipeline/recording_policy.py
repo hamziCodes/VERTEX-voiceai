@@ -15,7 +15,7 @@ class RecordingPolicy:
 
         if tenant_config:
             # Standard tier allows tenant JSONB override
-            return tenant_config.get("recording_enabled", True)
+            return bool(tenant_config.get("recording_enabled", True))
 
         return True
 

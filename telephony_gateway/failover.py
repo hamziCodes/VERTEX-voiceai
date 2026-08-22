@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Sequence
+from typing import Any, Sequence
 
 from telephony_gateway.trunk_config import SIPTrunkConfig, SIPTrunkRole
 
@@ -34,7 +34,7 @@ class TelephonyFailoverRouter:
             await conn.execute("SET LOCAL app.current_tenant_id = $1", str(tenant_id))
             rows = await conn.fetch(
                 """
-                SELECT id, provider, priority, enabled, outbound_proxy_host
+                SELECT id, provider, priority, enabled, credentials_ref
                 FROM sip_trunks
                 WHERE tenant_id = $1 AND enabled = true
                 ORDER BY priority ASC
@@ -45,10 +45,10 @@ class TelephonyFailoverRouter:
                 SIPTrunkConfig(
                     trunk_id=r["id"],
                     provider=SIPTrunkProvider(r["provider"]),
+                    credentials_ref=r.get("credentials_ref") or f"vault://{tenant_id}/{r['provider']}",
                     priority=r["priority"],
                     role=SIPTrunkRole.PRIMARY if r["priority"] == 1 else SIPTrunkRole.SECONDARY,
                     enabled=r["enabled"],
-                    outbound_proxy_host=r["outbound_proxy_host"],
                 )
                 for r in rows
             ]
@@ -57,6 +57,7 @@ class TelephonyFailoverRouter:
                 trunks = [
                     SIPTrunkConfig(
                         provider=SIPTrunkProvider.TELNYX,
+                        credentials_ref=f"vault://{tenant_id}/telnyx",
                         priority=1,
                         role=SIPTrunkRole.PRIMARY,
                     )

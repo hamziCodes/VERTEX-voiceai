@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
+from typing import Any, AsyncGenerator
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -49,7 +49,7 @@ def _metrics_bearer() -> str:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     require_production_secrets()
     app.state.mint_ctx = get_default_mint_context()
     app.state.api_keys = APIKeyManager()

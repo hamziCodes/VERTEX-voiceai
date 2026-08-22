@@ -158,7 +158,7 @@ class PipelineOrchestrator:
             self.fsm.trigger(SessionEvent.TOOL_CALL_START)
             tool_name = user_text.split(":", 1)[1].strip()
             tool_res = await self.tool_handler.handle_tool_call(tool_name, {})
-            self.fsm.trigger(SessionEvent.TOOL_CALL_END)
+            self.fsm.trigger(SessionEvent.TOOL_RESULT)
             normalized = tool_res.get("content", "Tool executed.")
         else:
             llm_cfg = LLMConfig(model="llama-3.1-8b-instant")

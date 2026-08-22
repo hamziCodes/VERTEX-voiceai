@@ -50,10 +50,10 @@ class InboundTelephonySessionHandler:
         pcm_chunks = await self.transport.receive_mulaw_frame(mulaw_payload)
         for chunk in pcm_chunks:
             frame = AudioFrame(
+                pcm16=chunk,
                 sample_rate=16000,
-                num_channels=1,
-                pcm_data=chunk,
-                pts_us=int(time.time() * 1e6),
+                timestamp_ms=time.time() * 1000.0,
+                channel_count=1,
             )
             await self.orchestrator.process_frame(frame)
         return pcm_chunks
@@ -64,7 +64,7 @@ class InboundTelephonySessionHandler:
         self.duration_sec = max(0.0, time.time() - self.start_time)
         if self.duration_sec > 0:
             self.meter.record(
-                session_config.tenant_id if 'session_config' in locals() else str(self.tenant_id),
+                str(self.tenant_id),
                 str(self.session_id),
                 TELEPHONY_SEC,
                 int(self.duration_sec),
