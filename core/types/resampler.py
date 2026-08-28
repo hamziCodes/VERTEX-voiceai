@@ -2,23 +2,29 @@
 
 from __future__ import annotations
 
-import array
+import numpy as np
 
 SUPPORTED_RATES: set[int] = {8000, 16000, 22050, 24000, 44100, 48000}
 
 
 class Resampler:
-    """PCM16LE audio resampler supporting standard transport rates."""
+    """PCM16LE audio resampler with one-sample carry and linear interpolation."""
 
     SUPPORTED_RATES = SUPPORTED_RATES
 
     def __init__(self, source_rate: int, target_rate: int = 16000) -> None:
         if source_rate not in self.SUPPORTED_RATES:
-            raise ValueError(f"Unsupported source sample rate: {source_rate}. Supported: {self.SUPPORTED_RATES}")
+            raise ValueError(
+                f"Unsupported source sample rate: {source_rate}. Supported: {self.SUPPORTED_RATES}"
+            )
         if target_rate not in self.SUPPORTED_RATES:
-            raise ValueError(f"Unsupported target sample rate: {target_rate}. Supported: {self.SUPPORTED_RATES}")
+            raise ValueError(
+                f"Unsupported target sample rate: {target_rate}. Supported: {self.SUPPORTED_RATES}"
+            )
         self.source_rate = source_rate
         self.target_rate = target_rate
+        self._carry_sample: float = 0.0
+        self._carry_set = False
 
     def process(self, pcm_bytes: bytes) -> bytes:
         """Resample mono 16-bit signed Little-Endian PCM byte sequence."""
@@ -28,24 +34,29 @@ class Resampler:
         if self.source_rate == self.target_rate or not pcm_bytes:
             return pcm_bytes
 
-        samples = array.array("h", pcm_bytes)
-        n_in = len(samples)
-        if n_in == 0:
+        samples = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float64)
+        if samples.size == 0:
             return b""
 
-        n_out = int(round(n_in * self.target_rate / self.source_rate))
-        out_samples = array.array("h")
-        out_samples.itemsize  # Touch attribute for speed
+        if self._carry_set:
+            samples = np.concatenate(([self._carry_sample], samples))
+        else:
+            samples = np.concatenate(([samples[0]], samples))
 
         ratio = self.source_rate / self.target_rate
-        for i in range(n_out):
-            src_idx = i * ratio
-            idx_floor = int(src_idx)
-            idx_ceil = min(idx_floor + 1, n_in - 1)
-            frac = src_idx - idx_floor
+        n_out = int(np.floor((len(samples) - 1) / ratio))
+        if n_out <= 0:
+            self._carry_sample = float(samples[-1])
+            self._carry_set = True
+            return b""
 
-            val = samples[idx_floor] * (1.0 - frac) + samples[idx_ceil] * frac
-            clamped = max(-32768, min(32767, int(round(val))))
-            out_samples.append(clamped)
+        out_idx = np.arange(n_out, dtype=np.float64) * ratio
+        idx_floor = np.floor(out_idx).astype(np.int64)
+        idx_ceil = np.minimum(idx_floor + 1, len(samples) - 1)
+        frac = out_idx - idx_floor
+        out = samples[idx_floor] * (1.0 - frac) + samples[idx_ceil] * frac
+        out = np.clip(np.round(out), -32768, 32767).astype(np.int16)
 
-        return out_samples.tobytes()
+        self._carry_sample = float(samples[-1])
+        self._carry_set = True
+        return out.tobytes()

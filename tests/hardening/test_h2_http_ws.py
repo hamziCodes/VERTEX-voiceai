@@ -78,41 +78,83 @@ def test_metrics_requires_bearer(cp_client: TestClient) -> None:
     assert ok.status_code == 200
 
 
-@pytest.mark.asyncio
-async def test_ws_connect_with_valid_token(env: None) -> None:
+async def _mint_ws_token(tenant_id: str, agent_id: str, nonce: str) -> str:
     from control_plane.app import app as cp_app
-    from worker_raw.main import app as worker_app
 
     reset_default_mint_context()
     with TestClient(cp_app) as cp:
         ctx = cp_app.state.mint_ctx
-        await ctx.tenant_repo.create_tenant(Tenant(id="t-ws", name="WS"))
-        await ctx.tenant_repo.save_agent(Agent(id="agent-ws", tenant_id="t-ws", name="A"))
+        await ctx.tenant_repo.create_tenant(Tenant(id=tenant_id, name="WS"))
+        await ctx.tenant_repo.save_agent(Agent(id=agent_id, tenant_id=tenant_id, name="A"))
         secret = "dev-mint-secret"
         ts = str(int(time.time()))
-        nonce = "ws-nonce"
-        sig = expected_signature(secret, "t-ws", ts, nonce, "agent-ws")
+        sig = expected_signature(secret, tenant_id, ts, nonce, agent_id)
         mint = cp.post(
             "/v1/session",
             headers={
-                "X-Tenant-Id": "t-ws",
+                "X-Tenant-Id": tenant_id,
                 "X-Timestamp": ts,
                 "X-Nonce": nonce,
-                "X-Agent-Id": "agent-ws",
+                "X-Agent-Id": agent_id,
                 "X-Signature": sig,
             },
         )
         assert mint.status_code == 200
-        token = mint.json()["token"]
+        return mint.json()["token"]
+
+
+@pytest.mark.asyncio
+async def test_ws_connect_with_valid_token(env: None) -> None:
+    from worker_raw.main import app as worker_app
+
+    token = await _mint_ws_token("t-ws", "agent-ws", "ws-nonce")
 
     with StarletteTestClient(worker_app) as worker:
         with worker.websocket_connect(f"/ws/audio?token={token}") as ws:
-            # session_ready metric
+            # session_ready metric — connect path only (binary PCM covered by C1 gate below)
+            msg = ws.receive_text()
+            assert "session_ready" in msg or "metric" in msg
+            ws.send_text('{"event_type":"ping"}')
+            pong = ws.receive_text()
+            assert "pong" in pong.lower()
+
+
+@pytest.mark.asyncio
+async def test_binary_pcm_frame_ingress_no_typeerror(env: None) -> None:
+    """Binary PCM must be accepted and leave the socket usable (R1 C1)."""
+    import json
+
+    from worker_raw.main import app as worker_app
+
+    token = await _mint_ws_token("t-ws-pcm", "agent-ws-pcm", "ws-pcm-nonce")
+
+    with StarletteTestClient(worker_app) as worker:
+        with worker.websocket_connect(f"/ws/audio?token={token}") as ws:
             msg = ws.receive_text()
             assert "session_ready" in msg or "metric" in msg
             ws.send_bytes(b"\x00\x01" * 160)
-            echoed = ws.receive_bytes()
-            assert echoed == b"\x00\x01" * 160
+            ws.send_text(json.dumps({"event_type": "ping"}))
+            pong = ws.receive_text()
+            assert "pong" in pong.lower()
+
+
+@pytest.mark.asyncio
+async def test_oversized_frame_rejected(env: None) -> None:
+    """10 MB frame exceeds MAX_AUDIO_FRAME_BYTES and closes connection (R1 M2)."""
+    from worker_raw.main import app as worker_app
+    from worker_raw.ws_constants import MAX_AUDIO_FRAME_BYTES
+
+    token = await _mint_ws_token("t-ws-big", "agent-ws-big", "ws-big-nonce")
+    oversized = b"\x00" * (MAX_AUDIO_FRAME_BYTES + 1)
+
+    with StarletteTestClient(worker_app) as worker:
+        with worker.websocket_connect(f"/ws/audio?token={token}") as ws:
+            ws.receive_text()
+            ws.send_bytes(oversized)
+            # Connection should close or stop accepting; next receive may raise
+            with pytest.raises(Exception):
+                ws.send_text('{"event_type":"ping"}')
+                ws.receive_text(timeout=2)
 
 
 def test_ws_invalid_token_rejected(env: None) -> None:

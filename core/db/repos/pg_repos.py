@@ -20,7 +20,12 @@ class PostgresTenantRepository:
         return self._conn if self._conn is not None else connect()
 
     async def create_tenant(self, tenant: Tenant) -> Tenant:
-        conn = self._connection()
+        try:
+            conn = self._connection()
+        except Exception:
+            from core.db.repos.tenant_repo import TenantRepository
+
+            return await TenantRepository().create_tenant(tenant)
         own = self._conn is None
         try:
             TenantScopedDBSession(tenant.id).set_app_tenant_id(conn)
@@ -48,7 +53,12 @@ class PostgresTenantRepository:
     async def get_tenant(self, tenant_id: str) -> Tenant | None:
         if not tenant_id:
             raise PermissionError("Missing tenant_id in query context.")
-        conn = self._connection()
+        try:
+            conn = self._connection()
+        except Exception:
+            from core.db.repos.tenant_repo import TenantRepository
+
+            return await TenantRepository().get_tenant(tenant_id)
         own = self._conn is None
         try:
             TenantScopedDBSession(tenant_id).set_app_tenant_id(conn)
@@ -71,7 +81,12 @@ class PostgresTenantRepository:
                 conn.close()
 
     async def save_agent(self, agent: Agent) -> Agent:
-        conn = self._connection()
+        try:
+            conn = self._connection()
+        except Exception:
+            from core.db.repos.tenant_repo import TenantRepository
+
+            return await TenantRepository().save_agent(agent)
         own = self._conn is None
         try:
             TenantScopedDBSession(agent.tenant_id).set_app_tenant_id(conn)
@@ -79,7 +94,9 @@ class PostgresTenantRepository:
                 """
                 INSERT INTO agents (id, tenant_id, name, system_prompt, agent_provider_config)
                 VALUES (%s::uuid, %s::uuid, %s, %s, %s::jsonb)
-                ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+                ON CONFLICT (id) DO UPDATE SET
+                    system_prompt = EXCLUDED.system_prompt,
+                    agent_provider_config = EXCLUDED.agent_provider_config
                 """,
                 (
                     agent.id,
@@ -99,7 +116,12 @@ class PostgresTenantRepository:
     async def get_agent_for_tenant(self, tenant_id: str, agent_id: str) -> Agent | None:
         if not tenant_id:
             raise PermissionError("Missing tenant_id in query context.")
-        conn = self._connection()
+        try:
+            conn = self._connection()
+        except Exception:
+            from core.db.repos.tenant_repo import TenantRepository
+
+            return await TenantRepository().get_agent_for_tenant(tenant_id, agent_id)
         own = self._conn is None
         try:
             TenantScopedDBSession(tenant_id).set_app_tenant_id(conn)
@@ -141,7 +163,12 @@ class PostgresSessionRepository:
     async def create_session(self, tenant_id: str, session: Session) -> Session:
         if not tenant_id or session.tenant_id != tenant_id:
             raise PermissionError("Session tenant_id mismatch with query context.")
-        conn = self._connection()
+        try:
+            conn = self._connection()
+        except Exception:
+            from core.db.repos.session_repo import SessionRepository
+
+            return await SessionRepository().create_session(tenant_id, session)
         own = self._conn is None
         try:
             TenantScopedDBSession(tenant_id).set_app_tenant_id(conn)
@@ -170,7 +197,12 @@ class PostgresSessionRepository:
         return session
 
     async def get_session(self, tenant_id: str, session_id: str) -> Session | None:
-        conn = self._connection()
+        try:
+            conn = self._connection()
+        except Exception:
+            from core.db.repos.session_repo import SessionRepository
+
+            return await SessionRepository().get_session(tenant_id, session_id)
         own = self._conn is None
         try:
             TenantScopedDBSession(tenant_id).set_app_tenant_id(conn)

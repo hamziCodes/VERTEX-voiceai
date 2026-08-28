@@ -32,4 +32,7 @@ class TelnyxDirectSIPAdapter(BaseTelephonyTransport):
         await self.sip_transport.close()
 
     async def health_check(self) -> bool:
-        return True
+        """Validate SIP transport config is present (fail-closed on bad config)."""
+        if not self.caller_id.from_number or not self.caller_id.to_number:
+            return False
+        return bool(getattr(self.sip_transport, "session_id", None))

@@ -45,5 +45,6 @@ Desktop.ini
 
 # Cursor / local agent
 .cursor/
+.qoder/
 agent-transcripts/
 hamza_local/

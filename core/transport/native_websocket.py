@@ -17,6 +17,8 @@ class WebSocketSender(Protocol):
 
     async def send_text(self, data: str) -> None: ...
 
+    async def close(self, code: int = 1000, reason: str = "") -> None: ...
+
 
 class NativeWebSocketTransport:
     """Sovereign plane native WebSocket transport handling binary audio & control messages."""
@@ -30,6 +32,7 @@ class NativeWebSocketTransport:
 
     def bind(self, websocket: WebSocketSender) -> None:
         self._ws = websocket
+        self.is_connected = True
 
     async def connect(self, connection_id: str, token: str) -> bool:
         """Authenticate JWT token (from ?token= query param) and accept WS connection."""
@@ -67,7 +70,6 @@ class NativeWebSocketTransport:
             try:
                 typed = ControlEventType(event_type)
             except ValueError:
-                # Allow ping and aliased names not in enum yet
                 import json
 
                 await self._ws.send_text(
@@ -87,7 +89,13 @@ class NativeWebSocketTransport:
             )
         await self._ws.send_text(evt.to_json())
 
-    async def close(self) -> None:
-        """Close WebSocket connection."""
+    async def close(self, websocket: WebSocketSender | None = None) -> None:
+        """Close WebSocket connection and mark transport disconnected."""
+        ws = websocket or self._ws
         self.is_connected = False
+        if ws is not None:
+            try:
+                await ws.close(code=1000, reason="session ended")
+            except Exception:
+                pass
         self._ws = None

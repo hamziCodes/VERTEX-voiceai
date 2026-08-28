@@ -30,7 +30,7 @@ from control_plane.routes.session import (
 from control_plane.routes.telephony import router as telephony_router
 from control_plane.routes.usage import handle_get_usage
 from control_plane.secrets_routes import handle_rotate_secret
-from core.runtime.env import require_production_secrets
+from core.runtime.env import get_ucve_env, require_production_secrets
 
 
 class QuickMintBody(BaseModel):
@@ -56,6 +56,27 @@ def _metrics_bearer() -> str:
     return (os.environ.get("UCVE_METRICS_BEARER") or "").strip()
 
 
+def _demo_mode() -> bool:
+    """Allow unauthenticated /mint for local demo console (development only by default)."""
+    explicit = os.environ.get("UCVE_DEMO_MODE")
+    if explicit is not None:
+        return explicit.strip() == "1"
+    return get_ucve_env() in ("development", "dev")
+
+
+def _allowed_origins() -> list[str]:
+    raw = (os.environ.get("UCVE_ALLOWED_ORIGINS") or "").strip()
+    if raw:
+        return [o.strip() for o in raw.split(",") if o.strip()]
+    return [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8080",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     require_production_secrets()
@@ -70,7 +91,7 @@ app = FastAPI(title="UCVE Control Plane", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -80,6 +101,14 @@ app.include_router(telephony_router, prefix="/v1")
 app.include_router(extraction_router, prefix="/v1")
 app.include_router(kb_router, prefix="/v1")
 app.include_router(alerts_router, prefix="/v1")
+
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
+web_client_path = Path(__file__).resolve().parent.parent / "examples" / "web-client"
+if web_client_path.exists():
+    app.mount("/demo", StaticFiles(directory=str(web_client_path), html=True), name="demo")
+
 
 
 @app.middleware("http")
@@ -109,7 +138,7 @@ async def mint_session(
     referer: str | None = Header(None, alias="Referer"),
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> JSONResponse:
-    ctx: MintContext = request.app.state.mint_ctx
+    ctx: MintContext = getattr(request.app.state, "mint_ctx", None) or get_default_mint_context()
     api_key_mint = False
     if authorization and authorization.lower().startswith("bearer "):
         raw = authorization.split(" ", 1)[1].strip()
@@ -140,13 +169,30 @@ async def mint_session(
 
 @app.post("/mint")
 @app.post("/v1/session/mint")
-async def quick_mint_session(body: QuickMintBody, request: Request) -> JSONResponse:
-    """Developer helper endpoint for quick session minting without raw HMAC headers."""
+async def quick_mint_session(
+    body: QuickMintBody,
+    request: Request,
+    authorization: str | None = Header(None, alias="Authorization"),
+) -> JSONResponse:
+    """Developer helper endpoint for quick session minting (demo mode or API-key auth)."""
+    api_key_mint = False
+    if _demo_mode():
+        api_key_mint = True
+    elif authorization and authorization.lower().startswith("bearer "):
+        raw = authorization.split(" ", 1)[1].strip()
+        try:
+            request.app.state.api_keys.verify_api_key(raw, required_scope="session:mint")
+            api_key_mint = True
+        except PermissionError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+    else:
+        raise HTTPException(status_code=401, detail="Authentication required for /mint")
+
     ts = str(int(time.time()))
     nonce = uuid.uuid4().hex
     secret = _mint_secret()
     sig = expected_signature(secret, body.tenant_id, ts, nonce, body.agent_id)
-    ctx: MintContext = request.app.state.mint_ctx
+    ctx: MintContext = getattr(request.app.state, "mint_ctx", None) or get_default_mint_context()
     status, res_body = await handle_session_mint(
         body.tenant_id,
         ts,
@@ -154,7 +200,7 @@ async def quick_mint_session(body: QuickMintBody, request: Request) -> JSONRespo
         body.agent_id,
         sig,
         secret=secret,
-        api_key_mint=True,
+        api_key_mint=api_key_mint,
         ctx=ctx,
     )
     if status != 200:
@@ -174,10 +220,10 @@ async def refresh_session(body: RefreshBody) -> dict[str, Any]:
 async def require_tenant_context(
     request: Request,
     x_tenant_id: str | None = Header(None, alias="X-Tenant-Id"),
-    x_actor_role: str = Header("tenant_viewer", alias="X-Actor-Role"),
+    x_actor_role: str | None = Header(None, alias="X-Actor-Role"),
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> tuple[str, str]:
-    """Resolve tenant from API key or membership headers."""
+    """Resolve tenant and role from verified API key / JWT credentials only."""
     if authorization and authorization.lower().startswith("bearer "):
         raw = authorization.split(" ", 1)[1].strip()
         if raw.startswith("ucve_live_"):
@@ -185,10 +231,10 @@ async def require_tenant_context(
                 rec = request.app.state.api_keys.verify_api_key(raw)
             except PermissionError as exc:
                 raise HTTPException(status_code=401, detail=str(exc)) from exc
-            return str(rec["tenant_id"]), x_actor_role
-    if not x_tenant_id:
-        raise HTTPException(status_code=401, detail="X-Tenant-Id required")
-    return x_tenant_id, x_actor_role
+            role = str(rec.get("role") or "tenant_viewer")
+            return str(rec["tenant_id"]), role
+        raise HTTPException(status_code=401, detail="Invalid bearer token")
+    raise HTTPException(status_code=401, detail="Authorization required")
 
 
 @app.get("/v1/usage")

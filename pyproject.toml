@@ -51,3 +51,11 @@ warn_unused_configs = true
 [[tool.mypy.overrides]]
 module = "core.*"
 strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "voice_engine_plan/tests"]
+norecursedirs = ["legacy_codebases", ".git", ".venv", "node_modules", "dist", "build"]
+asyncio_mode = "strict"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]

@@ -16,3 +16,6 @@ class StdioMCPTransport:
         if not self.enabled:
             raise PermissionError("Stdio MCP transport disabled in production. Set UCVE_MCP_ALLOW_STDIO=true for local dev.")
         return True
+
+    async def call_tool(self, name: str, arguments: dict) -> dict:
+        return {"tool": name, "arguments": arguments, "transport": "stdio"}

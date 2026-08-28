@@ -54,3 +54,32 @@ class AudioFrame:
     def duration_ms(self) -> float:
         """Duration of audio frame in milliseconds."""
         return (self.sample_count / self.sample_rate) * 1000.0
+
+
+def pcm16_to_wav(pcm16: bytes, sample_rate: int = 16000, channel_count: int = 1) -> bytes:
+    """Wrap raw PCM16 LE mono/stereo bytes in a minimal RIFF WAV container."""
+    import struct
+
+    if not pcm16:
+        return b""
+    bits_per_sample = 16
+    byte_rate = sample_rate * channel_count * (bits_per_sample // 8)
+    block_align = channel_count * (bits_per_sample // 8)
+    data_size = len(pcm16)
+    header = struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF",
+        36 + data_size,
+        b"WAVE",
+        b"fmt ",
+        16,
+        1,
+        channel_count,
+        sample_rate,
+        byte_rate,
+        block_align,
+        bits_per_sample,
+        b"data",
+        data_size,
+    )
+    return header + pcm16

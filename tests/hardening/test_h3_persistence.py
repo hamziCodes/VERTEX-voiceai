@@ -83,8 +83,8 @@ def test_migrate_module_importable() -> None:
 
 
 @pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"),
-    reason="DATABASE_URL not set — compose/integration only",
+    os.environ.get("RUN_LIVE_DB_TESTS") != "1",
+    reason="RUN_LIVE_DB_TESTS!=1 — compose/integration only",
 )
 def test_live_postgres_migrate_and_session() -> None:
     from infra.db.migrate import apply_migrations

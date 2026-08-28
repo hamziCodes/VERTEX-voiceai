@@ -6,6 +6,15 @@ import os
 from typing import Final
 
 # Values that must never be accepted when UCVE_ENV=production.
+try:
+    from pathlib import Path
+    from dotenv import load_dotenv
+
+    _root_env = Path(__file__).resolve().parent.parent.parent / ".env"
+    if _root_env.exists():
+        load_dotenv(dotenv_path=str(_root_env), override=False)
+except Exception:
+    pass
 KNOWN_INSECURE_DEFAULTS: Final[frozenset[str]] = frozenset(
     {
         "",

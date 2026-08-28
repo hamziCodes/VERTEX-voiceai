@@ -17,8 +17,8 @@ def verify_telnyx_signature(
     max_drift_sec: float = 300.0,
 ) -> bool:
     """Validate incoming Telnyx webhook signature (fail-closed security)."""
-    pk = public_key or public_key_or_secret
-    sec = hmac_secret or public_key_or_secret
+    pk = public_key
+    sec = hmac_secret if hmac_secret is not None else public_key_or_secret
 
     if not signature_header or not timestamp_header or not (pk or sec):
         return False

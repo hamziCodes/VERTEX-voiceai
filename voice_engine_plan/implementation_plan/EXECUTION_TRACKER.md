@@ -11,6 +11,23 @@ Status values: `PENDING` / `IN_PROGRESS` / `READY_FOR_MANUAL_TEST` / `COMPLETED`
 
 ---
 
+## Audit Remediation Program (R0–R7)
+
+Full plan: `auit_docs/REMEDIATION_PLAN.md`. One level at a time; user confirm before advancing.
+
+| Level | Focus | Status | Sign-off Date | Notes |
+|---|---|---|---|---|
+| R0 | Regression harness foundation (Phase 33 prerequisite) | `COMPLETED` | 2026-08-27 | Scenario registry + sovereign_conversation + C1 gate |
+| R1 | Live voice path (C1, M2, H1) | `COMPLETED` | 2026-08-29 | AudioFrame pcm16, frame DoS guard, parse_uuid fail-closed |
+| R2 | Turn lifecycle / barge-in / VAD (C5, C4, C3, M4, M6) | `COMPLETED` | 2026-08-29 | WebSocketSessionRunner, finalize_session, VAD to_thread |
+| R3 | True streaming pipeline (C2, O1, O3, H5, H6, M5, M1) | `COMPLETED` | 2026-08-29 | Groq SSE, sentence TTS pipelining, egress queue |
+| R4 | Honest measurement & bounded resources (H8, H7, M3, O4, O2) | `COMPLETED` | 2026-08-29 | Latency stamps, deque waterfalls, diarized timestamps |
+| R5 | Transport, failover & config truth (H2–H4, H10, M7–M10) | `COMPLETED` | 2026-08-29 | Pong deadline, WS close, FailoverRouter, numpy resampler |
+| R6 | Control-plane security (H9) | `COMPLETED` | 2026-08-29 | /mint auth gate, CORS allowlist, role from API key |
+| R7 | Prior-audit carryovers (Phases 18–25 partials) | `COMPLETED` | 2026-08-29 | Telnyx sig, webhook backoff, alert router, MCP transports |
+
+---
+
 | Phase | Name | Status | Test Script | Human Intervention Required | Sign-off Date |
 |---|---|---|---|---|---|
 | 00 | Monorepo Planning Baseline | COMPLETED | test_phase_00_monorepo_baseline.py | No — resolved (uv; top-level layout; TS SDK → Phase 28) | 2026-08-20 |

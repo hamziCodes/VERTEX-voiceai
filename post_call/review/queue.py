@@ -29,9 +29,13 @@ class HumanReviewItem(BaseModel):
 class HumanReviewQueue:
     """Queue for holding low-confidence extractions prior to CRM dispatch."""
 
-    def __init__(self, db_pool: Any | None = None) -> None:
+    def __init__(self, db_pool: Any | None = None, redis_client: Any | None = None) -> None:
         self.db_pool = db_pool
+        self.redis = redis_client
         self._items: dict[UUID, HumanReviewItem] = {}
+
+    def _redis_key(self, tenant_id: UUID) -> str:
+        return f"ucve:review:{tenant_id}"
 
     def enqueue(
         self,
@@ -50,6 +54,16 @@ class HumanReviewQueue:
             status=ReviewStatus.PENDING,
         )
         self._items[item.issue_id] = item
+
+        if self.redis is not None:
+            import json
+
+            try:
+                payload = item.model_dump_json()
+                key = self._redis_key(tenant_id)
+                self.redis.rpush(key, payload)
+            except Exception:
+                pass
 
         if self.db_pool:
             try:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 import logging
 from uuid import UUID
 
@@ -30,8 +31,13 @@ class LatencyCollector:
         self.budgets = {b.name: b for b in (budgets or DEFAULT_STAGE_BUDGETS)}
         self.slo_policy = slo_policy or SLOPolicy()
         self.demotion_rule = LatencyDemotionRule()
-        self.collected_waterfalls: list[LatencyWaterfall] = []
+        self.collected_waterfalls: deque[LatencyWaterfall] = deque(maxlen=256)
         self.warnings_emitted: list[str] = []
+
+    def clear_session(self) -> None:
+        """Drop in-memory waterfall traces for completed session."""
+        self.collected_waterfalls.clear()
+        self.warnings_emitted.clear()
 
     def record_turn(self, waterfall: LatencyWaterfall) -> LatencyWaterfall:
         """Process turn waterfall trace and log budget breach warnings."""

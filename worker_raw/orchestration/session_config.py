@@ -18,4 +18,8 @@ class PipelineSessionConfig:
     hipaa_baa_acknowledged: bool = False
     transport_type: str = "websocket"  # "websocket" or "sip"
     caller_id: Any | None = None  # CallerIdContext for PSTN/telephony sessions
+    system_prompt: str = "You are Vertex Voice AI, a helpful, natural, concise voice assistant. Respond directly and concisely in 1-2 short conversational sentences."
     provider_chain: dict[str, Any] = field(default_factory=dict)
+    llm_model: str = "llama-3.3-70b-versatile"
+    tts_voice_id: str = "default"
+

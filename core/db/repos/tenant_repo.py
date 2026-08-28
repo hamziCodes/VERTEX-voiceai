@@ -52,6 +52,10 @@ class TenantRepository:
 
         return agent
 
+    def get_compliance_profile(self, tenant_id: str) -> TenantComplianceProfile | None:
+        """Public accessor for tenant compliance profile (M8)."""
+        return self._compliance_profiles.get(tenant_id)
+
     async def delete_tenant(self, tenant_id: str) -> bool:
         """Cascade delete tenant and all owned entities."""
         if not tenant_id:

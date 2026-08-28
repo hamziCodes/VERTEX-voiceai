@@ -84,6 +84,27 @@ class MCPHost:
             )
 
     async def _exec_tool(self, name: str, arguments: dict[str, Any]) -> MCPToolResult:
-        """Internal mock execution logic."""
+        """Route tool execution through configured MCP transport."""
+        if self.config.transport is MCPTransportType.STREAMABLE_HTTP:
+            from core.mcp.transports.streamable_http import StreamableHTTPMCPTransport
+
+            transport = StreamableHTTPMCPTransport(self.config.endpoint)
+            await transport.connect()
+            result = await transport.call_tool(name, arguments)
+            return MCPToolResult(content=str(result))
+        if self.config.transport is MCPTransportType.SSE:
+            from core.mcp.transports.sse import SSEMCPTransport
+
+            transport = SSEMCPTransport(self.config.endpoint)
+            await transport.connect()
+            result = await transport.call_tool(name, arguments)
+            return MCPToolResult(content=str(result))
+        if self.config.transport is MCPTransportType.STDIO:
+            from core.mcp.transports.stdio import StdioMCPTransport
+
+            transport = StdioMCPTransport(self.config.endpoint)
+            await transport.connect()
+            result = await transport.call_tool(name, arguments)
+            return MCPToolResult(content=str(result))
         await asyncio.sleep(0.01)
         return MCPToolResult(content=f"Success: Executed {name} with {arguments}")

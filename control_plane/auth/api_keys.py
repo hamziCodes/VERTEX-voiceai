@@ -49,6 +49,7 @@ class APIKeyManager:
             "name": name,
             "key_prefix": API_KEY_PREFIX,
             "scopes": scopes or ["session:mint"],
+            "role": "tenant_viewer",
             "revoked": False,
         }
         self._store.put(key_hash, record)

@@ -395,6 +395,68 @@
       outline: none;
       border-color: var(--accent-cyan);
     }
+
+    /* System Prompt & Live Transcriptions */
+    .system-prompt-box {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--panel-border);
+      border-radius: 0.5rem;
+      padding: 0.65rem 0.85rem;
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 0.8rem;
+      line-height: 1.4;
+      resize: vertical;
+      outline: none;
+      box-sizing: border-box;
+    }
+    .system-prompt-box:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    .transcript-box {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--panel-border);
+      border-radius: 0.5rem;
+      padding: 0.85rem;
+      margin-top: 0.5rem;
+      overflow-y: auto;
+      height: 150px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .transcript-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      font-size: 0.85rem;
+    }
+    .transcript-badge {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.15rem 0.45rem;
+      border-radius: 0.25rem;
+      text-transform: uppercase;
+      flex-shrink: 0;
+      margin-top: 0.1rem;
+    }
+    .badge-user {
+      background: rgba(79, 172, 254, 0.2);
+      color: var(--accent-blue);
+      border: 1px solid rgba(79, 172, 254, 0.4);
+    }
+    .badge-agent {
+      background: rgba(0, 242, 254, 0.2);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(0, 242, 254, 0.4);
+    }
+    .transcript-text {
+      color: var(--text-main);
+      word-break: break-word;
+    }
   </style>
 </head>
 <body>
@@ -435,6 +497,11 @@
         </button>
       </div>
 
+      <div class="card-title" style="margin-top: 0.5rem;">
+        <span>System Prompt (AI Agent Persona)</span>
+      </div>
+      <textarea id="systemPromptInput" class="system-prompt-box" rows="3" placeholder="Enter System Prompt instructions for the AI Agent...">You are Vertex Voice AI, a helpful, natural, concise voice assistant. Respond directly and concisely in 1-2 short conversational sentences.</textarea>
+
       <div class="card-title">
         <span>Live Vocal Visualizer</span>
       </div>
@@ -474,9 +541,22 @@
       </div>
     </div>
 
-    <!-- Right Content: Console Logs & Simulation -->
+    <!-- Right Content: Transcriptions, Console Logs & Simulation -->
     <div class="card console-panel">
       <div class="console-header">
+        <div class="card-title">
+          <span>Live Real-Time Transcriptions</span>
+        </div>
+      </div>
+
+      <div id="transcriptBox" class="transcript-box">
+        <div class="transcript-entry">
+          <span class="transcript-badge badge-agent">AGENT</span>
+          <span class="transcript-text">Voice session ready. Speak into microphone or send text turn below!</span>
+        </div>
+      </div>
+
+      <div class="console-header" style="margin-top: 0.75rem;">
         <div class="card-title">
           <span>Developer Event Stream</span>
         </div>
@@ -486,7 +566,7 @@
         </div>
       </div>
 
-      <div id="consoleLogs" class="console-logs">
+      <div id="consoleLogs" class="console-logs" style="max-height: 280px;">
         <div class="log-entry">
           <span class="log-time">00:00:00</span>
           <span class="log-tag tag-ws">SYSTEM</span>
@@ -581,13 +661,16 @@
       
       let resp;
       try {
-        resp = await fetch('http://127.0.0.1:8090/mint', {
+        const mintEndpoint = window.location.origin.includes('http') 
+          ? window.location.origin + '/v1/session/mint' 
+          : 'http://127.0.0.1:8000/v1/session/mint';
+        resp = await fetch(mintEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tenant_id: tenantId, agent_id: agentId }),
         });
       } catch (err) {
-        resp = await fetch('http://127.0.0.1:8080/v1/session/mint', {
+        resp = await fetch('http://127.0.0.1:8000/v1/session/mint', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tenant_id: tenantId, agent_id: agentId }),
@@ -702,158 +785,194 @@
         ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
 
-        ws.onopen = () => {
-          setStatus('connected', 'CONNECTED (LISTENING)');
-          addLog('WS', 'WebSocket transport established. Sovereign pipeline active.', 'tag-ws');
-          muteBtn.disabled = false;
-          stopBtn.disabled = false;
-          textTurnInput.disabled = false;
-          sendTurnBtn.disabled = false;
-        };
+      const transcriptBox = document.getElementById('transcriptBox');
+    const systemPromptInput = document.getElementById('systemPromptInput');
 
-        ws.onmessage = (ev) => {
-          if (typeof ev.data === 'string') {
-            try {
-              const msg = JSON.parse(ev.data);
-              const eventType = msg.event_type || msg.type;
-              
-              if (eventType === 'ping') {
-                pingStartTime = performance.now();
-                ws.send(JSON.stringify({ event_type: 'pong', timestamp_ms: Date.now(), payload: {} }));
-                addLog('PING', 'Server ping received -> pong sent', 'tag-ping');
-              } else if (eventType === 'control.pong' || eventType === 'pong') {
-                const rtt = Math.round(performance.now() - pingStartTime);
-                metricRtt.textContent = `${rtt} ms`;
-              } else if (eventType === 'transcript' || eventType === 'stt') {
-                addLog('STT', `Transcript: "${msg.payload?.text || JSON.stringify(msg)}"`, 'tag-stt');
-              } else if (eventType === 'llm_chunk' || eventType === 'llm') {
-                addLog('LLM', `LLM Output: ${msg.payload?.text || JSON.stringify(msg)}`, 'tag-llm');
-              } else if (eventType === 'metric') {
-                addLog('METRIC', `Event: ${msg.payload?.kind || eventType}`, 'tag-ws');
-              } else {
-                addLog('EVENT', `${eventType}: ${JSON.stringify(msg)}`, 'tag-ws');
-              }
-            } catch (_) {}
-            return;
-          }
-
-          // Incoming PCM Audio Response (TTS / Echo)
-          const pcmBytes = ev.data.byteLength;
-          audioInBatchBytes += pcmBytes;
-          const nowTime = performance.now();
-          if (nowTime - lastAudioLogTime > 1000) {
-            addLog('AUDIO_IN', `Streaming 16kHz PCM16 audio response (${Math.round(audioInBatchBytes / 1024)} KB/sec)`, 'tag-tts');
-            lastAudioLogTime = nowTime;
-            audioInBatchBytes = 0;
-          }
-          playPcm16(ev.data);
-        };
-
-        ws.onerror = (err) => {
-          addLog('ERROR', 'WebSocket error encountered', 'tag-error');
-          setStatus('error', 'WS ERROR');
-        };
-
-        ws.onclose = (ev) => {
-          setStatus('', 'DISCONNECTED');
-          addLog('WS', `WebSocket closed (code ${ev.code}, reason: ${ev.reason || 'normal'})`, 'tag-ws');
-          cleanup();
-        };
-
-        workletNode.port.onmessage = (ev) => {
-          if (isMuted) return;
-          const pcmBuffer = ev.data;
-          
-          // Calculate RMS level for visualizer
-          const rms = calculateRms(pcmBuffer);
-          const percent = Math.min(100, Math.round(rms * 250));
-          meterFill.style.width = percent + '%';
-          meterPercent.textContent = percent + '%';
-
-          // Update Canvas Waveform Array
-          for (let i = 0; i < waveformData.length - 1; i++) {
-            waveformData[i] = waveformData[i + 1];
-          }
-          waveformData[waveformData.length - 1] = Math.min(1.0, rms * 4);
-
-          // Update VAD status badge
-          if (rms > 0.04) {
-            metricVad.textContent = 'SPEECH';
-            metricVad.style.color = 'var(--accent-cyan)';
-          } else {
-            metricVad.textContent = 'SILENCE';
-            metricVad.style.color = 'var(--text-muted)';
-          }
-
-          totalFrames++;
-          totalBytesSent += pcmBuffer.byteLength;
-          metricFrames.textContent = totalFrames;
-          metricBytes.textContent = Math.round(totalBytesSent / 1024);
-
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(pcmBuffer);
-          }
-        };
-
-      } catch (e) {
-        console.error(e);
-        addLog('ERROR', e.message, 'tag-error');
-        setStatus('error', 'ERROR');
-        cleanup();
-      }
-    };
-
-    muteBtn.onclick = () => {
-      isMuted = !isMuted;
-      if (isMuted) {
-        muteText.textContent = 'Unmute Mic';
-        muteBtn.classList.add('active');
-        meterFill.style.width = '0%';
-        meterPercent.textContent = 'MUTED';
-        addLog('AUDIO', 'Microphone muted', 'tag-audio');
-      } else {
-        muteText.textContent = 'Mute Mic';
-        muteBtn.classList.remove('active');
-        addLog('AUDIO', 'Microphone unmuted', 'tag-audio');
-      }
-    };
-
-    function cleanup() {
-      if (ws) { ws.close(); ws = null; }
-      if (audioCtx) { audioCtx.close(); audioCtx = null; }
-      startBtn.disabled = false;
-      muteBtn.disabled = true;
-      stopBtn.disabled = true;
-      textTurnInput.disabled = true;
-      sendTurnBtn.disabled = true;
-      meterFill.style.width = '0%';
-      meterPercent.textContent = '0%';
-      metricVad.textContent = 'IDLE';
+    function addTranscript(speaker, text) {
+      if (!text) return;
+      const entry = document.createElement('div');
+      entry.className = 'transcript-entry';
+      const isAgent = (speaker || '').toLowerCase().includes('agent') || (speaker || '').toLowerCase().includes('assistant');
+      const badgeClass = isAgent ? 'badge-agent' : 'badge-user';
+      const label = isAgent ? 'AGENT' : 'USER';
+      entry.innerHTML = `
+        <span class="transcript-badge ${badgeClass}">${label}</span>
+        <span class="transcript-text">${escapeHtml(text)}</span>
+      `;
+      transcriptBox.appendChild(entry);
+      transcriptBox.scrollTop = transcriptBox.scrollHeight;
     }
 
-    stopBtn.onclick = () => {
-      addLog('WS', 'User initiated session teardown.', 'tag-ws');
+    ws.onopen = () => {
+      setStatus('connected', 'CONNECTED (LISTENING)');
+      addLog('WS', 'WebSocket transport established. Sovereign pipeline active.', 'tag-ws');
+      muteBtn.disabled = false;
+      stopBtn.disabled = false;
+      textTurnInput.disabled = false;
+      sendTurnBtn.disabled = false;
+
+      // Sync initial system prompt to worker session
+      const currentPrompt = systemPromptInput.value.trim();
+      if (currentPrompt) {
+        ws.send(JSON.stringify({
+          event_type: 'set_prompt',
+          system_prompt: currentPrompt
+        }));
+      }
+    };
+
+    ws.onmessage = (ev) => {
+      if (typeof ev.data === 'string') {
+        try {
+          const msg = JSON.parse(ev.data);
+          const eventType = msg.event_type || msg.type;
+          
+          if (eventType === 'ping') {
+            pingStartTime = performance.now();
+            ws.send(JSON.stringify({ event_type: 'pong', timestamp_ms: Date.now(), payload: {} }));
+            addLog('PING', 'Server ping received -> pong sent', 'tag-ping');
+          } else if (eventType === 'control.pong' || eventType === 'pong') {
+            const rtt = Math.round(performance.now() - pingStartTime);
+            metricRtt.textContent = `${rtt} ms`;
+          } else if (eventType === 'transcript' || eventType === 'stt') {
+            const speaker = msg.payload?.speaker || 'user';
+            const text = msg.payload?.text || (typeof msg.payload === 'string' ? msg.payload : '');
+            if (text) {
+              addTranscript(speaker, text);
+              addLog('TRANSCRIPT', `[${speaker.toUpperCase()}]: ${text}`, speaker === 'agent' ? 'tag-llm' : 'tag-stt');
+            }
+          } else if (eventType === 'llm_chunk' || eventType === 'llm') {
+            addLog('LLM', `LLM Output: ${msg.payload?.text || JSON.stringify(msg)}`, 'tag-llm');
+          } else if (eventType === 'metric') {
+            addLog('METRIC', `Event: ${msg.payload?.kind || eventType}`, 'tag-ws');
+          } else {
+            addLog('EVENT', `${eventType}: ${JSON.stringify(msg)}`, 'tag-ws');
+          }
+        } catch (_) {}
+        return;
+      }
+
+      // Incoming PCM Audio Response (TTS / Echo)
+      const pcmBytes = ev.data.byteLength;
+      audioInBatchBytes += pcmBytes;
+      const nowTime = performance.now();
+      if (nowTime - lastAudioLogTime > 1000) {
+        addLog('AUDIO_IN', `Streaming 16kHz PCM16 audio response (${Math.round(audioInBatchBytes / 1024)} KB/sec)`, 'tag-tts');
+        lastAudioLogTime = nowTime;
+        audioInBatchBytes = 0;
+      }
+      playPcm16(ev.data);
+    };
+
+    ws.onerror = (err) => {
+      addLog('ERROR', 'WebSocket error encountered', 'tag-error');
+      setStatus('error', 'WS ERROR');
+    };
+
+    ws.onclose = (ev) => {
+      setStatus('', 'DISCONNECTED');
+      addLog('WS', `WebSocket closed (code ${ev.code}, reason: ${ev.reason || 'normal'})`, 'tag-ws');
       cleanup();
     };
 
-    document.getElementById('clearLogBtn').onclick = () => {
-      consoleLogs.innerHTML = '';
+    workletNode.port.onmessage = (ev) => {
+      if (isMuted) return;
+      const pcmBuffer = ev.data;
+      
+      // Calculate RMS level for visualizer
+      const rms = calculateRms(pcmBuffer);
+      const percent = Math.min(100, Math.round(rms * 250));
+      meterFill.style.width = percent + '%';
+      meterPercent.textContent = percent + '%';
+
+      // Update Canvas Waveform Array
+      for (let i = 0; i < waveformData.length - 1; i++) {
+        waveformData[i] = waveformData[i + 1];
+      }
+      waveformData[waveformData.length - 1] = Math.min(1.0, rms * 4);
+
+      // Update VAD status badge
+      if (rms > 0.04) {
+        metricVad.textContent = 'SPEECH';
+        metricVad.style.color = 'var(--accent-cyan)';
+      } else {
+        metricVad.textContent = 'SILENCE';
+        metricVad.style.color = 'var(--text-muted)';
+      }
+
+      totalFrames++;
+      totalBytesSent += pcmBuffer.byteLength;
+      metricFrames.textContent = totalFrames;
+      metricBytes.textContent = Math.round(totalBytesSent / 1024);
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(pcmBuffer);
+      }
     };
 
-    document.getElementById('copyLogBtn').onclick = () => {
-      const text = Array.from(consoleLogs.querySelectorAll('.log-entry'))
-        .map(el => el.innerText).join('\n');
-      navigator.clipboard.writeText(text);
-      addLog('SYSTEM', 'Console logs copied to clipboard.', 'tag-ws');
-    };
+  } catch (e) {
+    console.error(e);
+    addLog('ERROR', e.message, 'tag-error');
+    setStatus('error', 'ERROR');
+    cleanup();
+  }
+};
 
-    sendTurnBtn.onclick = () => {
-      const text = textTurnInput.value.trim();
-      if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify({ event_type: 'user_turn', payload: { text: text } }));
-      addLog('STT', `Injected User Text Turn: "${text}"`, 'tag-stt');
-      textTurnInput.value = '';
-    };
+muteBtn.onclick = () => {
+  isMuted = !isMuted;
+  if (isMuted) {
+    muteText.textContent = 'Unmute Mic';
+    muteBtn.classList.add('active');
+    meterFill.style.width = '0%';
+    meterPercent.textContent = 'MUTED';
+    addLog('AUDIO', 'Microphone muted', 'tag-audio');
+  } else {
+    muteText.textContent = 'Mute Mic';
+    muteBtn.classList.remove('active');
+    addLog('AUDIO', 'Microphone unmuted', 'tag-audio');
+  }
+};
+
+function cleanup() {
+  if (ws) { ws.close(); ws = null; }
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  startBtn.disabled = false;
+  muteBtn.disabled = true;
+  stopBtn.disabled = true;
+  textTurnInput.disabled = true;
+  sendTurnBtn.disabled = true;
+  meterFill.style.width = '0%';
+  meterPercent.textContent = '0%';
+  metricVad.textContent = 'IDLE';
+}
+
+stopBtn.onclick = () => {
+  addLog('WS', 'User initiated session teardown.', 'tag-ws');
+  cleanup();
+};
+
+document.getElementById('clearLogBtn').onclick = () => {
+  consoleLogs.innerHTML = '';
+};
+
+document.getElementById('copyLogBtn').onclick = () => {
+  const text = Array.from(consoleLogs.querySelectorAll('.log-entry'))
+    .map(el => el.innerText).join('\n');
+  navigator.clipboard.writeText(text);
+  addLog('SYSTEM', 'Console logs copied to clipboard.', 'tag-ws');
+};
+
+sendTurnBtn.onclick = () => {
+  const text = textTurnInput.value.trim();
+  const prompt = systemPromptInput.value.trim();
+  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({
+    event_type: 'text_turn',
+    text: text,
+    system_prompt: prompt
+  }));
+  textTurnInput.value = '';
+};
 
     textTurnInput.onkeydown = (e) => {
       if (e.key === 'Enter') sendTurnBtn.click();

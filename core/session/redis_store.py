@@ -34,6 +34,7 @@ class RedisSessionStore:
         if self._redis is not None:
             key = self._key(session_id)
             await self._redis.rpush(key, json.dumps(turn))
+            await self._redis.ltrim(key, -500, -1)
             await self._redis.expire(key, self._session_ttl_sec)
             return
         if self._redis_url and not is_test_env():

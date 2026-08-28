@@ -53,11 +53,11 @@ def test_jwt_requires_room_join_action(test_env: None) -> None:
             "iat": now,
             "exp": now + 120,
         },
-        "ucve-jwt-secret-test-only-32b!!",
+        "ucve-jwt-secret-test-only-32bytes!",
         algorithm="HS256",
     )
     with pytest.raises(ValueError, match="roomJoin"):
-        verify_session_jwt(bad)
+        verify_session_jwt(bad, secret="ucve-jwt-secret-test-only-32bytes!")
 
 
 @pytest.mark.asyncio

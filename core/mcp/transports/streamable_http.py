@@ -11,3 +11,6 @@ class StreamableHTTPMCPTransport:
 
     async def connect(self) -> bool:
         return True
+
+    async def call_tool(self, name: str, arguments: dict) -> dict:
+        return {"tool": name, "arguments": arguments, "transport": "streamable_http"}
