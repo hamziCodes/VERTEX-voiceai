@@ -6,12 +6,14 @@ import asyncio
 import json
 import time
 from typing import Any
+from uuid import uuid4
 
 from core.buffers.policy import INBOUND_MIC_POLICY
 from core.buffers.policy import BufferPolicy, OverflowPolicy
 from core.buffers.typed_queue import TypedAsyncQueue
 from core.fsm.events import SessionEvent
-from core.fsm.states import SessionState
+from core.latency.playback import PlaybackMetricHandler
+from core.listening.frame_slicer import FrameSlicer
 from core.transport.native_websocket import NativeWebSocketTransport
 from core.types.audio import AudioFrame
 from core.types.events import ControlEventType
@@ -43,10 +45,22 @@ class WebSocketSessionRunner:
         )
         self._active_turns: set[asyncio.Task[Any]] = set()
         self._finalized = False
+        self._frame_slicer: FrameSlicer | None = (
+            FrameSlicer()
+            if orchestrator.listening_config.enable_frame_slicing
+            else None
+        )
 
     def _track_turn(self, task: asyncio.Task[Any]) -> None:
         self._active_turns.add(task)
         task.add_done_callback(self._active_turns.discard)
+
+    async def enqueue_voice_turn(self, text: str) -> None:
+        """Queue a finalized STT utterance (live Gladia path). Dedupes empties."""
+        cleaned = (text or "").strip()
+        if not cleaned or self.stop.is_set():
+            return
+        await self._turn_queue.put((cleaned, None))
 
     async def start(self) -> None:
         self.orchestrator.attach_ws_session(self)
@@ -54,13 +68,20 @@ class WebSocketSessionRunner:
         self.orchestrator.barge_in_controller.cancel_contract = (
             self.orchestrator.three_point_cancel
         )
+        self.orchestrator.apply_language_vad_overrides(self.config.language)
         if self.orchestrator.fsm.can_transition(SessionEvent.SESSION_ADMITTED):
             self.orchestrator.fsm.trigger(SessionEvent.SESSION_ADMITTED)
         self.orchestrator.vad_adapter.reset()
+        # Open Gladia Live once for the whole call (legacy pattern).
+        await self.orchestrator._maybe_start_live_stt()
         await self.transport.send_control_event(
             ControlEventType.METRIC,
             {"kind": "session_ready", "session_id": self.config.session_id},
         )
+        greeting = (self.config.initial_greeting or "").strip()
+        if greeting:
+            # Queue as a synthetic user turn that TTS will speak via run_turn.
+            await self._turn_queue.put((f"__greeting__:{greeting}", None))
         workers = [
             asyncio.create_task(self._ingress_worker()),
             asyncio.create_task(self._turn_worker()),
@@ -80,6 +101,23 @@ class WebSocketSessionRunner:
             await self.orchestrator.finalize_session(self.config)
             await self.transport.close(self.websocket)
 
+    async def _enqueue_pcm(self, pcm_data: bytes) -> None:
+        """Slice (optional) and enqueue canonical PCM frames for ingress."""
+        if self._frame_slicer is not None:
+            frames = self._frame_slicer.push(pcm_data)
+        else:
+            frames = [pcm_data] if pcm_data else []
+        for pcm in frames:
+            self._ingress_seq += 1
+            frame = AudioFrame(
+                pcm16=pcm,
+                sample_rate=16000,
+                channel_count=1,
+                sequence=self._ingress_seq,
+                timestamp_ms=time.time() * 1000.0,
+            )
+            await self._ingress_queue.put(frame)
+
     async def _receive_loop(self) -> None:
         while not self.stop.is_set():
             message = await self.websocket.receive()
@@ -97,15 +135,7 @@ class WebSocketSessionRunner:
                     )
                     await self.websocket.close(code=1009, reason="frame too large")
                     break
-                self._ingress_seq += 1
-                frame = AudioFrame(
-                    pcm16=pcm_data,
-                    sample_rate=16000,
-                    channel_count=1,
-                    sequence=self._ingress_seq,
-                    timestamp_ms=time.time() * 1000.0,
-                )
-                await self._ingress_queue.put(frame)
+                await self._enqueue_pcm(pcm_data)
                 continue
             text = message.get("text")
             if not text:
@@ -149,6 +179,18 @@ class WebSocketSessionRunner:
                 await self.transport.send_control_event(
                     ControlEventType.BARGE_IN, data.get("payload") or {}
                 )
+                continue
+            if event_type in ("metric", "playback_started", ControlEventType.PLAYBACK_STARTED.value):
+                payload = data.get("payload") if isinstance(data.get("payload"), dict) else data
+                kind = str(payload.get("kind") or event_type or "")
+                if kind in ("playback_started", ControlEventType.PLAYBACK_STARTED.value):
+                    waterfall = getattr(self.orchestrator, "_current_waterfall", None)
+                    if waterfall is not None:
+                        client_t = float(
+                            payload.get("t") or payload.get("timestamp_ms") or 0.0
+                        )
+                        PlaybackMetricHandler.handle_playback_started(waterfall, client_t)
+                continue
 
     async def _ingress_worker(self) -> None:
         while not self.stop.is_set():
@@ -158,7 +200,7 @@ class WebSocketSessionRunner:
                 continue
             except asyncio.CancelledError:
                 break
-            evt = await self.orchestrator.process_frame_async(frame)
+            await self.orchestrator.process_frame_async(frame)
             if self.orchestrator._speech_end_pending:
                 self.orchestrator._speech_end_pending = False
                 try:
@@ -180,9 +222,18 @@ class WebSocketSessionRunner:
                 continue
             except asyncio.CancelledError:
                 break
-            task = asyncio.create_task(
-                self.orchestrator.run_turn(self.config, user_text)
-            )
+            if user_text.startswith("__greeting__:"):
+                phrase = user_text.split(":", 1)[1].strip() or "Hello."
+                waterfall = self.orchestrator.latency_hooks.start_turn(uuid4())
+                task = asyncio.create_task(
+                    self.orchestrator._finish_turn_tts(
+                        [phrase], self.config, waterfall
+                    )
+                )
+            else:
+                task = asyncio.create_task(
+                    self.orchestrator.run_turn(self.config, user_text)
+                )
             self._track_turn(task)
             try:
                 await task

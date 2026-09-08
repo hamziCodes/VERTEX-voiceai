@@ -10,11 +10,19 @@ from core.types.audio import AudioFrame
 
 @dataclass
 class VADConfig:
-    """Configuration contract for VAD providers."""
+    """Configuration contract for VAD providers.
+
+    ``min_speech_frames`` / ``min_silence_frames`` drive dual-counter
+    hysteresis (32 ms canonical frames). Defaults preserve legacy behaviour
+    (onset on the first speech frame, endpoint after ~96 ms of silence); the
+    orchestrator raises these under the ``vad_timing`` feature flag.
+    """
 
     sample_rate: int = 16000
     window_samples: int = 512
     threshold: float = 0.5
+    min_speech_frames: int = 1
+    min_silence_frames: int = 3
 
 
 @dataclass(frozen=True)

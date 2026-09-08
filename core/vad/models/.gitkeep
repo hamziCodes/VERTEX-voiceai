@@ -1,0 +1,2 @@
+# Placeholder so the Silero ONNX destination exists.
+# Run: python -m core.vad.download_silero

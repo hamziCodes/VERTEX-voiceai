@@ -24,4 +24,13 @@ class EgressResampler:
                 out_bytes.extend(pcm_bytes[i + 4:i + 6])
             return bytes(out_bytes)
 
-        return pcm_bytes
+        import numpy as np
+
+        samples = np.frombuffer(pcm_bytes, dtype=np.int16)
+        if samples.size == 0:
+            return pcm_bytes
+        n_out = max(1, int(round(samples.size * 16000.0 / float(source_sample_rate))))
+        x_old = np.linspace(0.0, 1.0, num=samples.size, endpoint=False)
+        x_new = np.linspace(0.0, 1.0, num=n_out, endpoint=False)
+        out = np.interp(x_new, x_old, samples.astype(np.float64))
+        return np.clip(out, -32768, 32767).astype(np.int16).tobytes()

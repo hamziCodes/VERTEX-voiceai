@@ -10,7 +10,7 @@ from typing import Any, AsyncGenerator
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from control_plane.audit_routes import handle_get_audit_logs
@@ -125,6 +125,21 @@ async def request_id_and_tenant_middleware(request: Request, call_next):  # type
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "control-plane"}
 
+
+@app.get("/")
+async def root() -> RedirectResponse:
+    """Browser / tooling probes hit `/`; send humans to the demo console."""
+    return RedirectResponse(url="/demo/", status_code=307)
+
+
+@app.get("/json/version")
+async def json_version() -> dict[str, str]:
+    """Chrome/CDP-style probes often hit this on open ports — avoid noisy 404s."""
+    return {
+        "service": "ucve-control-plane",
+        "version": app.version or "0.1.0",
+        "note": "Not a Chrome DevTools endpoint",
+    }
 
 @app.post("/v1/session")
 async def mint_session(

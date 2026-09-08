@@ -41,9 +41,15 @@ class InboundTelephonySessionHandler:
             transport_type="sip",
             caller_id=caller_id,
         )
-        self.orchestrator = orchestrator or PipelineOrchestrator()
+        self.orchestrator = orchestrator or PipelineOrchestrator(
+            on_audio_out=self._send_outbound_audio,
+        )
         self.start_time = time.time()
         self.duration_sec = 0.0
+
+    async def _send_outbound_audio(self, pcm_bytes: bytes) -> None:
+        """Pipeline TTS egress -> DirectSIP μ-law encode (RTP send hooks on transport)."""
+        await self.transport.send_pcm16_frame(pcm_bytes)
 
     async def handle_inbound_audio(self, mulaw_payload: bytes) -> list[bytes]:
         """Ingest μ-law RTP payload, wrap as AudioFrame, and feed to PipelineOrchestrator."""
@@ -55,7 +61,7 @@ class InboundTelephonySessionHandler:
                 timestamp_ms=time.time() * 1000.0,
                 channel_count=1,
             )
-            await self.orchestrator.process_frame(frame)
+            await self.orchestrator.process_frame_async(frame)
         return pcm_chunks
 
     async def close(self) -> float:

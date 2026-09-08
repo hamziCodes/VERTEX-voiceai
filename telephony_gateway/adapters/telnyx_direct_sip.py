@@ -22,7 +22,8 @@ class TelnyxDirectSIPAdapter(BaseTelephonyTransport):
         return True
 
     async def send_audio(self, pcm16_frame: bytes) -> None:
-        pass  # Downsampling egress [LATER]
+        """Downsample 16 kHz PCM16 to 8 kHz μ-law and emit via SIP transport."""
+        await self.sip_transport.send_pcm16_frame(pcm16_frame)
 
     async def receive_audio(self) -> bytes | None:
         return None

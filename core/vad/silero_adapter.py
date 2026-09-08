@@ -18,7 +18,13 @@ _MAX_SILERO_BYTES = 512 * 1024
 
 
 class SileroVADAdapter(BaseVADProvider):
-    """Silero VAD (ONNX when model present) with numpy RMS energy fallback."""
+    """Silero VAD (ONNX when model present) with numpy RMS energy fallback.
+
+    Uses dual-counter hysteresis: ``speech_start`` fires only after
+    ``min_speech_frames`` consecutive speech frames while idle, and
+    ``speech_end`` only after ``min_silence_frames`` consecutive silence frames
+    while speaking. This prevents flicker and gives conversational endpointing.
+    """
 
     def __init__(self, config: VADConfig | None = None) -> None:
         self.config = config or VADConfig()
@@ -27,9 +33,10 @@ class SileroVADAdapter(BaseVADProvider):
         self._session = None
         self._backend = "energy"
         self._silero_state: np.ndarray | None = None
-        self._hangover_frames = 0
-        self._min_speech_frames = 2
-        self._min_silence_frames = 3
+        self._onset_frames = 0
+        self._silence_frames = 0
+        self._min_speech_frames = self.config.min_speech_frames
+        self._min_silence_frames = self.config.min_silence_frames
         model_path = _MODEL_DIR / _ONNX_NAME
         if model_path.is_file():
             try:
@@ -39,17 +46,47 @@ class SileroVADAdapter(BaseVADProvider):
                     str(model_path), providers=["CPUExecutionProvider"]
                 )
                 self._backend = "silero_onnx"
+                try:
+                    import torch
+
+                    torch.set_num_threads(1)
+                except Exception:
+                    pass
             except Exception as exc:
                 logger.warning("Silero ONNX unavailable; using energy fallback: %s", exc)
                 self._session = None
                 self._backend = "energy"
+
+    @property
+    def is_speaking(self) -> bool:
+        return self._is_speaking
+
+    @property
+    def backend(self) -> str:
+        return self._backend
+
+    def configure(
+        self,
+        *,
+        min_speech_frames: int | None = None,
+        min_silence_frames: int | None = None,
+        threshold: float | None = None,
+    ) -> None:
+        """Apply timing/threshold overrides (used by the V2 ``vad_timing`` flag)."""
+        if min_speech_frames is not None:
+            self._min_speech_frames = max(1, int(min_speech_frames))
+        if min_silence_frames is not None:
+            self._min_silence_frames = max(1, int(min_silence_frames))
+        if threshold is not None:
+            self.config.threshold = float(threshold)
 
     def health_check(self) -> bool:
         return True
 
     def reset(self) -> None:
         self._is_speaking = False
-        self._hangover_frames = 0
+        self._onset_frames = 0
+        self._silence_frames = 0
         self._silero_state = None
 
     def process_frame(self, frame: AudioFrame) -> VADEvent:
@@ -70,27 +107,31 @@ class SileroVADAdapter(BaseVADProvider):
                 if len(outs) > 1:
                     self._silero_state = outs[1]
                 prob = float(np.asarray(outs[0]).reshape(-1)[0])
-                return self._apply_hangover(prob)
+                return self._apply_hysteresis(prob)
             except Exception as exc:
                 logger.debug("Silero frame failed; energy fallback: %s", exc)
 
         return self._energy_vad(frame)
 
-    def _apply_hangover(self, prob: float) -> VADEvent:
-        is_speech = prob >= 0.5
+    def _apply_hysteresis(self, prob: float) -> VADEvent:
+        """Dual-counter hysteresis over per-frame speech probability."""
+        is_speech = prob >= self.config.threshold
+        speech_start = False
+        speech_end = False
+
         if is_speech:
-            self._hangover_frames = 0
+            self._onset_frames += 1
+            self._silence_frames = 0
+            if not self._is_speaking and self._onset_frames >= self._min_speech_frames:
+                self._is_speaking = True
+                speech_start = True
         else:
-            self._hangover_frames += 1
-        effective_speech = is_speech or (
-            self._is_speaking and self._hangover_frames < self._min_silence_frames
-        )
-        speech_start = effective_speech and not self._is_speaking
-        speech_end = not effective_speech and self._is_speaking
-        if speech_start or (effective_speech and not self._is_speaking):
-            self._is_speaking = True
-        if speech_end:
-            self._is_speaking = False
+            self._silence_frames += 1
+            self._onset_frames = 0
+            if self._is_speaking and self._silence_frames >= self._min_silence_frames:
+                self._is_speaking = False
+                speech_end = True
+
         return VADEvent(
             speech_start=speech_start,
             speech_end=speech_end,
@@ -106,4 +147,4 @@ class SileroVADAdapter(BaseVADProvider):
         db = 20 * np.log10(max(rms, 1.0)) - 90.0
         is_speech = db > self.energy_threshold_db
         prob = 0.95 if is_speech else 0.05
-        return self._apply_hangover(prob)
+        return self._apply_hysteresis(prob)

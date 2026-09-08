@@ -22,7 +22,7 @@ _MIN_PCM_BYTES = 3200  # ~100ms @ 16kHz mono PCM16
 class GladiaSTTProvider(BaseSTTProvider):
     """Gladia STT via HTTP. Uses mock finals when GLADIA_API_KEY unset."""
 
-    def __init__(self, api_key: str | None = None, mock_text: str = "hello") -> None:
+    def __init__(self, api_key: str | None = None, mock_text: str = "") -> None:
         self.api_key = (
             api_key
             or os.environ.get("PLATFORM_GLADIA_API_KEY")
@@ -57,8 +57,12 @@ class GladiaSTTProvider(BaseSTTProvider):
             or os.environ.get("RUN_LIVE_PROVIDERS") != "1"
         )
         if use_mock:
-            if not self.api_key:
-                logger.info("Gladia STT API key not set — using Mock STT provider.")
+            # Fix "hello" loop: never fabricate a transcript for a false/short
+            # VAD trigger, and only emit mock text when explicitly configured.
+            if len(buf) < _MIN_PCM_BYTES or not self.mock_text:
+                if not self.api_key:
+                    logger.info("Gladia STT (mock) — no transcript for short/empty buffer.")
+                return
             yield Transcript(
                 text=self.mock_text, is_final=True, confidence=1.0, language=config.language
             )

@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 import time
-from collections import deque
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any, Callable
 from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from core.buffers.cancellation import AsyncioCancellationToken
-from core.buffers.policy import INBOUND_MIC_POLICY, OUTBOUND_TTS_POLICY
+from core.buffers.policy import OUTBOUND_TTS_POLICY
 from core.buffers.typed_queue import TypedAsyncQueue
 from core.compliance.audit.writer import AuditWriter
 from core.compliance.redaction import RedactionService
@@ -20,7 +21,6 @@ from core.compliance.tenant_profile import (
     TenantComplianceProfileLoader,
     assert_cloud_llm_allowed,
 )
-from core.errors.structured import StructuredError
 from core.errors.codes import UCVEError, UCVEErrorCode
 from core.errors.parse_uuid import parse_uuid
 from core.fsm.barge_in import BargeInController
@@ -31,16 +31,31 @@ from core.fsm.states import SessionState
 from core.language.chunker import SentenceChunker
 from core.language.normalizer import TextNormalizer
 from core.language.router import LanguageRouter
+from core.listening.barge_verify import BargeVerifyEngine
+from core.listening.config import FRAME_MS, ListeningPipelineConfig, SpeakingPipelineConfig
+from core.listening.speech_capture import SpeechCaptureEngine
+from core.listening.vad_worker import VADWorker
+from core.mcp.filler import ConversationalFillerSynth, FillerConfig
+from core.providers.adapters.gladia_live_stt import GladiaLiveSTTSession
 from core.latency.collector import LatencyCollector
 from core.mcp.orchestrator import ToolOrchestrator
 from core.metering.usage_meter import UsageMeter
 from core.observability.logging import get_logger
+from core.providers.adapters.elevenlabs_tts import ElevenLabsTTSProvider
 from core.providers.adapters.gladia_stt import GladiaSTTProvider
 from core.providers.adapters.groq_llm import GroqLLMProvider
 from core.providers.adapters.null_llm import NullLLMProvider
 from core.providers.adapters.null_stt import NullSTTProvider
 from core.providers.adapters.null_tts import NullTTSProvider
 from core.providers.adapters.uplift_tts import UpliftTTSProvider
+from core.providers.factory import (
+    build_llm_provider,
+    build_stt_provider,
+    build_tts_provider,
+    normalize_llm_provider,
+    normalize_stt_provider,
+    normalize_tts_provider,
+)
 from core.providers.failover import FailoverRouter
 from core.providers.interfaces.llm import LLMConfig, LLMStreamChunk
 from core.providers.interfaces.stt import STTConfig
@@ -50,7 +65,8 @@ from core.rag.retriever import PgVectorRetriever
 from core.rag.speculative import SpeculativeRetrieval
 from core.runtime.env import is_test_env
 from core.session.redis_store import RedisSessionStore
-from core.types.audio import AudioFrame
+from core.transport.resample_egress import EgressResampler
+from core.types.events import ControlEventType
 from core.vad.silero_adapter import SileroVADAdapter
 from post_call.models.call_record import CallRecord
 from post_call.models.diarized_turn import DiarizedTurn
@@ -72,6 +88,7 @@ def _metric_session_uuid(session_id: str) -> UUID:
 ProviderRegistry.register_provider_class("gladia", GladiaSTTProvider)
 ProviderRegistry.register_provider_class("groq", GroqLLMProvider)
 ProviderRegistry.register_provider_class("uplift", UpliftTTSProvider)
+ProviderRegistry.register_provider_class("elevenlabs", ElevenLabsTTSProvider)
 
 
 class PipelineOrchestrator:
@@ -97,10 +114,22 @@ class PipelineOrchestrator:
         self.rag_retriever = rag_retriever or PgVectorRetriever()
         self.speculative_rag = SpeculativeRetrieval(self.rag_retriever)
         self.post_call_pipeline = post_call_pipeline or PostCallPipeline()
+        self.listening_config = ListeningPipelineConfig.from_env()
+        self.speaking_config = SpeakingPipelineConfig.from_env()
         self.vad_adapter = SileroVADAdapter()
-        self.stt_provider = GladiaSTTProvider()
+        self._apply_vad_timing()
+        self.stt_provider = GladiaSTTProvider(mock_text=self.listening_config.stt_mock_text)
         self.llm_provider = GroqLLMProvider()
-        self.tts_provider = UpliftTTSProvider()
+        self.tts_provider = UpliftTTSProvider(
+            chunk_size_bytes=(
+                self.speaking_config.tts_chunk_size_bytes
+                if self.speaking_config.enable_speaking_hardening
+                else 3200
+            )
+        )
+        self._active_stt_id = "gladia"
+        self._active_llm_id = "groq"
+        self._active_tts_id = "uplift"
         self.failover_router = FailoverRouter(priority=["primary", "secondary"])
         self.language_router = LanguageRouter()
         self.normalizer = TextNormalizer()
@@ -129,10 +158,115 @@ class PipelineOrchestrator:
         self._capturing_speech = False
         self._speech_end_pending = False
 
+        # --- V2 listening/speaking pipeline (feature-flagged) ----------------
+        lc = self.listening_config
+        self._speech_capture: SpeechCaptureEngine | None = (
+            SpeechCaptureEngine(self.vad_adapter, lc) if lc.use_speech_capture else None
+        )
+        self._barge_verify: BargeVerifyEngine | None = (
+            BargeVerifyEngine(lc, speech_threshold=lc.vad_threshold)
+            if lc.enable_barge_verify
+            else None
+        )
+        self._vad_worker: VADWorker | None = (
+            VADWorker() if lc.enable_vad_worker else None
+        )
+        self._live_stt: GladiaLiveSTTSession | None = None
+        self._live_stt_task: asyncio.Task[None] | None = None
+        self._live_final_text: str = ""
+        self._filler: ConversationalFillerSynth | None = None
+        # Playback pause gate for barge verification (set => audio flows).
+        self._playback_pause_event = asyncio.Event()
+        self._playback_pause_event.set()
+        self._barge_verify_task: asyncio.Task[None] | None = None
+        self._current_waterfall: Any | None = None
+        # Always flush egress on three-point cancel (fixes ghost audio after barge).
+        self.three_point_cancel.register_flush_callback(self._flush_egress_queue)
+
+    async def apply_provider_selection(self, session_config: PipelineSessionConfig) -> None:
+        """Swap STT/LLM/TTS adapters from session config (call at session start only)."""
+        stt_id = normalize_stt_provider(session_config.stt_provider)
+        llm_id = normalize_llm_provider(session_config.llm_provider)
+        tts_id = normalize_tts_provider(session_config.tts_provider)
+        session_config.stt_provider = stt_id
+        session_config.llm_provider = llm_id
+        session_config.tts_provider = tts_id
+
+        if stt_id != self._active_stt_id:
+            self.stt_provider = build_stt_provider(
+                stt_id, mock_text=self.listening_config.stt_mock_text
+            )
+            self._active_stt_id = stt_id
+
+        if llm_id != self._active_llm_id:
+            old = self.llm_provider
+            self.llm_provider = build_llm_provider(llm_id)
+            self._active_llm_id = llm_id
+            close_fn = getattr(old, "aclose", None)
+            if close_fn:
+                maybe = close_fn()
+                if asyncio.iscoroutine(maybe):
+                    await maybe
+
+        if tts_id != self._active_tts_id:
+            old_tts = self.tts_provider
+            self.tts_provider = build_tts_provider(
+                tts_id, speaking_config=self.speaking_config
+            )
+            self._active_tts_id = tts_id
+            close_fn = getattr(old_tts, "aclose", None)
+            if close_fn:
+                maybe = close_fn()
+                if asyncio.iscoroutine(maybe):
+                    await maybe
+
+        logger.info(
+            "Session providers active",
+            stt=stt_id,
+            llm=llm_id,
+            tts=tts_id,
+        )
+
+    def _apply_vad_timing(self) -> None:
+        """Apply VAD hysteresis timing per active feature flags."""
+        lc = self.listening_config
+        if lc.enable_vad_timing:
+            self.vad_adapter.configure(
+                min_speech_frames=lc.vad_min_speech_frames,
+                min_silence_frames=lc.vad_min_silence_frames,
+                threshold=lc.vad_threshold,
+            )
+        elif lc.enable_quick_wins:
+            # Phase 0 quick win: longer endpoint + onset debounce, no full retune.
+            self.vad_adapter.configure(min_speech_frames=4, min_silence_frames=12)
+
+    def _flush_egress_queue(self) -> None:
+        """Drop any queued-but-unsent agent audio (three-point cancel: sender)."""
+        while not self._egress_queue.empty():
+            try:
+                self._egress_queue.get_nowait()
+            except Exception:
+                break
+
     def attach_ws_session(self, session: Any) -> None:
         self._ws_session = session
         if self._egress_sender_task is None or self._egress_sender_task.done():
             self._egress_sender_task = asyncio.create_task(self._egress_sender_loop())
+
+    def apply_language_vad_overrides(self, language: str) -> None:
+        """Wire per-language VAD silence overrides from the language profile registry."""
+        try:
+            from core.language.registry import LanguageRegistry
+
+            profile = LanguageRegistry.load_defaults().get_profile(language)
+            if profile is None:
+                return
+            override_ms = int(getattr(profile, "vad_silence_override_ms", 0) or 0)
+            if override_ms > 0 and self.listening_config.enable_vad_timing:
+                frames = max(1, round(override_ms / FRAME_MS))
+                self.vad_adapter.configure(min_silence_frames=frames)
+        except Exception as exc:
+            logger.debug("Language VAD override skipped", error=str(exc))
 
     async def _egress_sender_loop(self) -> None:
         while True:
@@ -140,10 +274,24 @@ class PipelineOrchestrator:
                 pcm = await self._egress_queue.get()
             except asyncio.CancelledError:
                 break
+            # Block while playback is paused during a barge verification window.
+            if not self._playback_pause_event.is_set():
+                try:
+                    await self._playback_pause_event.wait()
+                except asyncio.CancelledError:
+                    break
             if self.on_audio_out:
                 maybe = self.on_audio_out(pcm)
                 if asyncio.iscoroutine(maybe):
                     await maybe
+
+    def pause_playback(self) -> None:
+        """Pause egress to the client (barge verify window)."""
+        self._playback_pause_event.clear()
+
+    def resume_playback(self) -> None:
+        """Resume egress to the client after a false-alarm barge."""
+        self._playback_pause_event.set()
 
     async def _ensure_egress_sender(self) -> None:
         if self._egress_sender_task is None or self._egress_sender_task.done():
@@ -159,46 +307,281 @@ class PipelineOrchestrator:
         await self._ensure_egress_sender()
         await self._egress_queue.put(pcm)
 
+    async def _notify_client_barge_in(self, reason: str = "barge_in_committed") -> None:
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is None:
+            return
+        try:
+            await transport.send_control_event(
+                ControlEventType.BARGE_IN, {"reason": reason}
+            )
+        except Exception as exc:
+            logger.debug("Client barge_in notify failed", error=str(exc))
+
+    async def _emit_debug_listening(self, evt: Any, frame: AudioFrame) -> None:
+        if not self.listening_config.debug_listening:
+            return
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is None:
+            return
+        rms = 0.0
+        gated = False
+        if self._speech_capture is not None:
+            rms = self._speech_capture.last_rms
+            gated = self._speech_capture.last_gated
+        try:
+            await transport.send_control_event(
+                ControlEventType.METRIC,
+                {
+                    "kind": "vad_debug",
+                    "prob": getattr(evt, "probability", 0.0),
+                    "speech_start": bool(getattr(evt, "speech_start", False)),
+                    "speech_end": bool(getattr(evt, "speech_end", False)),
+                    "rms": rms,
+                    "gated": gated,
+                    "bytes": len(frame.pcm16 or b""),
+                },
+            )
+        except Exception:
+            pass
+
+    async def _run_barge_verify(self) -> None:
+        """Pause → verify → commit or resume (Phase 4)."""
+        engine = self._barge_verify
+        if engine is None:
+            return
+
+        async def _pause() -> None:
+            self.pause_playback()
+
+        async def _resume() -> None:
+            self.barge_in_controller._false_alarm(reason="Barge verify false alarm")
+            self.resume_playback()
+
+        async def _commit() -> None:
+            self.barge_in_controller._commit_barge_in(
+                reason="Barge verify sustained speech"
+            )
+            # Unblock egress gate for the *next* turn (queue already flushed).
+            self.resume_playback()
+            await self._notify_client_barge_in()
+            if self._speech_capture is not None:
+                self._speech_capture.begin_capture()
+                self._capturing_speech = True
+            else:
+                self._capturing_speech = True
+            await self._maybe_start_live_stt()
+
+        await engine.run(
+            pause=_pause,
+            resume=_resume,
+            commit=_commit,
+            is_speaking=lambda: bool(self.vad_adapter.is_speaking),
+        )
+
+    def _legacy_immediate_barge_in(self) -> None:
+        if self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
+            self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
+        self.barge_in_controller._commit_barge_in(reason="VAD speech during agent TTS")
+        self._capturing_speech = True
+
+    async def _maybe_start_live_stt(self) -> None:
+        if not self.listening_config.enable_streaming_stt:
+            return
+        if self._live_stt is not None and self._live_stt.is_live:
+            return
+        cfg = getattr(self._ws_session, "config", None) if self._ws_session else None
+        language = getattr(cfg, "language", "en") if cfg else "en"
+        session = GladiaLiveSTTSession(
+            language=language,
+            endpointing=self.listening_config.gladia_endpointing,
+            receive_partials=self.listening_config.gladia_receive_partials,
+        )
+        started = await session.start()
+        self._live_stt = session
+        if started:
+            self._live_stt_task = asyncio.create_task(self._consume_live_stt())
+
+    async def _consume_live_stt(self) -> None:
+        session = self._live_stt
+        if session is None:
+            return
+        try:
+            async for transcript in session.transcripts():
+                text = (transcript.text or "").strip()
+                if not text:
+                    continue
+                if not transcript.is_final:
+                    self.barge_in_controller.buffer_partial(text)
+                    if self._barge_verify is not None:
+                        self._barge_verify.note_partial(text)
+                    await self._maybe_speculate_rag(text)
+                else:
+                    self.barge_in_controller.buffer_final(text)
+                    self._live_final_text = text
+                    # Drive the turn immediately — do not wait for the next mic
+                    # frame (silence/mute previously left finals stranded).
+                    runner = self._ws_session
+                    enqueue = getattr(runner, "enqueue_voice_turn", None) if runner else None
+                    if enqueue is not None:
+                        await enqueue(text)
+                        self._live_final_text = ""
+                        self._speech_end_pending = False
+                        self._speech_buffer = bytearray()
+                        self._capturing_speech = False
+                        if self._speech_capture is not None:
+                            self._speech_capture.reset()
+                    else:
+                        self._speech_end_pending = True
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            logger.warning("Live STT consumer ended", error=str(exc))
+            # Mark session dead so the next speech_start reconnects.
+            live = self._live_stt
+            if live is not None:
+                live._live = False  # type: ignore[attr-defined]
+
+    async def _maybe_speculate_rag(self, partial: str) -> None:
+        if not self.listening_config.enable_rag_speculative:
+            return
+        cfg = getattr(self._ws_session, "config", None) if self._ws_session else None
+        if cfg is None:
+            return
+        try:
+            tenant_uuid = parse_uuid(cfg.tenant_id, "tenant_id")
+        except Exception:
+            return
+        try:
+            await self.speculative_rag.speculate(partial, tenant_uuid)
+        except Exception as exc:
+            logger.debug("RAG speculate skipped", error=str(exc))
+
+    async def _close_live_stt(self) -> None:
+        task = self._live_stt_task
+        self._live_stt_task = None
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        live = self._live_stt
+        self._live_stt = None
+        if live is not None:
+            try:
+                await live.close()
+            except Exception:
+                pass
+
+    async def _observe_frame(self, frame: AudioFrame, *, agent_speaking: bool) -> Any:
+        """Run gate/VAD/capture off the event loop (optionally via VADWorker)."""
+        if self._speech_capture is not None:
+            fn = self._speech_capture.observe
+            if self._vad_worker is not None:
+                return await self._vad_worker.submit(fn, frame, agent_speaking)
+            return await asyncio.to_thread(fn, frame, agent_speaking)
+        if self._vad_worker is not None:
+            return await self._vad_worker.submit(self.vad_adapter.process_frame, frame)
+        return await asyncio.to_thread(self.vad_adapter.process_frame, frame)
+
     async def process_frame_async(self, frame: AudioFrame) -> Any:
-        """Run VAD off the event loop; drive barge-in on speech_start."""
-        evt = await asyncio.to_thread(self.vad_adapter.process_frame, frame)
-        if evt.speech_start:
-            if self.fsm.state == SessionState.AGENT_SPEAKING:
+        """Run VAD / speech-capture; drive barge-verify and live STT when flagged."""
+        agent_speaking = self.fsm.state in (
+            SessionState.AGENT_SPEAKING,
+            SessionState.BARGE_IN_VERIFY,
+        )
+        evt = await self._observe_frame(frame, agent_speaking=agent_speaking)
+
+        if self._barge_verify is not None and self._barge_verify.is_verifying:
+            self._barge_verify.note_vad(evt.probability)
+
+        if evt.speech_start and self.fsm.state == SessionState.AGENT_SPEAKING:
+            if self._barge_verify is not None:
                 if self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
                     self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
-                result = self.barge_in_controller._commit_barge_in(
-                    reason="VAD speech during agent TTS"
-                )
-                _ = result
-                self.three_point_cancel.execute_cancel_and_flush()
-            elif self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
+                if not self._barge_verify.is_verifying and (
+                    self._barge_verify_task is None or self._barge_verify_task.done()
+                ):
+                    self._barge_verify_task = asyncio.create_task(self._run_barge_verify())
+                await self._emit_debug_listening(evt, frame)
+                return evt
+            self._legacy_immediate_barge_in()
+
+        if evt.speech_start and not agent_speaking:
+            if self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
                 self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
-                if not self._capturing_speech:
+            if self._speech_capture is None:
+                # Phase 0 quick win: do not clear buffer on onset (preserves lookback).
+                if not self._capturing_speech and not self.listening_config.enable_quick_wins:
                     self._speech_buffer = bytearray()
                 self._capturing_speech = True
-        if (
-            self._capturing_speech
-            or self.fsm.state in (SessionState.USER_SPEAKING, SessionState.BARGE_IN_INTERRUPTED)
-        ) and frame.pcm16:
-            max_buf = 512 * 1024
-            if len(self._speech_buffer) + len(frame.pcm16) <= max_buf:
-                self._speech_buffer.extend(frame.pcm16)
+            else:
+                self._capturing_speech = self._speech_capture.capturing
+            await self._maybe_start_live_stt()
+
+        capturing = self._capturing_speech or (
+            self._speech_capture is not None and self._speech_capture.capturing
+        ) or self.fsm.state in (
+            SessionState.USER_SPEAKING,
+            SessionState.BARGE_IN_INTERRUPTED,
+        )
+
+        # Always stream mic audio into the live Gladia session while it is up.
+        # Legacy agents keep one live socket for the whole call; gating only on
+        # "capturing" dropped frames around VAD edges and starved STT.
+        if frame.pcm16 and self._live_stt is not None and self._live_stt.is_live:
+            if capturing or not agent_speaking:
+                await self._live_stt.send_audio(frame.pcm16)
+
+        if capturing and frame.pcm16:
+            if self._speech_capture is None:
+                max_buf = 512 * 1024
+                if len(self._speech_buffer) + len(frame.pcm16) <= max_buf:
+                    self._speech_buffer.extend(frame.pcm16)
+
         if evt.speech_end:
-            if self.fsm.state in (SessionState.USER_SPEAKING, SessionState.BARGE_IN_INTERRUPTED):
+            if self.fsm.state in (
+                SessionState.USER_SPEAKING,
+                SessionState.BARGE_IN_INTERRUPTED,
+            ):
                 if self.fsm.can_transition(SessionEvent.VAD_SPEECH_END):
                     self.fsm.trigger(SessionEvent.VAD_SPEECH_END)
-            if self._capturing_speech:
+            if self._speech_capture is not None:
+                pcm = self._speech_capture.take_utterance()
+                if pcm:
+                    self._speech_buffer = bytearray(pcm)
                 self._capturing_speech = False
-                self._speech_end_pending = True
+            elif self._capturing_speech:
+                self._capturing_speech = False
+            # Do NOT call Gladia finish()/stop_recording here — that tears down
+            # the live socket. Gladia endpointing emits finals via
+            # enqueue_voice_turn. Batch STT only when live is unavailable.
+            if not (self._live_stt is not None and self._live_stt.is_live):
+                if not self._live_final_text:
+                    self._speech_end_pending = True
+
+        await self._emit_debug_listening(evt, frame)
         return evt
 
     async def transcribe_speech_buffer(self, session_config: PipelineSessionConfig) -> str:
-        """Run STT on buffered mic audio after VAD speech_end."""
+        """Run STT on buffered mic audio after VAD speech_end (live final preferred)."""
+        if self._live_final_text:
+            text = self._live_final_text.strip()
+            self._live_final_text = ""
+            self._speech_buffer = bytearray()
+            # Keep the live Gladia socket open across turns.
+            return text
+
         if not self._speech_buffer:
+            logger.info("STT skipped — empty speech buffer after VAD end")
             return ""
 
         pcm = bytes(self._speech_buffer)
         self._speech_buffer = bytearray()
+        logger.info("Batch Gladia STT fallback", pcm_bytes=len(pcm))
 
         async def _audio_iter() -> AsyncIterator[AudioFrame]:
             yield AudioFrame(
@@ -223,8 +606,19 @@ class PipelineOrchestrator:
             self.fsm._state = SessionState.LISTENING
         self._capturing_speech = False
         self._speech_end_pending = False
+        self._live_final_text = ""
+        if self._speech_capture is not None:
+            self._speech_capture.reset()
+        else:
+            self.vad_adapter.reset()
 
     def process_frame(self, frame: AudioFrame) -> Any:
+        if self._speech_capture is not None:
+            agent_speaking = self.fsm.state in (
+                SessionState.AGENT_SPEAKING,
+                SessionState.BARGE_IN_VERIFY,
+            )
+            return self._speech_capture.observe(frame, agent_speaking=agent_speaking)
         return self.vad_adapter.process_frame(frame)
 
     async def cancel_tts(self) -> None:
@@ -257,7 +651,25 @@ class PipelineOrchestrator:
                         if not ttfb_recorded:
                             waterfall.tts_ttfb_ms = self.latency_hooks.now_ms()
                             ttfb_recorded = True
-                        await self._emit_audio(chunk.pcm_data, waterfall)
+                        pcm = chunk.pcm_data
+                        native = int(getattr(chunk, "native_sample_rate", 16000) or 16000)
+                        if native != 16000:
+                            pcm = EgressResampler.resample_to_16k(pcm, native)
+                        # Amplitude probe: separates silent vendor PCM from client playback bugs.
+                        if getattr(self, "_tts_pcm_logged", 0) < 3 and len(pcm) >= 4:
+                            import struct
+
+                            n = min(64, len(pcm) // 2)
+                            samples = struct.unpack("<" + "h" * n, pcm[: n * 2])
+                            peak = max(abs(s) for s in samples) if samples else 0
+                            logger.info(
+                                "TTS PCM egress chunk",
+                                bytes=len(pcm),
+                                native_hz=native,
+                                peak_abs=peak,
+                            )
+                            self._tts_pcm_logged = getattr(self, "_tts_pcm_logged", 0) + 1
+                        await self._emit_audio(pcm, waterfall)
                 return True
 
             try:
@@ -275,6 +687,7 @@ class PipelineOrchestrator:
         turn_start = time.monotonic()
         self._turn_starts.append(turn_start)
         self._playback_started = False
+        self._tts_pcm_logged = 0
         self._tts_cancel = AsyncioCancellationToken()
         self._llm_cancel = AsyncioCancellationToken()
         self.three_point_cancel.reset()
@@ -283,10 +696,21 @@ class PipelineOrchestrator:
         if interrupted:
             user_text = interrupted
 
+        if session_config.compliance_tier in ("hipaa", "gdpr_strict"):
+            redacted = self.redaction_service.redact_transcript(
+                [{"speaker": "user", "text": user_text}],
+                RedactionPolicy(redact_pii_in_transcript=True),
+            )
+            if redacted:
+                user_text = str(redacted[0].get("text") or user_text)
+
         waterfall = self.latency_hooks.start_turn(
             _metric_session_uuid(session_config.session_id)
         )
+        self._current_waterfall = waterfall
         waterfall.stt_final_ms = self.latency_hooks.now_ms()
+        sc = self.speaking_config
+        self.apply_language_vad_overrides(session_config.language)
 
         try:
             policy = TenantComplianceProfileLoader.load_effective_policy(
@@ -308,6 +732,7 @@ class PipelineOrchestrator:
             if asyncio.iscoroutine(maybe):
                 await maybe
 
+        prior_turns = await self.redis_store.get_turns(session_config.session_id)
         await self.redis_store.append_turn(
             session_config.session_id,
             {"speaker": "user", "text": user_text, "language": session_config.language},
@@ -316,9 +741,15 @@ class PipelineOrchestrator:
             self.fsm.trigger(SessionEvent.SESSION_ADMITTED)
         elif self.fsm.state == SessionState.AGENT_SPEAKING:
             self.fsm.trigger(SessionEvent.TTS_DRAINED)
+        elif self.fsm.state == SessionState.BARGE_IN_INTERRUPTED:
+            # Interrupted turn already in PROCESSING via VAD_SPEECH_END or stays until STT_FINAL.
+            pass
 
         if self.fsm.state == SessionState.LISTENING:
             self.fsm.trigger(SessionEvent.STT_FINAL)
+        elif self.fsm.state == SessionState.BARGE_IN_INTERRUPTED:
+            if self.fsm.can_transition(SessionEvent.STT_FINAL):
+                self.fsm.trigger(SessionEvent.STT_FINAL)
 
         rag_context = ""
         try:
@@ -341,33 +772,106 @@ class PipelineOrchestrator:
         prompt_str = (
             getattr(session_config, "system_prompt", None) or ""
         ).strip() or "You are a helpful voice agent."
-        messages = [
+        messages: list[dict[str, Any]] = [
             {"role": "system", "content": f"{prompt_str}\n{rag_context}".strip()},
-            {"role": "user", "content": user_text},
         ]
+        # Multi-turn Redis history (Phase 7) — last 12 speaker turns.
+        for turn in prior_turns[-12:]:
+            speaker = (turn.get("speaker") or "user").lower()
+            role = "assistant" if speaker in ("agent", "assistant") else "user"
+            content = (turn.get("text") or "").strip()
+            if content:
+                messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": user_text})
+
+        async def _run_tool_with_filler(tool_name: str, arguments: dict[str, Any]) -> str:
+            filler_phrase: list[str] = []
+
+            def _on_filler(phrase: str) -> None:
+                filler_phrase.append(phrase)
+
+            if sc.enable_tool_loop:
+                self._filler = ConversationalFillerSynth(
+                    FillerConfig(trigger_after_ms=sc.tool_filler_delay_ms),
+                    on_filler_triggered=_on_filler,
+                )
+                await self._filler.start()
+            try:
+                if self.fsm.can_transition(SessionEvent.TOOL_CALL_START):
+                    self.fsm.trigger(SessionEvent.TOOL_CALL_START)
+                tool_res = await self.tool_handler.handle_tool_call(tool_name, arguments)
+                if self.fsm.can_transition(SessionEvent.TOOL_RESULT):
+                    self.fsm.trigger(SessionEvent.TOOL_RESULT)
+            finally:
+                if self._filler is not None:
+                    self._filler.cancel()
+                    self._filler = None
+            if filler_phrase:
+                await self._finish_turn_tts(filler_phrase[:1], session_config, waterfall)
+            return str(tool_res.get("content", "Tool executed."))
 
         if user_text.startswith("tool:"):
-            self.fsm.trigger(SessionEvent.TOOL_CALL_START)
             tool_name = user_text.split(":", 1)[1].strip()
-            tool_res = await self.tool_handler.handle_tool_call(tool_name, {})
-            self.fsm.trigger(SessionEvent.TOOL_RESULT)
-            normalized = tool_res.get("content", "Tool executed.")
+            normalized = await _run_tool_with_filler(tool_name, {})
             await self._finish_turn_tts([normalized], session_config, waterfall)
         else:
-            model = session_config.llm_model or "llama-3.3-70b-versatile"
+            model = session_config.llm_model or "openai/gpt-oss-120b"
             llm_cfg = LLMConfig(model=model)
-            sentences: list[str] = []
-            tts_started = False
-            tts_consumer: asyncio.Task[None] | None = None
             reply_parts: list[str] = []
             ttft_recorded = False
+            chunker_recorded = False
             stream_buffer = ""
+            pending_tool_calls: list[dict[str, Any]] = []
+            # Queue-based TTS: the old list consumer could exit after the first
+            # tiny chunk ("I") and never speak the rest of the reply.
+            tts_q: asyncio.Queue[str | None] = asyncio.Queue()
+            spoken_chars = 0
+            min_first_words = max(6, int(sc.chunker_first_words) * 3)
 
-            async def _consume_sentences() -> None:
-                await self._synthesize_streaming(sentences, session_config, waterfall)
+            async def _consume_tts_queue() -> None:
+                while True:
+                    item = await tts_q.get()
+                    if item is None:
+                        return
+                    await self._synthesize_streaming(
+                        [item], session_config, waterfall
+                    )
+
+            def _enqueue_stable_speech(*, final: bool = False) -> None:
+                nonlocal spoken_chars, chunker_recorded, stream_buffer
+                pending = stream_buffer[spoken_chars:]
+                if not pending.strip():
+                    return
+                # Prefer complete sentences; on stream end flush the remainder.
+                pieces: list[str] = []
+                if final:
+                    tail = pending.strip()
+                    if tail:
+                        pieces.append(tail)
+                else:
+                    for m in re.finditer(r".+?[.!?]+(?:\s+|$)", pending, flags=re.S):
+                        pieces.append(m.group(0).strip())
+                    if not pieces:
+                        words = pending.split()
+                        if len(words) >= min_first_words:
+                            # First audible phrase without waiting for punctuation.
+                            take = " ".join(words[:min_first_words])
+                            pieces.append(take)
+                for piece in pieces:
+                    if not piece:
+                        continue
+                    idx = stream_buffer.find(piece, spoken_chars)
+                    if idx < 0:
+                        spoken_chars = len(stream_buffer)
+                    else:
+                        spoken_chars = idx + len(piece)
+                    if not chunker_recorded:
+                        waterfall.chunker_ms = self.latency_hooks.now_ms()
+                        chunker_recorded = True
+                    tts_q.put_nowait(piece)
 
             async def _stream_llm(_pid: str) -> bool:
-                nonlocal ttft_recorded, tts_started, tts_consumer, stream_buffer
+                nonlocal ttft_recorded, stream_buffer, pending_tool_calls
                 async for chunk in self.llm_provider.generate_stream(
                     messages, llm_cfg, cancellation_token=self._llm_cancel
                 ):
@@ -376,18 +880,19 @@ class PipelineOrchestrator:
                     if not ttft_recorded:
                         waterfall.llm_ttft_ms = self.latency_hooks.now_ms()
                         ttft_recorded = True
+                        if self.fsm.can_transition(SessionEvent.LLM_FIRST_TOKEN):
+                            self.fsm.trigger(SessionEvent.LLM_FIRST_TOKEN)
+                    if sc.enable_tool_loop and chunk.tool_calls:
+                        pending_tool_calls.extend(chunk.tool_calls)
                     if chunk.text:
                         reply_parts.append(chunk.text)
                         stream_buffer += chunk.text
-                        parts = self.chunker.chunk(stream_buffer)
-                        if len(parts) > len(sentences):
-                            sentences.extend(parts[len(sentences) :])
-                            if not tts_started and sentences:
-                                tts_started = True
-                                tts_consumer = asyncio.create_task(_consume_sentences())
-                                self._tts_task = tts_consumer
-                                self.three_point_cancel.register_task(tts_consumer)
+                        _enqueue_stable_speech(final=False)
                 return True
+
+            tts_consumer = asyncio.create_task(_consume_tts_queue())
+            self._tts_task = tts_consumer
+            self.three_point_cancel.register_task(tts_consumer)
 
             try:
                 await self.failover_router.call_with_failover(
@@ -402,18 +907,29 @@ class PipelineOrchestrator:
                 fallback = f"I heard you say: {user}. How can I help you today?"
                 reply_parts.append(fallback)
                 stream_buffer = fallback
-                sentences.extend(self.chunker.chunk(stream_buffer))
 
-            if not tts_started and sentences:
-                tts_consumer = asyncio.create_task(_consume_sentences())
-                self._tts_task = tts_consumer
-                self.three_point_cancel.register_task(tts_consumer)
+            if pending_tool_calls and sc.enable_tool_loop:
+                for tc in pending_tool_calls:
+                    name = str(tc.get("function", {}).get("name") or tc.get("name") or "").strip()
+                    raw_args = tc.get("function", {}).get("arguments") or tc.get("arguments") or {}
+                    if isinstance(raw_args, str):
+                        try:
+                            arguments = json.loads(raw_args) if raw_args else {}
+                        except Exception:
+                            arguments = {}
+                    else:
+                        arguments = dict(raw_args) if raw_args else {}
+                    if name:
+                        tool_text = await _run_tool_with_filler(name, arguments)
+                        reply_parts.append(tool_text)
+                        stream_buffer += (" " + tool_text)
 
-            if tts_consumer:
-                try:
-                    await tts_consumer
-                except asyncio.CancelledError:
-                    raise
+            _enqueue_stable_speech(final=True)
+            await tts_q.put(None)
+            try:
+                await tts_consumer
+            except asyncio.CancelledError:
+                raise
 
             normalized = "".join(reply_parts) or "OK"
             norm_result = self.normalizer.normalize(normalized, language=session_config.language)
@@ -465,6 +981,11 @@ class PipelineOrchestrator:
                 await self._egress_sender_task
             except asyncio.CancelledError:
                 pass
+
+        await self._close_live_stt()
+        if self._vad_worker is not None:
+            self._vad_worker.shutdown()
+            self._vad_worker = None
 
         for provider in (self.llm_provider, self.tts_provider, self.stt_provider):
             close_fn = getattr(provider, "aclose", None)

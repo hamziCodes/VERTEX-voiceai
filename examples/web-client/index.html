@@ -457,6 +457,38 @@
       color: var(--text-main);
       word-break: break-word;
     }
+    .provider-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.65rem;
+      margin-bottom: 1rem;
+    }
+    .provider-field label {
+      display: block;
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }
+    .provider-field select {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.85);
+      color: var(--text-main);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 8px;
+      padding: 0.55rem 0.7rem;
+      font-size: 0.9rem;
+    }
+    .provider-field select:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .provider-hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.35rem;
+    }
   </style>
 </head>
 <body>
@@ -495,7 +527,39 @@
           <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
           End Session
         </button>
+        <button id="speakerTestBtn" class="btn-secondary" type="button">
+          Test Speakers
+        </button>
       </div>
+      <audio id="speakerAudio" autoplay playsinline style="display:none"></audio>
+      <p class="provider-hint" id="speakerHint">Use Chrome/Edge (not Cursor Simple Browser). If the startup beep is silent, the OS/tab output device is muted.</p>
+
+      <div class="card-title" style="margin-top: 0.5rem;">
+        <span>Providers</span>
+      </div>
+      <div class="provider-grid">
+        <div class="provider-field">
+          <label for="sttProviderSelect">STT</label>
+          <select id="sttProviderSelect">
+            <option value="gladia" selected>Gladia (live)</option>
+          </select>
+        </div>
+        <div class="provider-field">
+          <label for="llmProviderSelect">LLM</label>
+          <select id="llmProviderSelect">
+            <option value="groq" selected>Groq (gpt-oss-120b)</option>
+          </select>
+        </div>
+        <div class="provider-field">
+          <label for="ttsProviderSelect">TTS</label>
+          <select id="ttsProviderSelect">
+            <option value="cartesia" selected>Cartesia (Sonic / EN)</option>
+            <option value="uplift">Uplift (Orator / UR+EN accent)</option>
+            <option value="elevenlabs">ElevenLabs (English)</option>
+          </select>
+        </div>
+      </div>
+      <p class="provider-hint">Provider switches are locked while a live session is connected.</p>
 
       <div class="card-title" style="margin-top: 0.5rem;">
         <span>System Prompt (AI Agent Persona)</span>
@@ -597,17 +661,40 @@
     const metricVad = document.getElementById('metricVad');
     const textTurnInput = document.getElementById('textTurnInput');
     const sendTurnBtn = document.getElementById('sendTurnBtn');
+    const sttProviderSelect = document.getElementById('sttProviderSelect');
+    const llmProviderSelect = document.getElementById('llmProviderSelect');
+    const ttsProviderSelect = document.getElementById('ttsProviderSelect');
+    const systemPromptInput = document.getElementById('systemPromptInput');
+
+    function setProviderControlsLocked(locked) {
+      sttProviderSelect.disabled = locked;
+      llmProviderSelect.disabled = locked;
+      ttsProviderSelect.disabled = locked;
+      systemPromptInput.disabled = locked;
+    }
     const canvas = document.getElementById('waveformCanvas');
     const ctxCanvas = canvas.getContext('2d');
 
     let ws = null;
-    let audioCtx = null;
+    let micCtx = null;
+    let playCtx = null;
     let workletNode = null;
+    let playerNode = null;
+    let playGain = null;
+    let playDest = null;
     let playTime = 0;
+    let micStream = null;
     let isMuted = false;
+    let activeSources = [];
+    const PLAYBACK_GAIN = 4.0;
+    const WORKLET_VER = '20260908d';
+    const speakerAudio = document.getElementById('speakerAudio');
+    const speakerTestBtn = document.getElementById('speakerTestBtn');
     let totalFrames = 0;
     let totalBytesSent = 0;
     let pingStartTime = 0;
+    const MIC_RATE = 16000;
+    const TTS_RATE = 16000; // server egress is always 16 kHz PCM16
 
     // Resize Canvas
     canvas.width = canvas.offsetWidth;
@@ -692,74 +779,180 @@
       return Math.sqrt(sum / samples.length);
     }
 
-    let pcmQueue = new Int16Array(0);
     let lastAudioLogTime = 0;
     let audioInBatchBytes = 0;
-    let flushTimer = null;
+    let bargeInActive = false;      // true while flushing ghost audio after barge-in
+    let playbackReported = false;   // ensures exactly one playback_started ack per turn
+    let playbackStarted = false;    // jitter prebuffer armed for current agent turn
+    let audioInTotalBytes = 0;      // cumulative received audio bytes (agent → client)
+    let prebuffered = [];
+    const PREBUFFER_CHUNKS = Math.max(1, parseInt(new URLSearchParams(location.search).get('prebuffer') || '3', 10) || 3);
 
-    function flushPcmQueue() {
-      if (!audioCtx || pcmQueue.length === 0) return;
-      const chunk = pcmQueue;
-      pcmQueue = new Int16Array(0);
-
-      const f32 = new Float32Array(chunk.length);
-      for (let i = 0; i < chunk.length; i++) f32[i] = chunk[i] / 32768;
-
-      const audioBuf = audioCtx.createBuffer(1, f32.length, 16000);
-      audioBuf.copyToChannel(f32, 0);
-
-      const src = audioCtx.createBufferSource();
-      src.buffer = audioBuf;
-      src.connect(audioCtx.destination);
-
-      const now = audioCtx.currentTime;
-      if (playTime < now + 0.015) playTime = now + 0.035;
-      src.start(playTime);
-      playTime += audioBuf.duration;
+    function decodeInt16ToFloat32(arrayBuffer) {
+      const int16 = new Int16Array(arrayBuffer);
+      const f32 = new Float32Array(int16.length);
+      for (let i = 0; i < int16.length; i++) {
+        f32[i] = int16[i] / (int16[i] < 0 ? 0x8000 : 0x7fff);
+      }
+      return f32;
     }
 
-    function playPcm16(buf) {
-      if (!audioCtx) return;
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
+    /** Upsample/downsample PCM float samples from TTS_RATE to the live playCtx rate. */
+    function resampleFloat32(input, fromRate, toRate) {
+      if (!input.length || fromRate === toRate) return input;
+      const ratio = toRate / fromRate;
+      const outLen = Math.max(1, Math.round(input.length * ratio));
+      const out = new Float32Array(outLen);
+      for (let i = 0; i < outLen; i++) {
+        const src = i / ratio;
+        const i0 = Math.floor(src);
+        const i1 = Math.min(i0 + 1, input.length - 1);
+        const frac = src - i0;
+        out[i] = input[i0] * (1 - frac) + input[i1] * frac;
       }
+      return out;
+    }
 
-      if (flushTimer) clearTimeout(flushTimer);
+    function ackPlaybackStarted() {
+      if (playbackReported) return;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ event_type: 'metric', payload: { kind: 'playback_started', t: Date.now() } }));
+      }
+      playbackReported = true;
+      addLog('AUDIO', 'playback_started ack sent', 'tag-tts');
+    }
 
-      // Append incoming Int16 samples to queue
-      const incoming = new Int16Array(buf);
-      const combined = new Int16Array(pcmQueue.length + incoming.length);
-      combined.set(pcmQueue, 0);
-      combined.set(incoming, pcmQueue.length);
-      pcmQueue = combined;
-
-      // Play in smooth 20ms chunks (320 samples @ 16kHz)
-      const CHUNK_SIZE = 320;
-      while (pcmQueue.length >= CHUNK_SIZE) {
-        const chunk = pcmQueue.slice(0, CHUNK_SIZE);
-        pcmQueue = pcmQueue.slice(CHUNK_SIZE);
-
-        const f32 = new Float32Array(chunk.length);
-        for (let i = 0; i < chunk.length; i++) f32[i] = chunk[i] / 32768;
-
-        const audioBuf = audioCtx.createBuffer(1, f32.length, 16000);
-        audioBuf.copyToChannel(f32, 0);
-
-        const src = audioCtx.createBufferSource();
-        src.buffer = audioBuf;
-        src.connect(audioCtx.destination);
-
-        const now = audioCtx.currentTime;
-        if (playTime < now + 0.015) {
-          playTime = now + 0.035; // 35ms gapless jitter buffer window
-        }
+    /** Reliable main-thread scheduler → Gain → MediaStream + destination (webview-safe). */
+    function scheduleBufferPlayback(f32) {
+      if (!playCtx || !f32.length) return;
+      if (playCtx.state === 'suspended') playCtx.resume().catch(() => {});
+      const matched = resampleFloat32(f32, TTS_RATE, playCtx.sampleRate || TTS_RATE);
+      const boosted = new Float32Array(matched.length);
+      for (let i = 0; i < matched.length; i++) {
+        boosted[i] = Math.max(-1, Math.min(1, matched[i] * PLAYBACK_GAIN));
+      }
+      const audioBuf = playCtx.createBuffer(1, boosted.length, playCtx.sampleRate);
+      audioBuf.copyToChannel(boosted, 0);
+      const src = playCtx.createBufferSource();
+      src.buffer = audioBuf;
+      const sink = playGain || playCtx.destination;
+      src.connect(sink);
+      const now = playCtx.currentTime;
+      if (!Number.isFinite(playTime) || playTime < now + 0.02) {
+        playTime = now + 0.05;
+      }
+      try {
         src.start(playTime);
         playTime += audioBuf.duration;
+        activeSources.push(src);
+        src.onended = () => {
+          activeSources = activeSources.filter((s) => s !== src);
+          try { src.disconnect(); } catch (_) {}
+        };
+      } catch (err) {
+        addLog('ERROR', 'Playback schedule failed: ' + (err && err.message ? err.message : err), 'tag-error');
       }
+    }
 
-      // Schedule trailing flush for remaining samples after 40ms
-      if (pcmQueue.length > 0) {
-        flushTimer = setTimeout(flushPcmQueue, 40);
+    function postToPlayer(f32) {
+      if (!playCtx) return;
+      if (playCtx.state === 'suspended') {
+        playCtx.resume().catch(() => {});
+      }
+      if (speakerAudio && speakerAudio.paused) {
+        speakerAudio.play().catch(() => {});
+      }
+      scheduleBufferPlayback(f32);
+    }
+
+    function feedPlayback(arrayBuffer) {
+      if (bargeInActive || !playCtx) return;
+      const f32 = decodeInt16ToFloat32(arrayBuffer);
+      if (!playbackStarted) {
+        prebuffered.push(f32);
+        if (prebuffered.length < PREBUFFER_CHUNKS) return;
+        playbackStarted = true;
+        for (const chunk of prebuffered) postToPlayer(chunk);
+        prebuffered = [];
+        ackPlaybackStarted();
+        return;
+      }
+      postToPlayer(f32);
+      ackPlaybackStarted();
+    }
+
+    function flushPlayback() {
+      bargeInActive = true;
+      playbackReported = false;
+      playbackStarted = false;
+      prebuffered = [];
+      playTime = 0;
+      for (const src of activeSources.splice(0)) {
+        try { src.stop(); } catch (_) {}
+        try { src.disconnect(); } catch (_) {}
+      }
+      if (playerNode) {
+        playerNode.port.postMessage({ flush: true });
+      }
+    }
+
+    async function ensureSpeakerElement() {
+      if (!playCtx || !playGain) return;
+      if (!playDest) {
+        playDest = playCtx.createMediaStreamDestination();
+        // Single sink only — connecting destination AND <audio> doubles every utterance.
+        playGain.connect(playDest);
+      }
+      if (speakerAudio) {
+        if (speakerAudio.srcObject !== playDest.stream) {
+          speakerAudio.srcObject = playDest.stream;
+        }
+        speakerAudio.muted = false;
+        speakerAudio.volume = 1.0;
+        try {
+          await speakerAudio.play();
+          if (!ensureSpeakerElement._loggedPlaying) {
+            addLog('AUDIO', 'Speaker <audio> element playing MediaStream (single path)', 'tag-audio');
+            ensureSpeakerElement._loggedPlaying = true;
+          }
+        } catch (err) {
+          addLog('ERROR', 'Speaker element blocked: ' + (err && err.message ? err.message : err), 'tag-error');
+        }
+      }
+    }
+
+    async function playStartupBeep() {
+      if (!playCtx || !playGain) return;
+      await ensureSpeakerElement();
+      const sr = playCtx.sampleRate;
+      const n = Math.floor(sr * 0.25);
+      const buf = playCtx.createBuffer(1, n, sr);
+      const ch = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) {
+        const env = Math.min(1, i / (sr * 0.01)) * Math.min(1, (n - i) / (sr * 0.05));
+        ch[i] = 0.55 * Math.sin(2 * Math.PI * 880 * i / sr) * env;
+      }
+      const src = playCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(playGain);
+      src.start();
+      addLog('AUDIO', 'Startup beep queued (must hear this before agent TTS can work)', 'tag-audio');
+    }
+
+    async function playSpeakerTest() {
+      try {
+        if (!playCtx) {
+          playCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (playCtx.state === 'suspended') await playCtx.resume();
+        if (!playGain) {
+          playGain = playCtx.createGain();
+          playGain.gain.value = 1.0;
+        }
+        await ensureSpeakerElement();
+        await playStartupBeep();
+      } catch (err) {
+        addLog('ERROR', 'Speaker test failed: ' + (err && err.message ? err.message : err), 'tag-error');
       }
     }
 
@@ -770,23 +963,70 @@
         
         const minted = await mint();
         let wsUrl = minted.ws_url || 'ws://127.0.0.1:8081/ws/audio';
+        const sttProvider = sttProviderSelect.value || 'gladia';
+        const llmProvider = llmProviderSelect.value || 'groq';
+        const ttsProvider = ttsProviderSelect.value || 'uplift';
         wsUrl += (wsUrl.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(minted.token);
+        wsUrl += '&stt_provider=' + encodeURIComponent(sttProvider);
+        wsUrl += '&llm_provider=' + encodeURIComponent(llmProvider);
+        wsUrl += '&tts_provider=' + encodeURIComponent(ttsProvider);
+        addLog(
+          'SYSTEM',
+          `Providers selected: STT=${sttProvider} LLM=${llmProvider} TTS=${ttsProvider}`,
+          'tag-ws'
+        );
 
         addLog('WS', `Connecting WebSocket to ${wsUrl.split('?')[0]}`, 'tag-ws');
 
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-        await audioCtx.audioWorklet.addModule('./pcm-worklet.js');
-        
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const src = audioCtx.createMediaStreamSource(stream);
-        workletNode = new AudioWorkletNode(audioCtx, 'pcm16-capture');
+        // Use default hardware sample rate for playback (forced 16 kHz is often silent on Windows).
+        // Mic context stays separate; capture worklet downsamples to 16 kHz for the server.
+        playCtx = new (window.AudioContext || window.webkitAudioContext)();
+        micCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const workletUrl = './pcm-worklet.js?v=' + WORKLET_VER;
+        await playCtx.audioWorklet.addModule(workletUrl);
+        await micCtx.audioWorklet.addModule(workletUrl);
+        if (playCtx.state === 'suspended') await playCtx.resume();
+        if (micCtx.state === 'suspended') await micCtx.resume();
+
+        playGain = playCtx.createGain();
+        playGain.gain.value = 1.0;
+        playDest = null;
+        ensureSpeakerElement._loggedPlaying = false;
+        await ensureSpeakerElement();
+
+        // Optional worklet kept for flush/diagnostics only — NOT connected to speakers.
+        playerNode = new AudioWorkletNode(playCtx, 'pcm16-player');
+        playTime = 0;
+        await playStartupBeep();
+
+        if (/Cursor|Electron/i.test(navigator.userAgent) || window.chrome?.webview) {
+          addLog('AUDIO', 'Embedded/webview UA detected — if beep is silent, open http://127.0.0.1:8000/demo/ in Chrome or Edge', 'tag-audio');
+        }
+
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        const src = micCtx.createMediaStreamSource(micStream);
+        workletNode = new AudioWorkletNode(micCtx, 'pcm16-capture', {
+          processorOptions: { targetSampleRate: MIC_RATE },
+        });
         src.connect(workletNode);
+
+        addLog(
+          'AUDIO',
+          `AudioContext ready play=${playCtx.sampleRate}Hz/${playCtx.state} mic=${micCtx.sampleRate}Hz/${micCtx.state} gain=${PLAYBACK_GAIN}x`,
+          'tag-audio'
+        );
 
         ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
 
       const transcriptBox = document.getElementById('transcriptBox');
-    const systemPromptInput = document.getElementById('systemPromptInput');
 
     function addTranscript(speaker, text) {
       if (!text) return;
@@ -810,6 +1050,7 @@
       stopBtn.disabled = false;
       textTurnInput.disabled = false;
       sendTurnBtn.disabled = false;
+      setProviderControlsLocked(true);
 
       // Sync initial system prompt to worker session
       const currentPrompt = systemPromptInput.value.trim();
@@ -837,6 +1078,11 @@
           } else if (eventType === 'transcript' || eventType === 'stt') {
             const speaker = msg.payload?.speaker || 'user';
             const text = msg.payload?.text || (typeof msg.payload === 'string' ? msg.payload : '');
+            // Lift barge gate on new text. Do NOT reset playbackStarted/prebuffer here:
+            // AUDIO_IN often arrives before the agent transcript line.
+            bargeInActive = false;
+            const isAgentTurn = (speaker || '').toLowerCase().includes('agent') || (speaker || '').toLowerCase().includes('assistant');
+            if (isAgentTurn) playbackReported = false; // arm ack for next agent playback
             if (text) {
               addTranscript(speaker, text);
               addLog('TRANSCRIPT', `[${speaker.toUpperCase()}]: ${text}`, speaker === 'agent' ? 'tag-llm' : 'tag-stt');
@@ -845,6 +1091,11 @@
             addLog('LLM', `LLM Output: ${msg.payload?.text || JSON.stringify(msg)}`, 'tag-llm');
           } else if (eventType === 'metric') {
             addLog('METRIC', `Event: ${msg.payload?.kind || eventType}`, 'tag-ws');
+          } else if (eventType === 'barge_in') {
+            flushPlayback();
+            addLog('TTS', 'Barge-in: playback flushed', 'tag-tts');
+            // Auto-recover after 250ms so the next agent turn plays normally
+            setTimeout(() => { bargeInActive = false; }, 250);
           } else {
             addLog('EVENT', `${eventType}: ${JSON.stringify(msg)}`, 'tag-ws');
           }
@@ -853,15 +1104,33 @@
       }
 
       // Incoming PCM Audio Response (TTS / Echo)
+      if (bargeInActive) return; // discard ghost chunks during barge-in flush window
       const pcmBytes = ev.data.byteLength;
       audioInBatchBytes += pcmBytes;
+      audioInTotalBytes += pcmBytes;
       const nowTime = performance.now();
       if (nowTime - lastAudioLogTime > 1000) {
-        addLog('AUDIO_IN', `Streaming 16kHz PCM16 audio response (${Math.round(audioInBatchBytes / 1024)} KB/sec)`, 'tag-tts');
+        const kbps = (audioInBatchBytes / 1024).toFixed(1);
+        const samples = new Int16Array(ev.data);
+        let peak = 0;
+        let sumSq = 0;
+        for (let i = 0; i < samples.length; i++) {
+          const a = Math.abs(samples[i]);
+          if (a > peak) peak = a;
+          const n = samples[i] / 32768;
+          sumSq += n * n;
+        }
+        const rms = samples.length ? Math.sqrt(sumSq / samples.length) : 0;
+        addLog(
+          'AUDIO_IN',
+          `Streaming 16kHz PCM16 (${kbps} KB/sec, rms=${rms.toFixed(3)}, peak=${peak}, playCtx=${playCtx ? playCtx.state : 'n/a'})`,
+          'tag-tts'
+        );
         lastAudioLogTime = nowTime;
         audioInBatchBytes = 0;
       }
-      playPcm16(ev.data);
+      metricBytes.textContent = Math.round(audioInTotalBytes / 1024);
+      feedPlayback(ev.data);
     };
 
     ws.onerror = (err) => {
@@ -903,7 +1172,7 @@
       totalFrames++;
       totalBytesSent += pcmBuffer.byteLength;
       metricFrames.textContent = totalFrames;
-      metricBytes.textContent = Math.round(totalBytesSent / 1024);
+      // metricBytes now tracks received agent audio (audioInTotalBytes), updated in the binary WS handler
 
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(pcmBuffer);
@@ -920,6 +1189,9 @@
 
 muteBtn.onclick = () => {
   isMuted = !isMuted;
+  if (micStream) {
+    micStream.getAudioTracks().forEach((t) => { t.enabled = !isMuted; });
+  }
   if (isMuted) {
     muteText.textContent = 'Unmute Mic';
     muteBtn.classList.add('active');
@@ -927,20 +1199,44 @@ muteBtn.onclick = () => {
     meterPercent.textContent = 'MUTED';
     addLog('AUDIO', 'Microphone muted', 'tag-audio');
   } else {
-    muteText.textContent = 'Mute Mic';
-    muteBtn.classList.remove('active');
-    addLog('AUDIO', 'Microphone unmuted', 'tag-audio');
+  muteText.textContent = 'Mute Mic';
+  muteBtn.classList.remove('active');
+  addLog('AUDIO', 'Microphone unmuted', 'tag-audio');
   }
 };
 
+speakerTestBtn.onclick = () => { playSpeakerTest(); };
+
 function cleanup() {
-  if (ws) { ws.close(); ws = null; }
-  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  if (ws) { try { ws.close(); } catch (_) {} ws = null; }
+  if (micStream) {
+    micStream.getTracks().forEach((t) => t.stop());
+    micStream = null;
+  }
+  if (workletNode) { try { workletNode.disconnect(); } catch (_) {} workletNode = null; }
+  if (playerNode) { try { playerNode.disconnect(); } catch (_) {} playerNode = null; }
+  for (const src of activeSources.splice(0)) {
+    try { src.stop(); } catch (_) {}
+    try { src.disconnect(); } catch (_) {}
+  }
+  if (playGain) { try { playGain.disconnect(); } catch (_) {} playGain = null; }
+  playDest = null;
+  if (speakerAudio) {
+    try { speakerAudio.pause(); } catch (_) {}
+    speakerAudio.srcObject = null;
+  }
+  if (micCtx) { try { micCtx.close(); } catch (_) {} micCtx = null; }
+  if (playCtx) { try { playCtx.close(); } catch (_) {} playCtx = null; }
+  playbackStarted = false;
+  prebuffered = [];
+  bargeInActive = false;
+  playTime = 0;
   startBtn.disabled = false;
   muteBtn.disabled = true;
   stopBtn.disabled = true;
   textTurnInput.disabled = true;
   sendTurnBtn.disabled = true;
+  setProviderControlsLocked(false);
   meterFill.style.width = '0%';
   meterPercent.textContent = '0%';
   metricVad.textContent = 'IDLE';

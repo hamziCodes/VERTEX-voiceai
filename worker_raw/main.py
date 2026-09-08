@@ -33,7 +33,29 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "service": "worker-raw"}
 
 
-async def _load_session_config(token_payload: dict[str, str]) -> PipelineSessionConfig:
+@app.get("/")
+async def root() -> dict[str, str]:
+    """Browser / tooling probes hit `/`; return service identity instead of 404."""
+    return {"status": "ok", "service": "worker-raw", "ws": "/ws/audio"}
+
+
+@app.get("/json/version")
+async def json_version() -> dict[str, str]:
+    """Chrome/CDP-style probes often hit this on open ports — avoid noisy 404s."""
+    return {
+        "service": "ucve-worker-raw",
+        "version": app.version or "0.1.0",
+        "note": "Not a Chrome DevTools endpoint",
+    }
+
+async def _load_session_config(
+    token_payload: dict[str, str],
+    *,
+    stt_provider: str | None = None,
+    llm_provider: str | None = None,
+    tts_provider: str | None = None,
+    tts_voice_id: str | None = None,
+) -> PipelineSessionConfig:
     """Load PipelineSessionConfig from mint context / DB."""
     session_id = str(token_payload["sub"])
     tenant_id = str(token_payload["tenant_id"])
@@ -53,12 +75,20 @@ async def _load_session_config(token_payload: dict[str, str]) -> PipelineSession
         compliance_tier = getattr(profile, "compliance_tier", compliance_tier)
         hipaa_baa = getattr(profile, "hipaa_baa_acknowledged_at", None) is not None
     _ = tenant
+    import os
+
+    greeting = (os.environ.get("UCVE_INITIAL_GREETING") or "").strip() or None
     return PipelineSessionConfig(
         session_id=session_id,
         tenant_id=tenant_id,
         agent_id=agent_id,
         compliance_tier=compliance_tier,
         hipaa_baa_acknowledged=hipaa_baa,
+        initial_greeting=greeting,
+        stt_provider=stt_provider or "gladia",
+        llm_provider=llm_provider or "groq",
+        tts_provider=tts_provider or "uplift",
+        tts_voice_id=(tts_voice_id or "default"),
     )
 
 
@@ -80,7 +110,13 @@ async def ws_audio(websocket: WebSocket) -> None:
 
     try:
         payload = verify_session_jwt(token)
-        config = await _load_session_config(payload)
+        config = await _load_session_config(
+            payload,
+            stt_provider=websocket.query_params.get("stt_provider"),
+            llm_provider=websocket.query_params.get("llm_provider"),
+            tts_provider=websocket.query_params.get("tts_provider"),
+            tts_voice_id=websocket.query_params.get("tts_voice_id"),
+        )
     except Exception as exc:
         await websocket.close(code=4401, reason=f"invalid token: {exc}")
         return
@@ -95,6 +131,7 @@ async def ws_audio(websocket: WebSocket) -> None:
         on_audio_out=_on_audio_out,
         on_transcript=_on_transcript,
     )
+    await orchestrator.apply_provider_selection(config)
 
     runner = WebSocketSessionRunner(websocket, transport, orchestrator, config)
     try:

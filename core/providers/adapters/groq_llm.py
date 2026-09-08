@@ -17,10 +17,11 @@ from core.observability.logging import get_logger
 
 logger = get_logger("ucve.providers.groq")
 
-_DEFAULT_MODEL = "llama-3.3-70b-versatile"
+_DEFAULT_MODEL = "openai/gpt-oss-120b"
 _MODEL_ALIASES: dict[str, str] = {
-    "llama-3.1-8b-instant": _DEFAULT_MODEL,
-    "llama3-8b-8192": _DEFAULT_MODEL,
+    "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+    "llama3-8b-8192": "openai/gpt-oss-20b",
+    "llama-3.3-70b-versatile": _DEFAULT_MODEL,
     "default": _DEFAULT_MODEL,
 }
 
@@ -29,6 +30,26 @@ def resolve_groq_model(model: str | None) -> str:
     """Map deprecated/unknown model ids to a current Groq model."""
     raw = (model or _DEFAULT_MODEL).strip()
     return _MODEL_ALIASES.get(raw, raw)
+
+
+def _finalize_tool_calls(tool_acc: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build finalized tool-call dicts from accumulated stream fragments."""
+    calls: list[dict[str, Any]] = []
+    for _idx in sorted(tool_acc):
+        slot = tool_acc[_idx]
+        raw_args = slot.get("arguments") or ""
+        try:
+            parsed = json.loads(raw_args) if raw_args else {}
+        except json.JSONDecodeError:
+            parsed = {"_raw": raw_args}
+        calls.append(
+            {
+                "id": slot.get("id"),
+                "name": slot.get("name", ""),
+                "arguments": parsed,
+            }
+        )
+    return calls
 
 
 class GroqLLMProvider(BaseLLMProvider):
@@ -88,19 +109,35 @@ class GroqLLMProvider(BaseLLMProvider):
 
         model_name = resolve_groq_model(config.model)
         client = self._get_client()
+        request_body: dict[str, Any] = {
+            "model": model_name,
+            "messages": messages,
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens,
+            "stream": True,
+        }
+        if config.tools:
+            request_body["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters or {"type": "object", "properties": {}},
+                    },
+                }
+                for t in config.tools
+            ]
+            request_body["tool_choice"] = "auto"
+        # Accumulates streamed tool-call fragments keyed by choice index.
+        tool_acc: dict[int, dict[str, Any]] = {}
         try:
             logger.info("Initiating Groq LLM completion stream", model=model_name)
             async with client.stream(
                 "POST",
                 f"{self._base}/chat/completions",
                 headers={"Authorization": f"Bearer {self.api_key}"},
-                json={
-                    "model": model_name,
-                    "messages": messages,
-                    "temperature": config.temperature,
-                    "max_tokens": config.max_tokens,
-                    "stream": True,
-                },
+                json=request_body,
             ) as resp:
                 if resp.status_code != 200:
                     err_body = await resp.aread()
@@ -121,15 +158,39 @@ class GroqLLMProvider(BaseLLMProvider):
                     if payload == "[DONE]":
                         break
                     data = json.loads(payload)
-                    delta = data.get("choices", [{}])[0].get("delta", {})
+                    choice = data.get("choices", [{}])[0]
+                    delta = choice.get("delta", {})
+                    finish_reason = choice.get("finish_reason")
+
+                    # Accumulate streamed tool-call fragments.
+                    for frag in delta.get("tool_calls", []) or []:
+                        idx = frag.get("index", 0)
+                        slot = tool_acc.setdefault(
+                            idx, {"id": None, "name": "", "arguments": ""}
+                        )
+                        if frag.get("id"):
+                            slot["id"] = frag["id"]
+                        fn = frag.get("function", {}) or {}
+                        if fn.get("name"):
+                            slot["name"] = fn["name"]
+                        if fn.get("arguments"):
+                            slot["arguments"] += fn["arguments"]
+
                     text = delta.get("content") or ""
                     if text:
                         yield LLMStreamChunk(
                             text=text,
                             is_first_token=first,
-                            finish_reason=data.get("choices", [{}])[0].get("finish_reason"),
+                            finish_reason=finish_reason,
                         )
                         first = False
+
+                    if finish_reason == "tool_calls" and tool_acc:
+                        yield LLMStreamChunk(
+                            tool_calls=_finalize_tool_calls(tool_acc),
+                            finish_reason="tool_calls",
+                        )
+                        tool_acc.clear()
         except httpx.HTTPStatusError as exc:
             logger.error(f"Groq HTTP Error: {exc}", error=str(exc))
             await self.aclose()

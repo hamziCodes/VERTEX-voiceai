@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.providers.adapters.cartesia_tts import CartesiaTTSProvider
+from core.providers.adapters.elevenlabs_tts import ElevenLabsTTSProvider
 from core.providers.adapters.gladia_stt import GladiaSTTProvider
 from core.providers.adapters.groq_llm import GroqLLMProvider
 from core.providers.adapters.null_llm import NullLLMProvider
@@ -20,4 +22,6 @@ __all__ = [
     "GladiaSTTProvider",
     "GroqLLMProvider",
     "UpliftTTSProvider",
+    "ElevenLabsTTSProvider",
+    "CartesiaTTSProvider",
 ]
