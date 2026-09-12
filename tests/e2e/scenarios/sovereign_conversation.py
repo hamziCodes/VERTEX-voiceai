@@ -70,6 +70,22 @@ class _FastTTS:
         )
 
 
+class _MockLLM:
+    def health_check(self) -> bool:
+        return True
+
+    async def generate_stream(
+        self,
+        messages: list[dict[str, Any]],
+        config: Any,
+        cancellation_token: Any = None,
+    ) -> AsyncIterator[LLMStreamChunk]:
+        if cancellation_token and getattr(cancellation_token, "is_cancelled", False):
+            return
+        yield LLMStreamChunk(text="Hello sovereign ", is_first_token=True)
+        yield LLMStreamChunk(text="mock response text.", finish_reason="stop")
+
+
 @register_scenario("sovereign_conversation")
 async def run_sovereign_conversation(config: HarnessConfig) -> ScenarioResult:
     """Execute the sovereign conversation path against mock providers."""
@@ -85,6 +101,7 @@ async def run_sovereign_conversation(config: HarnessConfig) -> ScenarioResult:
         on_transcript=lambda speaker, text: transcripts.append((speaker, text)),
         post_call_pipeline=post_call,
     )
+    orch.llm_provider = _MockLLM()  # type: ignore[assignment]
     orch.tts_provider = slow_tts  # type: ignore[assignment]
 
     session = PipelineSessionConfig(

@@ -1,0 +1,47 @@
+name: E2E Nightly Validation
+
+on:
+  schedule:
+    - cron: "0 2 * * *"  # Run nightly at 02:00 UTC
+  workflow_dispatch:
+
+jobs:
+  e2e-mock-suite:
+    name: E2E Mock Provider Scenarios
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-asyncio
+          if [ -f pyproject.toml ]; then pip install -e .; fi
+
+      - name: Run E2E Scenarios
+        run: |
+          python -m pytest tests/e2e/ -v
+
+  e2e-compose-smoke:
+    name: Docker Compose E2E Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Start Docker Compose Stack
+        run: |
+          cd infra/docker
+          cp .env.example .env
+          docker compose up -d --build postgres redis
+
+      - name: Run Compose Health Checks
+        run: |
+          docker compose -f infra/docker/docker-compose.yml ps
