@@ -1,0 +1,307 @@
+{
+  "$defs": {
+    "AgentProvidersConfig": {
+      "description": "Multi-category provider priority chains for an agent.",
+      "properties": {
+        "stt": {
+          "items": {
+            "$ref": "#/$defs/CategoryPriorityChain"
+          },
+          "title": "Stt",
+          "type": "array"
+        },
+        "llm": {
+          "items": {
+            "$ref": "#/$defs/CategoryPriorityChain"
+          },
+          "title": "Llm",
+          "type": "array"
+        },
+        "tts": {
+          "items": {
+            "$ref": "#/$defs/CategoryPriorityChain"
+          },
+          "title": "Tts",
+          "type": "array"
+        },
+        "s2s": {
+          "items": {
+            "$ref": "#/$defs/CategoryPriorityChain"
+          },
+          "title": "S2S",
+          "type": "array"
+        }
+      },
+      "title": "AgentProvidersConfig",
+      "type": "object"
+    },
+    "CategoryPriorityChain": {
+      "description": "Priority chain for a single category and language.",
+      "properties": {
+        "category": {
+          "description": "Provider category: 'stt', 'llm', 'tts', 's2s'.",
+          "title": "Category",
+          "type": "string"
+        },
+        "language": {
+          "default": "en",
+          "description": "Target language code (e.g. 'en', 'ar', 'es').",
+          "title": "Language",
+          "type": "string"
+        },
+        "routes": {
+          "description": "Ordered failover routes.",
+          "items": {
+            "$ref": "#/$defs/ProviderRoute"
+          },
+          "title": "Routes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "category"
+      ],
+      "title": "CategoryPriorityChain",
+      "type": "object"
+    },
+    "PersonaConfig": {
+      "description": "Vocal personality, system prompt, and greeting configuration.",
+      "properties": {
+        "system_prompt": {
+          "default": "You are Vertex Voice AI, a helpful, natural, concise voice assistant.",
+          "description": "Core behavioral and conversational directives for the AI persona.",
+          "title": "System Prompt",
+          "type": "string"
+        },
+        "greeting": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional opening speech synthesized upon call connect.",
+          "title": "Greeting"
+        },
+        "voice_id": {
+          "default": "default",
+          "description": "Vocal timbre / voice ID for synthesis (e.g. cartesia sonic voice ID).",
+          "title": "Voice Id",
+          "type": "string"
+        },
+        "persona_isolation": {
+          "default": true,
+          "description": "Whether persona prompts are isolated in tenant data classification boundary.",
+          "title": "Persona Isolation",
+          "type": "boolean"
+        }
+      },
+      "title": "PersonaConfig",
+      "type": "object"
+    },
+    "ProviderRoute": {
+      "description": "Single vendor route in a priority chain.",
+      "properties": {
+        "provider_id": {
+          "description": "Vendor provider identifier, e.g. 'groq', 'gemini', 'gladia', 'cartesia'.",
+          "title": "Provider Id",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional model identifier, e.g. 'openai/gpt-oss-120b'.",
+          "title": "Model"
+        },
+        "enabled": {
+          "default": true,
+          "description": "Whether this route is currently active.",
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "priority": {
+          "default": 1,
+          "description": "Priority ranking in failover order (1 = primary, 2 = secondary).",
+          "title": "Priority",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "provider_id"
+      ],
+      "title": "ProviderRoute",
+      "type": "object"
+    }
+  },
+  "description": "Tenant-authored agent configuration root domain model.",
+  "properties": {
+    "agent_id": {
+      "description": "Unique agent identifier.",
+      "format": "uuid",
+      "title": "Agent Id",
+      "type": "string"
+    },
+    "tenant_id": {
+      "description": "Owning tenant identifier.",
+      "format": "uuid",
+      "title": "Tenant Id",
+      "type": "string"
+    },
+    "name": {
+      "description": "Human-readable agent title.",
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "description": "Functional summary of the agent.",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "persona": {
+      "$ref": "#/$defs/PersonaConfig",
+      "description": "Vocal and persona configuration."
+    },
+    "languages": {
+      "description": "Supported language codes (e.g. ['en', 'ar']).",
+      "items": {
+        "type": "string"
+      },
+      "title": "Languages",
+      "type": "array"
+    },
+    "providers": {
+      "$ref": "#/$defs/AgentProvidersConfig",
+      "description": "Priority chains for STT, LLM, TTS, S2S."
+    },
+    "tools": {
+      "description": "Registered tool definitions.",
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Tools",
+      "type": "array"
+    },
+    "mcp_servers": {
+      "description": "External MCP server endpoints.",
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Mcp Servers",
+      "type": "array"
+    },
+    "knowledge_bases": {
+      "description": "Knowledge base and RAG collection references.",
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Knowledge Bases",
+      "type": "array"
+    },
+    "extraction_schema_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional CRM structured extraction schema ID.",
+      "title": "Extraction Schema Id"
+    },
+    "extraction_schema": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional inline structured extraction schema.",
+      "title": "Extraction Schema"
+    },
+    "pronunciation_lexicon": {
+      "description": "Phonetic / pronunciation overrides.",
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Pronunciation Lexicon",
+      "type": "array"
+    },
+    "telephony": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Inbound/outbound telephony trunk settings.",
+      "title": "Telephony"
+    },
+    "compliance": {
+      "additionalProperties": true,
+      "description": "Compliance tier and HIPAA BAA status.",
+      "title": "Compliance",
+      "type": "object"
+    },
+    "version": {
+      "default": 1,
+      "description": "Monotonically increasing version number.",
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "published_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Timestamp of latest publish.",
+      "title": "Published At"
+    },
+    "is_published": {
+      "default": false,
+      "description": "Whether this version is active and published.",
+      "title": "Is Published",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "tenant_id",
+    "name"
+  ],
+  "title": "AgentConfig",
+  "type": "object"
+}

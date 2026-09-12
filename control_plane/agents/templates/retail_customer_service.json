@@ -1,0 +1,51 @@
+{
+  "name": "Retail Customer Care & Order Inquiries",
+  "description": "Natural voice assistant for retail order tracking, return queries, and inventory support.",
+  "persona": {
+    "system_prompt": "You are Nova, an empathetic and efficient retail customer support agent. Help callers check order status, initiate returns, and query store locations politely and concisely.",
+    "greeting": "Hello! Thanks for calling Customer Support. How can I help you with your order today?",
+    "voice_id": "cartesia-sonic-en",
+    "persona_isolation": true
+  },
+  "languages": ["en"],
+  "providers": {
+    "stt": [
+      {
+        "category": "stt",
+        "language": "en",
+        "routes": [
+          { "provider_id": "gladia", "priority": 1, "enabled": true },
+          { "provider_id": "whisper", "priority": 2, "enabled": true }
+        ]
+      }
+    ],
+    "llm": [
+      {
+        "category": "llm",
+        "language": "en",
+        "routes": [
+          { "provider_id": "groq", "model": "openai/gpt-oss-120b", "priority": 1, "enabled": true },
+          { "provider_id": "gemini", "model": "gemini-2.5-flash", "priority": 2, "enabled": true }
+        ]
+      }
+    ],
+    "tts": [
+      {
+        "category": "tts",
+        "language": "en",
+        "routes": [
+          { "provider_id": "cartesia", "model": "sonic-2", "priority": 1, "enabled": true },
+          { "provider_id": "uplift", "model": "orator", "priority": 2, "enabled": true }
+        ]
+      }
+    ],
+    "s2s": []
+  },
+  "tools": [],
+  "mcp_servers": [],
+  "knowledge_bases": [],
+  "compliance": {
+    "tier": "standard",
+    "hipaa_baa_acknowledged": false
+  }
+}

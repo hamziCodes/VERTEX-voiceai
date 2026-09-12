@@ -18,6 +18,7 @@ from control_plane.auth.api_keys import APIKeyManager
 from control_plane.auth.hmac_mint import expected_signature
 from control_plane.auth.middleware import enforce_rbac
 from control_plane.metrics import handle_metrics_request
+from control_plane.routes.agents import router as agents_router
 from control_plane.routes.alerts import router as alerts_router
 from control_plane.routes.extraction_schemas import router as extraction_router
 from control_plane.routes.knowledge_bases import router as kb_router
@@ -104,6 +105,7 @@ app.include_router(telephony_router, prefix="/v1")
 app.include_router(extraction_router, prefix="/v1")
 app.include_router(kb_router, prefix="/v1")
 app.include_router(alerts_router, prefix="/v1")
+app.include_router(agents_router)
 
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles

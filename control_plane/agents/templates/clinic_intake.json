@@ -1,0 +1,51 @@
+{
+  "name": "Medical Clinic Patient Intake & Scheduling",
+  "description": "HIPAA-compliant voice agent for patient appointment booking, clinic hours, and check-in confirmation.",
+  "persona": {
+    "system_prompt": "You are Zenith Clinic Care Assistant. You assist patients in scheduling consultations and answering questions about clinic hours calmly and professionally. Do not disclose protected medical history.",
+    "greeting": "Good day! You have reached Zenith Clinic. May I assist you with scheduling or clinic inquiries today?",
+    "voice_id": "cartesia-sonic-en",
+    "persona_isolation": true
+  },
+  "languages": ["en"],
+  "providers": {
+    "stt": [
+      {
+        "category": "stt",
+        "language": "en",
+        "routes": [
+          { "provider_id": "gladia", "priority": 1, "enabled": true },
+          { "provider_id": "whisper", "priority": 2, "enabled": true }
+        ]
+      }
+    ],
+    "llm": [
+      {
+        "category": "llm",
+        "language": "en",
+        "routes": [
+          { "provider_id": "groq", "model": "openai/gpt-oss-120b", "priority": 1, "enabled": true },
+          { "provider_id": "gemini", "model": "gemini-2.5-flash", "priority": 2, "enabled": true }
+        ]
+      }
+    ],
+    "tts": [
+      {
+        "category": "tts",
+        "language": "en",
+        "routes": [
+          { "provider_id": "cartesia", "model": "sonic-2", "priority": 1, "enabled": true },
+          { "provider_id": "uplift", "model": "orator", "priority": 2, "enabled": true }
+        ]
+      }
+    ],
+    "s2s": []
+  },
+  "tools": [],
+  "mcp_servers": [],
+  "knowledge_bases": [],
+  "compliance": {
+    "tier": "hipaa",
+    "hipaa_baa_acknowledged": true
+  }
+}
