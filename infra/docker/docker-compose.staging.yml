@@ -1,0 +1,38 @@
+# UCVE Staging Compose Overlay (Phase 30)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
+
+services:
+  control-plane:
+    environment:
+      UCVE_ENV: staging
+      OTEL_EXPORTER_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}
+      UCVE_DEBUG_ERRORS: "false"
+
+  worker-raw:
+    environment:
+      UCVE_ENV: staging
+      OTEL_EXPORTER_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}
+      UCVE_RUNTIME_PROFILE: standard
+      UCVE_DEBUG_ERRORS: "false"
+
+  telephony-gateway:
+    build:
+      context: ../..
+      dockerfile: infra/docker/telephony-gateway.Dockerfile
+    profiles:
+      - telephony
+    ports:
+      - "8083:8083"
+    environment:
+      UCVE_ENV: staging
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ucve}:${POSTGRES_PASSWORD:-ucve_staging}@postgres:5432/${POSTGRES_DB:-ucve}
+      REDIS_URL: redis://redis:6379/0
+      TELNYX_API_KEY: ${TELNYX_API_KEY:-}
+      UCVE_TELEPHONY_PRIMARY_TRUNK: telnyx
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy

@@ -31,6 +31,7 @@ RUN pip install --no-cache-dir \
     "cryptography>=43.0.0" \
     "PyJWT>=2.9.0" \
     "PyYAML>=6.0.2" \
+    "torch>=2.2.0" \
     "numpy>=2.0.0" \
     "onnxruntime>=1.19.0"
 

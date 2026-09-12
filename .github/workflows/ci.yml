@@ -1,0 +1,65 @@
+name: UCVE CI Pipeline
+
+on:
+  push:
+    branches: [main, hamza]
+  pull_request:
+    branches: [main, hamza]
+
+jobs:
+  lint-and-test:
+    name: Lint and Phase Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest ruff
+          if [ -f pyproject.toml ]; then pip install -e .; fi
+
+      - name: Run Ruff Lint
+        run: |
+          ruff check . --exit-zero
+
+      - name: Run Phase Tests
+        run: |
+          python -m pytest voice_engine_plan/tests/phase_tests/ -v
+
+      - name: Verify Plan Integrity
+        run: |
+          python voice_engine_plan/scripts/verify_plan_integrity.py
+
+  docker-smoke:
+    name: Docker Build Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Control Plane Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infra/docker/control-plane.Dockerfile
+          push: false
+          tags: ucve/control-plane:smoke
+
+      - name: Build Worker Raw Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infra/docker/worker-raw.Dockerfile
+          push: false
+          tags: ucve/worker-raw:smoke

@@ -60,7 +60,7 @@ Full plan: `auit_docs/REMEDIATION_PLAN.md`. One level at a time; user confirm be
 | 27 | Self-Serve Agent Builder UX Flow Spec | COMPLETED | test_phase_27_agent_builder_ux.py | No — resolved (Standalone SPA, sandbox allowance, outbound deferred) | 2026-09-12 |
 | 28 | SDK/API Surface and Versioning Strategy | COMPLETED | test_phase_28_sdk_api_surface.py | No — resolved (Flutter roadmap, LiveKit separate, self-hosted docs) | 2026-09-12 |
 | 29 | External Developer Experience and Documentation Spec | COMPLETED | test_phase_29_developer_experience.py | No — resolved (Dev docs, quickstarts, troubleshooting, zero-secret patterns) | 2026-09-12 |
-| 30 | Deployment Topology and Environment Strategy | PENDING | test_phase_30_deployment_topology.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 30 | Deployment Topology and Environment Strategy | COMPLETED | test_phase_30_deployment_topology.py | No — resolved (Dockerfiles, compose overlays, environment matrix, K8s scaffold) | 2026-09-12 |
 | 31 | Scaling and Runtime Resource Profiles | PENDING | test_phase_31_scaling_profiles.py | **BLOCKED** until `FOUNDATION_READY` | |
 | 32 | Security Hardening and Threat Controls | PENDING | test_phase_32_security_hardening.py | **BLOCKED** until `FOUNDATION_READY` | |
 | 33 | End-to-End Validation Harness and Test Matrix | PENDING | test_phase_33_e2e_validation.py | **BLOCKED** until `FOUNDATION_READY` | |
