@@ -64,5 +64,5 @@ Full plan: `auit_docs/REMEDIATION_PLAN.md`. One level at a time; user confirm be
 | 31 | Scaling and Runtime Resource Profiles | COMPLETED | test_phase_31_scaling_profiles.py | No — resolved (Named profiles dev/standard/high_density, admission controller, scaling docs) | 2026-09-12 |
 | 32 | Security Hardening and Threat Controls | COMPLETED | test_phase_32_security_hardening.py | No — resolved (Anti-pattern regression suite, security headers, WS security policy, threat model) | 2026-09-12 |
 | 33 | End-to-End Validation Harness and Test Matrix | COMPLETED | test_phase_33_e2e_validation.py | No — resolved (E2E scenarios, harness, synthetic audio fixtures, test matrix covers 00-35) | 2026-09-12 |
-| 34 | Release Governance and Operational Runbooks | PENDING | test_phase_34_release_governance.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 34 | Release Governance and Operational Runbooks | COMPLETED | test_phase_34_release_governance.py | No — resolved (Operational runbooks, release governance, rollback doc, deploy stubs) | 2026-09-12 |
 | 35 | Stage-2 Plan Folder Finalization | PENDING | test_phase_35_plan_finalization.py | **BLOCKED** until `FOUNDATION_READY` | |

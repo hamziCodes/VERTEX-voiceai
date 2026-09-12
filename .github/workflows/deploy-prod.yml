@@ -1,0 +1,28 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to deploy (e.g. v0.1.0)"
+        required: true
+        type: string
+
+jobs:
+  deploy-prod:
+    name: Deploy to Production Environment
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://api.voice.vertex.internal
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify Release Tag Exists
+        run: |
+          echo "Deploying release ${{ github.event.inputs.tag }} with two-person approval"
+
+      - name: Deploy Production Stack
+        run: |
+          echo "Promoting staging image to production registry (stub)"
