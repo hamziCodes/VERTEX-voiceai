@@ -107,6 +107,9 @@ app.include_router(kb_router, prefix="/v1")
 app.include_router(alerts_router, prefix="/v1")
 app.include_router(agents_router)
 
+from control_plane.openapi_serve import register_self_hosted_docs
+register_self_hosted_docs(app)
+
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 

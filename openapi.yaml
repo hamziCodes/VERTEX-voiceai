@@ -1,0 +1,237 @@
+openapi: 3.1.0
+info:
+  title: UCVE Control Plane API
+  description: Sovereign Real-Time Voice AI Control Plane REST API for agent management, session minting, telephony, and extraction schemas.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local Development Control Plane
+
+paths:
+  /v1/session/mint:
+    post:
+      summary: Mint an ephemeral session token for realtime voice sessions
+      operationId: mintSession
+      security:
+        - HMACAuth: []
+        - BearerAuth: []
+      parameters:
+        - name: x-tenant-id
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionMintRequest'
+      responses:
+        '200':
+          description: Session minted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionMintResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden or quota exceeded
+
+  /v1/agents:
+    get:
+      summary: List all agents for a tenant
+      operationId: listAgents
+      parameters:
+        - name: x-tenant-id
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of agent configurations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AgentConfig'
+    post:
+      summary: Create a new agent draft
+      operationId: createAgent
+      parameters:
+        - name: x-tenant-id
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentRequest'
+      responses:
+        '201':
+          description: Agent draft created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentConfig'
+
+  /v1/agents/{agent_id}/publish:
+    post:
+      summary: Validate and publish an agent configuration into an immutable version snapshot
+      operationId: publishAgent
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: x-tenant-id
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Agent published successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: integer
+                  published_at:
+                    type: string
+                    format: date-time
+        '422':
+          description: Validation failed (e.g. insufficient providers, invalid RTL voice)
+
+  /v1/agents/{agent_id}/autosave:
+    patch:
+      summary: Apply debounced updates to an agent draft
+      operationId: autosaveAgentDraft
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: x-tenant-id
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                patch:
+                  type: object
+                debounce_seconds:
+                  type: number
+                  default: 30.0
+                force:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Autosave status and updated draft
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+    HMACAuth:
+      type: apiKey
+      in: header
+      name: x-mint-signature
+
+  schemas:
+    SessionMintRequest:
+      type: object
+      required:
+        - tenant_id
+        - agent_id
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        caller_id:
+          type: string
+        test_call:
+          type: boolean
+          default: false
+
+    SessionMintResponse:
+      type: object
+      required:
+        - session_id
+        - token
+        - ws_url
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        token:
+          type: string
+        ws_url:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    AgentConfig:
+      type: object
+      required:
+        - agent_id
+        - tenant_id
+        - name
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        version:
+          type: integer
+        is_published:
+          type: boolean
+
+    CreateAgentRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        languages:
+          type: array
+          items:
+            type: string

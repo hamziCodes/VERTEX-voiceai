@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UCVERealtimeEvent",
+  "description": "Unified event protocol specification for UCVE WebSocket audio streaming sessions.",
+  "type": "object",
+  "oneOf": [
+    {
+      "title": "ControlPong",
+      "type": "object",
+      "required": ["event_type", "payload"],
+      "properties": {
+        "event_type": { "const": "control.pong" },
+        "payload": {
+          "type": "object",
+          "required": ["t"],
+          "properties": {
+            "t": { "type": "number", "description": "Client timestamp in ms" }
+          }
+        }
+      }
+    },
+    {
+      "title": "ControlPlaybackStarted",
+      "type": "object",
+      "required": ["event_type", "payload"],
+      "properties": {
+        "event_type": { "const": "control.playback_started" },
+        "payload": {
+          "type": "object",
+          "required": ["t"],
+          "properties": {
+            "t": { "type": "number", "description": "Speaker playback onset timestamp in ms" },
+            "kind": { "type": "string", "default": "playback_started" }
+          }
+        }
+      }
+    },
+    {
+      "title": "ControlBargeIn",
+      "type": "object",
+      "required": ["event_type", "payload"],
+      "properties": {
+        "event_type": { "const": "control.barge_in" },
+        "payload": {
+          "type": "object",
+          "required": ["rms"],
+          "properties": {
+            "rms": { "type": "number" },
+            "t": { "type": "number" }
+          }
+        }
+      }
+    },
+    {
+      "title": "TextTurn",
+      "type": "object",
+      "required": ["event_type", "payload"],
+      "properties": {
+        "event_type": { "const": "text.turn" },
+        "payload": {
+          "type": "object",
+          "required": ["text"],
+          "properties": {
+            "text": { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "title": "Transcript",
+      "type": "object",
+      "required": ["event_type", "payload"],
+      "properties": {
+        "event_type": { "const": "transcript" },
+        "payload": {
+          "type": "object",
+          "required": ["speaker", "text"],
+          "properties": {
+            "speaker": { "type": "string", "enum": ["user", "agent"] },
+            "text": { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "title": "MetricWaterfall",
+      "type": "object",
+      "required": ["event_type", "payload"],
+      "properties": {
+        "event_type": { "const": "metric" },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "event": { "type": "string" },
+            "waterfall": { "type": "object" }
+          }
+        }
+      }
+    },
+    {
+      "title": "SessionEvent",
+      "type": "object",
+      "required": ["event_type"],
+      "properties": {
+        "event_type": {
+          "type": "string",
+          "enum": ["session_ready", "audio_start", "audio_stop", "info", "error"]
+        },
+        "payload": { "type": "object" }
+      }
+    }
+  ]
+}

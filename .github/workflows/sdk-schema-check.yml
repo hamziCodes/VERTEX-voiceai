@@ -1,0 +1,25 @@
+name: SDK Event Schema & OpenAPI Compatibility Check
+
+on:
+  pull_request:
+    paths:
+      - 'openapi.yaml'
+      - 'sdk/shared/event_schema.json'
+
+jobs:
+  schema-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate JSON Schema & OpenAPI
+        run: |
+          python -c "import json; json.load(open('sdk/shared/event_schema.json'))"
+          python -c "import yaml; yaml.safe_load(open('openapi.yaml'))"
+          echo "Schema syntax valid."

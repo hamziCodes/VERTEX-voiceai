@@ -1,0 +1,21 @@
+{
+  "name": "@ucve/voice-sdk",
+  "version": "1.0.0",
+  "description": "Official TypeScript Client SDK and React Hooks for UCVE Sovereign Voice AI Engine",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "keywords": ["voice", "ai", "webrtc", "websocket", "streaming", "llm"],
+  "author": "UCVE Core Team",
+  "license": "Apache-2.0",
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true }
+  }
+}
