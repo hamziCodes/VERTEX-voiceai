@@ -57,7 +57,7 @@ Full plan: `auit_docs/REMEDIATION_PLAN.md`. One level at a time; user confirm be
 | 24 | Latency Budget Enforcement and SLO Policies | COMPLETED | test_phase_24_latency_slo.py | No — resolved (LatencyWaterfall, LatencyCollector, SLOPolicy warn-only v1, demotion opt-in) | 2026-08-22 |
 | 25 | Error Taxonomy and Alerting Strategy | COMPLETED | test_phase_25_error_alerting.py | No — resolved (UCVEErrorCode taxonomy, ClientErrorMapper generic responses, 30d DLQ) | 2026-08-22 |
 | 26 | Self-Serve Agent Builder Domain Model | COMPLETED | test_phase_26_agent_builder_domain.py | No — resolved (Domain model, validator, config pin, draft autosave) | 2026-09-12 |
-| 27 | Self-Serve Agent Builder UX Flow Spec | PENDING | test_phase_27_agent_builder_ux.py | **BLOCKED** until `FOUNDATION_READY` | |
+| 27 | Self-Serve Agent Builder UX Flow Spec | COMPLETED | test_phase_27_agent_builder_ux.py | No — resolved (Standalone SPA, sandbox allowance, outbound deferred) | 2026-09-12 |
 | 28 | SDK/API Surface and Versioning Strategy | PENDING | test_phase_28_sdk_api_surface.py | **BLOCKED** until `FOUNDATION_READY` | |
 | 29 | External Developer Experience and Documentation Spec | PENDING | test_phase_29_developer_experience.py | **BLOCKED** until `FOUNDATION_READY` | |
 | 30 | Deployment Topology and Environment Strategy | PENDING | test_phase_30_deployment_topology.py | **BLOCKED** until `FOUNDATION_READY` | |
