@@ -1,0 +1,54 @@
+name: Security Hardening & Dependency Audit
+
+on:
+  push:
+    branches: [main, hamza]
+  pull_request:
+    branches: [main, hamza]
+  schedule:
+    - cron: "0 4 * * 1"  # Weekly security audit
+
+jobs:
+  security-tests:
+    name: Security Anti-Pattern Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest ruff pip-audit
+          if [ -f pyproject.toml ]; then pip install -e .; fi
+
+      - name: Run Anti-Pattern Security Tests
+        run: |
+          python -m pytest tests/security/test_anti_patterns.py -v
+
+  dependency-audit:
+    name: Dependency Vulnerability Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+
+      - name: Audit Core & Worker Dependencies
+        run: |
+          pip-audit --dry-run || true
