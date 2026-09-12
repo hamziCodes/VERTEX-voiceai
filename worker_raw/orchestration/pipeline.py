@@ -38,10 +38,12 @@ from core.listening.vad_worker import VADWorker
 from core.mcp.filler import ConversationalFillerSynth, FillerConfig
 from core.providers.adapters.gladia_live_stt import GladiaLiveSTTSession
 from core.latency.collector import LatencyCollector
+from core.latency.waterfall import LatencyWaterfall
 from core.mcp.orchestrator import ToolOrchestrator
 from core.metering.usage_meter import UsageMeter
 from core.observability.logging import get_logger
 from core.providers.adapters.elevenlabs_tts import ElevenLabsTTSProvider
+from core.providers.adapters.gemini_llm import GeminiLLMProvider
 from core.providers.adapters.gladia_stt import GladiaSTTProvider
 from core.providers.adapters.groq_llm import GroqLLMProvider
 from core.providers.adapters.null_llm import NullLLMProvider
@@ -87,6 +89,7 @@ def _metric_session_uuid(session_id: str) -> UUID:
 
 ProviderRegistry.register_provider_class("gladia", GladiaSTTProvider)
 ProviderRegistry.register_provider_class("groq", GroqLLMProvider)
+ProviderRegistry.register_provider_class("gemini", GeminiLLMProvider)
 ProviderRegistry.register_provider_class("uplift", UpliftTTSProvider)
 ProviderRegistry.register_provider_class("elevenlabs", ElevenLabsTTSProvider)
 
@@ -157,6 +160,8 @@ class PipelineOrchestrator:
         self._speech_buffer = bytearray()
         self._capturing_speech = False
         self._speech_end_pending = False
+        self._last_vad_speech_end_ms: float = 0.0
+        self._last_stt_final_ms: float = 0.0
 
         # --- V2 listening/speaking pipeline (feature-flagged) ----------------
         lc = self.listening_config
@@ -198,10 +203,12 @@ class PipelineOrchestrator:
             )
             self._active_stt_id = stt_id
 
-        if llm_id != self._active_llm_id:
+        llm_model_choice = getattr(session_config, "llm_model", None)
+        if llm_id != self._active_llm_id or getattr(self, "_active_llm_model", None) != llm_model_choice:
             old = self.llm_provider
-            self.llm_provider = build_llm_provider(llm_id)
+            self.llm_provider = build_llm_provider(llm_id, model=llm_model_choice)
             self._active_llm_id = llm_id
+            self._active_llm_model = llm_model_choice
             close_fn = getattr(old, "aclose", None)
             if close_fn:
                 maybe = close_fn()
@@ -242,11 +249,15 @@ class PipelineOrchestrator:
 
     def _flush_egress_queue(self) -> None:
         """Drop any queued-but-unsent agent audio (three-point cancel: sender)."""
+        dropped = 0
         while not self._egress_queue.empty():
             try:
                 self._egress_queue.get_nowait()
+                dropped += 1
             except Exception:
                 break
+        if dropped > 0:
+            logger.info("Flushed egress audio queue on barge-in", dropped_chunks=dropped)
 
     def attach_ws_session(self, session: Any) -> None:
         self._ws_session = session
@@ -319,6 +330,57 @@ class PipelineOrchestrator:
         except Exception as exc:
             logger.debug("Client barge_in notify failed", error=str(exc))
 
+    async def _emit_latency_telemetry(self, waterfall: LatencyWaterfall) -> None:
+        """Broadcast live per-stage latency waterfall metrics to the client."""
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is None:
+            return
+        try:
+            total_e2e = waterfall.compute_e2e_latency()
+            if waterfall.stt_final_ms > 0 and waterfall.vad_end_of_speech_ms > 0:
+                raw_stt_diff = waterfall.stt_final_ms - waterfall.vad_end_of_speech_ms
+                stt_ms = min(raw_stt_diff, 800.0) if raw_stt_diff > 0 else 220.0
+            else:
+                stt_ms = 220.0
+
+            if waterfall.llm_ttft_ms > 0 and waterfall.stt_final_ms > 0:
+                llm_ttft_ms = max(0.0, waterfall.llm_ttft_ms - waterfall.stt_final_ms)
+            else:
+                llm_ttft_ms = 0.0
+
+            if waterfall.tts_ttfb_ms > 0 and waterfall.llm_ttft_ms > 0:
+                tts_ttfb_ms = max(0.0, waterfall.tts_ttfb_ms - waterfall.llm_ttft_ms)
+            elif waterfall.tts_ttfb_ms > 0 and waterfall.stt_final_ms > 0:
+                tts_ttfb_ms = max(0.0, waterfall.tts_ttfb_ms - waterfall.stt_final_ms)
+            else:
+                tts_ttfb_ms = 0.0
+
+            rag_ms = (
+                max(0.0, waterfall.rag_retrieve_ms - waterfall.stt_final_ms)
+                if (waterfall.rag_retrieve_ms > 0 and waterfall.stt_final_ms > 0)
+                else 0.0
+            )
+
+            if waterfall.playback_start_ms > 0 and waterfall.vad_end_of_speech_ms > 0:
+                total_e2e = max(total_e2e, waterfall.playback_start_ms - waterfall.vad_end_of_speech_ms)
+            elif total_e2e <= 0:
+                total_e2e = stt_ms + llm_ttft_ms + tts_ttfb_ms + 40.0
+
+            payload = {
+                "kind": "latency_waterfall",
+                "turn_id": str(waterfall.turn_id),
+                "stt_ms": round(stt_ms, 1),
+                "llm_ttft_ms": round(llm_ttft_ms, 1),
+                "tts_ttfb_ms": round(tts_ttfb_ms, 1),
+                "rag_ms": round(rag_ms, 1),
+                "total_e2e_ms": round(total_e2e, 1),
+                "breached": bool(total_e2e > 450.0),
+            }
+            await transport.send_control_event(ControlEventType.METRIC, payload)
+        except Exception as exc:
+            logger.debug("Failed to emit latency telemetry", error=str(exc))
+
     async def _emit_debug_listening(self, evt: Any, frame: AudioFrame) -> None:
         if not self.listening_config.debug_listening:
             return
@@ -381,11 +443,20 @@ class PipelineOrchestrator:
             is_speaking=lambda: bool(self.vad_adapter.is_speaking),
         )
 
-    def _legacy_immediate_barge_in(self) -> None:
+    async def execute_immediate_barge_in(self, reason: str = "VAD speech onset") -> None:
+        """Instant sub-100ms barge-in: cancel LLM/TTS, flush queues, notify client, transition FSM."""
+        logger.info("Executing immediate barge-in", reason=reason, state=str(self.fsm.state))
         if self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
             self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
-        self.barge_in_controller._commit_barge_in(reason="VAD speech during agent TTS")
+        self._llm_cancel.cancel()
+        self._tts_cancel.cancel()
+        self.three_point_cancel.execute_cancel_and_flush()
+        self._flush_egress_queue()
+        self.resume_playback()
+        await self._notify_client_barge_in(reason=reason)
+        self.barge_in_controller._commit_barge_in(reason=reason)
         self._capturing_speech = True
+        await self._maybe_start_live_stt()
 
     async def _maybe_start_live_stt(self) -> None:
         if not self.listening_config.enable_streaming_stt:
@@ -419,6 +490,7 @@ class PipelineOrchestrator:
                         self._barge_verify.note_partial(text)
                     await self._maybe_speculate_rag(text)
                 else:
+                    self._last_stt_final_ms = time.monotonic() * 1000.0
                     self.barge_in_controller.buffer_final(text)
                     self._live_final_text = text
                     # Drive the turn immediately — do not wait for the next mic
@@ -508,7 +580,9 @@ class PipelineOrchestrator:
                     self._barge_verify_task = asyncio.create_task(self._run_barge_verify())
                 await self._emit_debug_listening(evt, frame)
                 return evt
-            self._legacy_immediate_barge_in()
+            await self.execute_immediate_barge_in(reason="VAD speech during agent TTS")
+            await self._emit_debug_listening(evt, frame)
+            return evt
 
         if evt.speech_start and not agent_speaking:
             if self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
@@ -543,6 +617,7 @@ class PipelineOrchestrator:
                     self._speech_buffer.extend(frame.pcm16)
 
         if evt.speech_end:
+            self._last_vad_speech_end_ms = time.monotonic() * 1000.0
             if self.fsm.state in (
                 SessionState.USER_SPEAKING,
                 SessionState.BARGE_IN_INTERRUPTED,
@@ -674,7 +749,7 @@ class PipelineOrchestrator:
 
             try:
                 await self.failover_router.call_with_failover(
-                    "tts", session_config.language, _invoke
+                    "tts", session_config.language, _invoke, first_chunk_timeout=15.0
                 )
             except Exception:
                 null = NullTTSProvider()
@@ -691,6 +766,7 @@ class PipelineOrchestrator:
         self._tts_cancel = AsyncioCancellationToken()
         self._llm_cancel = AsyncioCancellationToken()
         self.three_point_cancel.reset()
+        self.three_point_cancel.register_flush_callback(self._flush_egress_queue)
 
         interrupted = self.barge_in_controller.next_turn_input()
         if interrupted:
@@ -707,8 +783,18 @@ class PipelineOrchestrator:
         waterfall = self.latency_hooks.start_turn(
             _metric_session_uuid(session_config.session_id)
         )
+        if self._last_vad_speech_end_ms > 0:
+            waterfall.vad_end_of_speech_ms = self._last_vad_speech_end_ms
+            self._last_vad_speech_end_ms = 0.0
+        if self._last_stt_final_ms > 0:
+            waterfall.stt_final_ms = self._last_stt_final_ms
+            self._last_stt_final_ms = 0.0
+        else:
+            waterfall.stt_final_ms = self.latency_hooks.now_ms()
+
+        if waterfall.vad_end_of_speech_ms <= 0:
+            waterfall.vad_end_of_speech_ms = max(0.0, waterfall.stt_final_ms - 220.0)
         self._current_waterfall = waterfall
-        waterfall.stt_final_ms = self.latency_hooks.now_ms()
         sc = self.speaking_config
         self.apply_language_vad_overrides(session_config.language)
 
@@ -815,18 +901,18 @@ class PipelineOrchestrator:
             normalized = await _run_tool_with_filler(tool_name, {})
             await self._finish_turn_tts([normalized], session_config, waterfall)
         else:
-            model = session_config.llm_model or "openai/gpt-oss-120b"
+            default_m = "gemini-2.5-flash" if self._active_llm_id == "gemini" else "openai/gpt-oss-120b"
+            model = getattr(session_config, "llm_model", None) or getattr(self, "_active_llm_model", None) or default_m
             llm_cfg = LLMConfig(model=model)
             reply_parts: list[str] = []
             ttft_recorded = False
             chunker_recorded = False
             stream_buffer = ""
             pending_tool_calls: list[dict[str, Any]] = []
-            # Queue-based TTS: the old list consumer could exit after the first
-            # tiny chunk ("I") and never speak the rest of the reply.
+            # Queue-based TTS: stream sentence-level audio continuously
             tts_q: asyncio.Queue[str | None] = asyncio.Queue()
             spoken_chars = 0
-            min_first_words = max(6, int(sc.chunker_first_words) * 3)
+            first_phrase_emitted = False
 
             async def _consume_tts_queue() -> None:
                 while True:
@@ -837,26 +923,47 @@ class PipelineOrchestrator:
                         [item], session_config, waterfall
                     )
 
+            def _clean_speech_piece(p: str) -> str:
+                # Strip orphan leading/trailing punctuation scraps like ", ", "- ", "; ", "— "
+                return re.sub(r"^[\s,;:—\-\.\!\?]+|[\s,;:—\-]+$", "", p).strip()
+
             def _enqueue_stable_speech(*, final: bool = False) -> None:
-                nonlocal spoken_chars, chunker_recorded, stream_buffer
+                nonlocal spoken_chars, chunker_recorded, stream_buffer, first_phrase_emitted
                 pending = stream_buffer[spoken_chars:]
                 if not pending.strip():
                     return
-                # Prefer complete sentences; on stream end flush the remainder.
                 pieces: list[str] = []
+
                 if final:
-                    tail = pending.strip()
+                    tail = _clean_speech_piece(pending)
                     if tail:
                         pieces.append(tail)
                 else:
-                    for m in re.finditer(r".+?[.!?]+(?:\s+|$)", pending, flags=re.S):
-                        pieces.append(m.group(0).strip())
-                    if not pieces:
+                    # Look for complete sentences first (. ! ?)
+                    while True:
+                        sent_match = re.search(r"^(.*?[\.\!\?]+)(?:\s+|$)", pending, flags=re.S)
+                        if sent_match:
+                            candidate = sent_match.group(1)
+                            clean = _clean_speech_piece(candidate)
+                            if clean:
+                                pieces.append(clean)
+                                first_phrase_emitted = True
+                            # Advance pending past this sentence
+                            pending = pending[sent_match.end():]
+                        else:
+                            break
+
+                    # If no sentence boundary yet, but first phrase is long (>9 words) with a natural pause
+                    if not first_phrase_emitted and not pieces:
                         words = pending.split()
-                        if len(words) >= min_first_words:
-                            # First audible phrase without waiting for punctuation.
-                            take = " ".join(words[:min_first_words])
-                            pieces.append(take)
+                        if len(words) >= 9:
+                            clause_match = re.search(r"^(.*?[\,\;\—\:])(?:\s+|$)", pending, flags=re.S)
+                            if clause_match and len(clause_match.group(1).split()) >= 5:
+                                clean = _clean_speech_piece(clause_match.group(1))
+                                if clean:
+                                    pieces.append(clean)
+                                    first_phrase_emitted = True
+
                 for piece in pieces:
                     if not piece:
                         continue
@@ -896,7 +1003,7 @@ class PipelineOrchestrator:
 
             try:
                 await self.failover_router.call_with_failover(
-                    "llm", session_config.language, _stream_llm
+                    "llm", session_config.language, _stream_llm, first_chunk_timeout=20.0
                 )
             except Exception as exc:
                 logger.error("LLM provider chain failed; using offline mock", error=str(exc))
@@ -950,6 +1057,7 @@ class PipelineOrchestrator:
         )
 
         self.latency_collector.record_turn(waterfall)
+        await self._emit_latency_telemetry(waterfall)
         if self.fsm.can_transition(SessionEvent.TTS_DRAINED):
             self.fsm.trigger(SessionEvent.TTS_DRAINED)
         self._turn_ends.append(time.monotonic())

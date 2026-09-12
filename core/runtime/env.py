@@ -49,7 +49,12 @@ def is_production() -> bool:
 
 
 def is_test_env() -> bool:
-    return get_ucve_env() == "test"
+    import sys
+    return (
+        get_ucve_env() == "test"
+        or "PYTEST_CURRENT_TEST" in os.environ
+        or "pytest" in sys.modules
+    )
 
 
 def allow_local_dev_kms() -> bool:

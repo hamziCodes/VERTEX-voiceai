@@ -175,10 +175,8 @@ class WebSocketSessionRunner:
                     await self._turn_queue.put((user_text, None))
                 continue
             if event_type == "barge_in":
-                self.orchestrator.three_point_cancel.execute_cancel_and_flush()
-                await self.transport.send_control_event(
-                    ControlEventType.BARGE_IN, data.get("payload") or {}
-                )
+                reason = str((data.get("payload") or {}).get("reason") or "client_barge_in")
+                await self.orchestrator.execute_immediate_barge_in(reason=reason)
                 continue
             if event_type in ("metric", "playback_started", ControlEventType.PLAYBACK_STARTED.value):
                 payload = data.get("payload") if isinstance(data.get("payload"), dict) else data
@@ -190,6 +188,7 @@ class WebSocketSessionRunner:
                             payload.get("t") or payload.get("timestamp_ms") or 0.0
                         )
                         PlaybackMetricHandler.handle_playback_started(waterfall, client_t)
+                        await self.orchestrator._emit_latency_telemetry(waterfall)
                 continue
 
     async def _ingress_worker(self) -> None:

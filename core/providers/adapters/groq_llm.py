@@ -19,10 +19,15 @@ logger = get_logger("ucve.providers.groq")
 
 _DEFAULT_MODEL = "openai/gpt-oss-120b"
 _MODEL_ALIASES: dict[str, str] = {
-    "llama-3.1-8b-instant": "openai/gpt-oss-20b",
-    "llama3-8b-8192": "openai/gpt-oss-20b",
-    "llama-3.3-70b-versatile": _DEFAULT_MODEL,
-    "default": _DEFAULT_MODEL,
+    "openai/gpt-oss-120b": "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b": "openai/gpt-oss-20b",
+    "qwen/qwen3.8-27b": "qwen/qwen3.8-27b",
+    "qwen3.8-27b": "qwen/qwen3.8-27b",
+    "llama-3.1-8b-instant": "openai/gpt-oss-120b",
+    "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+    "llama3-8b-8192": "openai/gpt-oss-120b",
+    "default": "openai/gpt-oss-120b",
+    "fast": "openai/gpt-oss-120b",
 }
 
 
@@ -55,13 +60,14 @@ def _finalize_tool_calls(tool_acc: dict[int, dict[str, Any]]) -> list[dict[str, 
 class GroqLLMProvider(BaseLLMProvider):
     """Groq OpenAI-compatible chat API. Mocks when GROQ_API_KEY unset."""
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
         self.api_key = (
             api_key
             or os.environ.get("PLATFORM_GROQ_API_KEY")
             or os.environ.get("GROQ_API_KEY")
             or ""
         ).strip()
+        self.default_model = resolve_groq_model(model or _DEFAULT_MODEL)
         self._base = "https://api.groq.com/openai/v1"
         self._client: httpx.AsyncClient | None = None
 

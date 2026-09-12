@@ -45,4 +45,4 @@ class ThreePointCancel:
         """Reset cancel state for new turn."""
         self.cancelled = False
         self.active_tasks.clear()
-        self.flush_callbacks.clear()
+        # Keep registered flush_callbacks persistent across turns!

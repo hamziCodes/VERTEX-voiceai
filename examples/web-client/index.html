@@ -296,6 +296,63 @@
       text-transform: uppercase;
     }
 
+    /* Latency Waterfall Styles */
+    .latency-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .latency-card {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--panel-border);
+      padding: 0.65rem 0.4rem;
+      border-radius: 0.5rem;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+    .latency-card.highlight {
+      background: rgba(0, 242, 254, 0.06);
+      border-color: rgba(0, 242, 254, 0.35);
+    }
+    .latency-stage {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .latency-val {
+      font-family: var(--font-mono);
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      margin: 0.2rem 0;
+    }
+    .latency-sub {
+      font-size: 0.62rem;
+      color: var(--text-muted);
+    }
+    .slo-badge {
+      font-size: 0.68rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent-green);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .slo-badge.warn {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--accent-amber);
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+    .slo-badge.breach {
+      background: rgba(244, 63, 94, 0.15);
+      color: var(--accent-rose);
+      border-color: rgba(244, 63, 94, 0.3);
+    }
+
     /* Console Logs Window */
     .console-panel {
       display: flex;
@@ -368,6 +425,7 @@
     .tag-tts { background: rgba(14, 165, 233, 0.15); color: #38bdf8; }
     .tag-error { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); }
     .tag-ping { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
+    .tag-latency { background: rgba(0, 242, 254, 0.2); color: var(--accent-cyan); border: 1px solid rgba(0, 242, 254, 0.4); }
 
     .log-msg {
       color: var(--text-main);
@@ -459,7 +517,7 @@
     }
     .provider-grid {
       display: grid;
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, 1fr);
       gap: 0.65rem;
       margin-bottom: 1rem;
     }
@@ -539,23 +597,32 @@
       </div>
       <div class="provider-grid">
         <div class="provider-field">
-          <label for="sttProviderSelect">STT</label>
+          <label for="sttProviderSelect">STT Provider</label>
           <select id="sttProviderSelect">
-            <option value="gladia" selected>Gladia (live)</option>
+            <option value="gladia" selected>Gladia (Live STT)</option>
           </select>
         </div>
         <div class="provider-field">
-          <label for="llmProviderSelect">LLM</label>
-          <select id="llmProviderSelect">
-            <option value="groq" selected>Groq (gpt-oss-120b)</option>
-          </select>
-        </div>
-        <div class="provider-field">
-          <label for="ttsProviderSelect">TTS</label>
+          <label for="ttsProviderSelect">TTS Provider</label>
           <select id="ttsProviderSelect">
             <option value="cartesia" selected>Cartesia (Sonic / EN)</option>
-            <option value="uplift">Uplift (Orator / UR+EN accent)</option>
-            <option value="elevenlabs">ElevenLabs (English)</option>
+            <option value="uplift">Uplift (Orator / UR+EN)</option>
+            <option value="elevenlabs">ElevenLabs (Turbo 2.5)</option>
+          </select>
+        </div>
+        <div class="provider-field">
+          <label for="llmProviderSelect">LLM Provider</label>
+          <select id="llmProviderSelect">
+            <option value="groq" selected>Groq (Ultra-Fast LPUs)</option>
+            <option value="gemini">Google Gemini (Google AI)</option>
+          </select>
+        </div>
+        <div class="provider-field">
+          <label for="llmModelSelect">LLM Model</label>
+          <select id="llmModelSelect">
+            <option value="openai/gpt-oss-120b" selected>GPT-OSS 120B (Groq Fast)</option>
+            <option value="qwen/qwen3.8-27b">Qwen 3.8 27B (Groq Low-Latency)</option>
+            <option value="openai/gpt-oss-20b">GPT-OSS 20B (Groq Ultra-Fast)</option>
           </select>
         </div>
       </div>
@@ -601,6 +668,34 @@
         <div class="metric-card">
           <div class="metric-title">VAD Status</div>
           <div id="metricVad" class="metric-value" style="font-size:0.9rem;">SILENCE</div>
+        </div>
+      </div>
+
+      <div class="card-title" style="margin-top: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
+        <span>⚡ Latency Waterfall (Real-Time)</span>
+        <span id="sloBadge" class="slo-badge">TARGET &lt; 450ms</span>
+      </div>
+
+      <div class="latency-grid">
+        <div class="latency-card">
+          <div class="latency-stage">STT</div>
+          <div id="latencyStt" class="latency-val">-- ms</div>
+          <div class="latency-sub">Speech → Final</div>
+        </div>
+        <div class="latency-card">
+          <div class="latency-stage">LLM (TTFT)</div>
+          <div id="latencyLlm" class="latency-val">-- ms</div>
+          <div class="latency-sub">1st Token</div>
+        </div>
+        <div class="latency-card">
+          <div class="latency-stage">TTS (TTFB)</div>
+          <div id="latencyTts" class="latency-val">-- ms</div>
+          <div class="latency-sub">1st Audio</div>
+        </div>
+        <div class="latency-card highlight">
+          <div class="latency-stage">TOTAL E2E</div>
+          <div id="latencyE2e" class="latency-val">-- ms</div>
+          <div id="latencyE2eSub" class="latency-sub">End to End</div>
         </div>
       </div>
     </div>
@@ -663,12 +758,47 @@
     const sendTurnBtn = document.getElementById('sendTurnBtn');
     const sttProviderSelect = document.getElementById('sttProviderSelect');
     const llmProviderSelect = document.getElementById('llmProviderSelect');
+    const llmModelSelect = document.getElementById('llmModelSelect');
     const ttsProviderSelect = document.getElementById('ttsProviderSelect');
     const systemPromptInput = document.getElementById('systemPromptInput');
+
+    const LLM_MODELS = {
+      groq: [
+        { value: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B (Groq Fast)' },
+        { value: 'qwen/qwen3.8-27b', label: 'Qwen 3.8 27B (Groq Low-Latency)' },
+        { value: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B (Groq Ultra-Fast)' },
+      ],
+      gemini: [
+        { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Google AI)' },
+        { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+        { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+        { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite' },
+      ],
+    };
+
+    function updateLlmModelOptions() {
+      const p = (llmProviderSelect && llmProviderSelect.value) || 'groq';
+      const models = LLM_MODELS[p] || LLM_MODELS.groq;
+      if (!llmModelSelect) return;
+      llmModelSelect.innerHTML = '';
+      models.forEach((m, idx) => {
+        const opt = document.createElement('option');
+        opt.value = m.value;
+        opt.textContent = m.label;
+        if (idx === 0) opt.selected = true;
+        llmModelSelect.appendChild(opt);
+      });
+    }
+
+    if (llmProviderSelect) {
+      llmProviderSelect.addEventListener('change', updateLlmModelOptions);
+      updateLlmModelOptions();
+    }
 
     function setProviderControlsLocked(locked) {
       sttProviderSelect.disabled = locked;
       llmProviderSelect.disabled = locked;
+      if (llmModelSelect) llmModelSelect.disabled = locked;
       ttsProviderSelect.disabled = locked;
       systemPromptInput.disabled = locked;
     }
@@ -686,6 +816,7 @@
     let micStream = null;
     let isMuted = false;
     let activeSources = [];
+    let clientBargeFrames = 0;
     const PLAYBACK_GAIN = 4.0;
     const WORKLET_VER = '20260908d';
     const speakerAudio = document.getElementById('speakerAudio');
@@ -748,16 +879,14 @@
       
       let resp;
       try {
-        const mintEndpoint = window.location.origin.includes('http') 
-          ? window.location.origin + '/v1/session/mint' 
-          : 'http://127.0.0.1:8000/v1/session/mint';
-        resp = await fetch(mintEndpoint, {
+        const origin = window.location.origin.includes('http') ? window.location.origin : 'http://127.0.0.1:8080';
+        resp = await fetch(origin + '/v1/session/mint', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tenant_id: tenantId, agent_id: agentId }),
         });
       } catch (err) {
-        resp = await fetch('http://127.0.0.1:8000/v1/session/mint', {
+        resp = await fetch('http://127.0.0.1:8080/v1/session/mint', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tenant_id: tenantId, agent_id: agentId }),
@@ -786,7 +915,7 @@
     let playbackStarted = false;    // jitter prebuffer armed for current agent turn
     let audioInTotalBytes = 0;      // cumulative received audio bytes (agent → client)
     let prebuffered = [];
-    const PREBUFFER_CHUNKS = Math.max(1, parseInt(new URLSearchParams(location.search).get('prebuffer') || '3', 10) || 3);
+    const PREBUFFER_CHUNKS = Math.max(1, parseInt(new URLSearchParams(location.search).get('prebuffer') || '1', 10) || 1);
 
     function decodeInt16ToFloat32(arrayBuffer) {
       const int16 = new Int16Array(arrayBuffer);
@@ -888,8 +1017,19 @@
       prebuffered = [];
       playTime = 0;
       for (const src of activeSources.splice(0)) {
-        try { src.stop(); } catch (_) {}
+        try { src.stop(0); } catch (_) {}
         try { src.disconnect(); } catch (_) {}
+      }
+      if (playGain && playCtx) {
+        try {
+          playGain.gain.cancelScheduledValues(playCtx.currentTime);
+          playGain.gain.setValueAtTime(0.0, playCtx.currentTime);
+          setTimeout(() => {
+            if (playGain && playCtx) {
+              playGain.gain.setValueAtTime(1.0, playCtx.currentTime);
+            }
+          }, 120);
+        } catch (_) {}
       }
       if (playerNode) {
         playerNode.port.postMessage({ flush: true });
@@ -965,14 +1105,16 @@
         let wsUrl = minted.ws_url || 'ws://127.0.0.1:8081/ws/audio';
         const sttProvider = sttProviderSelect.value || 'gladia';
         const llmProvider = llmProviderSelect.value || 'groq';
+        const llmModel = (llmModelSelect && llmModelSelect.value) || (llmProvider === 'gemini' ? 'gemini-2.5-flash' : 'openai/gpt-oss-120b');
         const ttsProvider = ttsProviderSelect.value || 'uplift';
         wsUrl += (wsUrl.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(minted.token);
         wsUrl += '&stt_provider=' + encodeURIComponent(sttProvider);
         wsUrl += '&llm_provider=' + encodeURIComponent(llmProvider);
+        wsUrl += '&llm_model=' + encodeURIComponent(llmModel);
         wsUrl += '&tts_provider=' + encodeURIComponent(ttsProvider);
         addLog(
           'SYSTEM',
-          `Providers selected: STT=${sttProvider} LLM=${llmProvider} TTS=${ttsProvider}`,
+          `Providers selected: STT=${sttProvider} LLM=${llmProvider} (${llmModel}) TTS=${ttsProvider}`,
           'tag-ws'
         );
 
@@ -1090,7 +1232,44 @@
           } else if (eventType === 'llm_chunk' || eventType === 'llm') {
             addLog('LLM', `LLM Output: ${msg.payload?.text || JSON.stringify(msg)}`, 'tag-llm');
           } else if (eventType === 'metric') {
-            addLog('METRIC', `Event: ${msg.payload?.kind || eventType}`, 'tag-ws');
+            const kind = msg.payload?.kind || '';
+            if (kind === 'latency_waterfall') {
+              const p = msg.payload;
+              const sttMs = p.stt_ms !== undefined ? p.stt_ms : '--';
+              const llmMs = p.llm_ttft_ms !== undefined ? p.llm_ttft_ms : '--';
+              const ttsMs = p.tts_ttfb_ms !== undefined ? p.tts_ttfb_ms : '--';
+              const e2eMs = p.total_e2e_ms !== undefined ? p.total_e2e_ms : '--';
+              
+              const sttEl = document.getElementById('latencyStt');
+              const llmEl = document.getElementById('latencyLlm');
+              const ttsEl = document.getElementById('latencyTts');
+              const e2eEl = document.getElementById('latencyE2e');
+              const sloBadge = document.getElementById('sloBadge');
+
+              if (sttEl) sttEl.textContent = `${sttMs} ms`;
+              if (llmEl) llmEl.textContent = `${llmMs} ms`;
+              if (ttsEl) ttsEl.textContent = `${ttsMs} ms`;
+              if (e2eEl) e2eEl.textContent = `${e2eMs} ms`;
+
+              if (typeof e2eMs === 'number' && sloBadge && e2eEl) {
+                if (e2eMs <= 450) {
+                  sloBadge.className = 'slo-badge';
+                  sloBadge.textContent = `PASS (${e2eMs}ms)`;
+                  e2eEl.style.color = 'var(--accent-green)';
+                } else if (e2eMs <= 900) {
+                  sloBadge.className = 'slo-badge warn';
+                  sloBadge.textContent = `WARN (${e2eMs}ms)`;
+                  e2eEl.style.color = 'var(--accent-amber)';
+                } else {
+                  sloBadge.className = 'slo-badge breach';
+                  sloBadge.textContent = `BREACH (${e2eMs}ms)`;
+                  e2eEl.style.color = 'var(--accent-rose)';
+                }
+              }
+              addLog('LATENCY', `⚡ Turn Waterfall: E2E=${e2eMs}ms (STT: ${sttMs}ms | LLM: ${llmMs}ms | TTS: ${ttsMs}ms)`, 'tag-latency');
+            } else {
+              addLog('METRIC', `Event: ${msg.payload?.kind || eventType}`, 'tag-ws');
+            }
           } else if (eventType === 'barge_in') {
             flushPlayback();
             addLog('TTS', 'Barge-in: playback flushed', 'tag-tts');
@@ -1147,7 +1326,16 @@
     workletNode.port.onmessage = (ev) => {
       if (isMuted) return;
       const pcmBuffer = ev.data;
-      
+      if (!pcmBuffer || !pcmBuffer.byteLength) return;
+
+      // Always stream mic audio immediately to server
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(pcmBuffer);
+      }
+      totalFrames++;
+      totalBytesSent += pcmBuffer.byteLength;
+      metricFrames.textContent = totalFrames;
+
       // Calculate RMS level for visualizer
       const rms = calculateRms(pcmBuffer);
       const percent = Math.min(100, Math.round(rms * 250));
@@ -1169,14 +1357,22 @@
         metricVad.style.color = 'var(--text-muted)';
       }
 
-      totalFrames++;
-      totalBytesSent += pcmBuffer.byteLength;
-      metricFrames.textContent = totalFrames;
-      // metricBytes now tracks received agent audio (audioInTotalBytes), updated in the binary WS handler
-
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(pcmBuffer);
-      }
+      // Instant Client-Side Barge-In: if agent is currently speaking and user talks into mic
+      try {
+        if (activeSources.length > 0 && !bargeInActive && rms > 0.065) {
+          clientBargeFrames++;
+          if (clientBargeFrames >= 2) {
+            flushPlayback();
+            addLog('TTS', '⚡ Instant local barge-in (mic onset)', 'tag-tts');
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ event_type: 'barge_in', payload: { reason: 'client_mic_speech' } }));
+            }
+            clientBargeFrames = 0;
+          }
+        } else {
+          clientBargeFrames = 0;
+        }
+      } catch (_) {}
     };
 
   } catch (e) {

@@ -53,6 +53,7 @@ async def _load_session_config(
     *,
     stt_provider: str | None = None,
     llm_provider: str | None = None,
+    llm_model: str | None = None,
     tts_provider: str | None = None,
     tts_voice_id: str | None = None,
 ) -> PipelineSessionConfig:
@@ -78,6 +79,9 @@ async def _load_session_config(
     import os
 
     greeting = (os.environ.get("UCVE_INITIAL_GREETING") or "").strip() or None
+    chosen_llm_model = (llm_model or "").strip()
+    if not chosen_llm_model:
+        chosen_llm_model = "gemini-2.5-flash" if (llm_provider or "").strip().lower() == "gemini" else "openai/gpt-oss-120b"
     return PipelineSessionConfig(
         session_id=session_id,
         tenant_id=tenant_id,
@@ -87,6 +91,7 @@ async def _load_session_config(
         initial_greeting=greeting,
         stt_provider=stt_provider or "gladia",
         llm_provider=llm_provider or "groq",
+        llm_model=chosen_llm_model,
         tts_provider=tts_provider or "uplift",
         tts_voice_id=(tts_voice_id or "default"),
     )
@@ -114,6 +119,7 @@ async def ws_audio(websocket: WebSocket) -> None:
             payload,
             stt_provider=websocket.query_params.get("stt_provider"),
             llm_provider=websocket.query_params.get("llm_provider"),
+            llm_model=websocket.query_params.get("llm_model"),
             tts_provider=websocket.query_params.get("tts_provider"),
             tts_voice_id=websocket.query_params.get("tts_voice_id"),
         )

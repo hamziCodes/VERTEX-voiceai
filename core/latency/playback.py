@@ -23,6 +23,8 @@ class PlaybackMetricHandler:
         ``time.monotonic()`` ms — mixing them produced multi-year fake e2e
         latencies. Prefer server monotonic at ack receipt.
         """
-        _ = client_timestamp_ms
-        waterfall.playback_start_ms = time.monotonic() * 1000.0
+        if 0.0 < client_timestamp_ms < 1e11:
+            waterfall.playback_start_ms = client_timestamp_ms
+        else:
+            waterfall.playback_start_ms = time.monotonic() * 1000.0
         return waterfall.compute_e2e_latency()

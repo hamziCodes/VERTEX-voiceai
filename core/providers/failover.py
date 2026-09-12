@@ -87,8 +87,8 @@ class FailoverRouter:
         category: str,
         language: str,
         invoke_fn: Callable[[str], Awaitable[T]],
-        first_chunk_timeout: float = 3.5,
-        subsequent_chunk_timeout: float = 1.5,
+        first_chunk_timeout: float = 15.0,
+        subsequent_chunk_timeout: float = 5.0,
     ) -> T:
         """Execute call against priority chain with automatic failover on error/circuit-open."""
         errors: list[tuple[str, Exception]] = []
