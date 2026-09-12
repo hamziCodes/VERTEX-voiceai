@@ -53,10 +53,11 @@ class UCVEVoiceClient:
         self.on_metric = on_metric
         self._ws: Any | None = None
         self._running = False
+        self._listen_task: asyncio.Task[None] | None = None
         self.version_manifest = SDK_VERSION_MANIFEST
 
     async def connect(self) -> None:
-        """Establish Sovereign WebSocket connection."""
+        """Establish Sovereign WebSocket connection and start background receiver loop."""
         url = self.ws_url
         separator = "&" if "?" in url else "?"
         query = (
@@ -68,6 +69,42 @@ class UCVEVoiceClient:
         full_url = f"{url}{separator}{query}"
         self._ws = await websockets.connect(full_url)
         self._running = True
+        self._listen_task = asyncio.create_task(self._listen_loop())
+
+    async def _listen_loop(self) -> None:
+        """Background receiver loop routing incoming audio and control events."""
+        while self._running and self._ws:
+            try:
+                message = await self._ws.recv()
+                if isinstance(message, bytes):
+                    if self.on_audio:
+                        res = self.on_audio(message)
+                        if asyncio.iscoroutine(res):
+                            await res
+                elif isinstance(message, str):
+                    try:
+                        data = json.loads(message)
+                        event_type = data.get("event_type") or data.get("type")
+                        if event_type == "transcript" and self.on_transcript:
+                            payload = data.get("payload", {})
+                            speaker = payload.get("speaker") or data.get("speaker") or "agent"
+                            text = payload.get("text") or data.get("text") or ""
+                            res = self.on_transcript(speaker, text)
+                            if asyncio.iscoroutine(res):
+                                await res
+                        elif event_type == "metric" and self.on_metric:
+                            payload = data.get("payload") or data
+                            res = self.on_metric(payload)
+                            if asyncio.iscoroutine(res):
+                                await res
+                    except json.JSONDecodeError:
+                        pass
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                if not self._running:
+                    break
+                await asyncio.sleep(0.01)
 
     async def send_audio(self, pcm16_bytes: bytes) -> None:
         """Stream a raw 16 kHz mono 16-bit PCM chunk to the voice pipeline."""
@@ -98,6 +135,13 @@ class UCVEVoiceClient:
     async def disconnect(self) -> None:
         """Gracefully close the streaming session."""
         self._running = False
+        if self._listen_task and not self._listen_task.done():
+            self._listen_task.cancel()
+            try:
+                await self._listen_task
+            except asyncio.CancelledError:
+                pass
+            self._listen_task = None
         if self._ws:
             await self._ws.close()
             self._ws = None

@@ -139,7 +139,21 @@ async def ws_audio(websocket: WebSocket) -> None:
     )
     await orchestrator.apply_provider_selection(config)
 
-    runner = WebSocketSessionRunner(websocket, transport, orchestrator, config)
+    raw_rate = websocket.query_params.get("sample_rate") or websocket.query_params.get("rate")
+    client_rate = 16000
+    if raw_rate:
+        try:
+            client_rate = int(raw_rate)
+        except ValueError:
+            client_rate = 16000
+
+    runner = WebSocketSessionRunner(
+        websocket,
+        transport,
+        orchestrator,
+        config,
+        client_sample_rate=client_rate,
+    )
     try:
         await runner.start()
     except WebSocketDisconnect:

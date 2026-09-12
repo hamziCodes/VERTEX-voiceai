@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from core.listening.config import SpeakingPipelineConfig
 from core.providers.adapters.cartesia_tts import CartesiaTTSProvider
+from core.providers.adapters.deepgram_stt import DeepgramSTTProvider
 from core.providers.adapters.elevenlabs_tts import ElevenLabsTTSProvider
 from core.providers.adapters.gemini_llm import GeminiLLMProvider
 from core.providers.adapters.gladia_stt import GladiaSTTProvider
@@ -13,7 +14,7 @@ from core.providers.interfaces.llm import BaseLLMProvider
 from core.providers.interfaces.stt import BaseSTTProvider
 from core.providers.interfaces.tts import BaseTTSProvider
 
-SUPPORTED_STT = frozenset({"gladia"})
+SUPPORTED_STT = frozenset({"gladia", "deepgram"})
 SUPPORTED_LLM = frozenset({"groq", "gemini"})
 SUPPORTED_TTS = frozenset({"uplift", "elevenlabs", "cartesia"})
 
@@ -34,7 +35,9 @@ def normalize_tts_provider(provider_id: str | None) -> str:
 
 
 def build_stt_provider(provider_id: str | None, *, mock_text: str = "") -> BaseSTTProvider:
-    _ = normalize_stt_provider(provider_id)
+    pid = normalize_stt_provider(provider_id)
+    if pid == "deepgram":
+        return DeepgramSTTProvider(mock_text=mock_text)
     return GladiaSTTProvider(mock_text=mock_text)
 
 

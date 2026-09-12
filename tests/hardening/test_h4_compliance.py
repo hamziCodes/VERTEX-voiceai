@@ -63,7 +63,9 @@ def test_erasure_noop_is_failed() -> None:
 
 def test_purge_job_deletes_fixture_session(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UCVE_ENV", "test")
-    path = Path(__file__).resolve().parents[2] / "worker-jobs" / "purge_retention.py"
+    path = Path(__file__).resolve().parents[2] / "worker_jobs" / "purge_retention.py"
+    if not path.exists():
+        path = Path(__file__).resolve().parents[2] / "worker-jobs" / "purge_retention.py"
     spec = importlib.util.spec_from_file_location("purge_retention_h4", path)
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)

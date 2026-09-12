@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from core.providers.adapters.cartesia_tts import CartesiaTTSProvider
+from core.providers.adapters.deepgram_stt import DeepgramSTTProvider
 from core.providers.adapters.elevenlabs_tts import ElevenLabsTTSProvider
 from core.providers.adapters.gemini_llm import GeminiLLMProvider
 from core.providers.adapters.gladia_stt import GladiaSTTProvider
@@ -21,6 +22,7 @@ __all__ = [
     "NullTTSProvider",
     "NullS2SProvider",
     "GladiaSTTProvider",
+    "DeepgramSTTProvider",
     "GroqLLMProvider",
     "GeminiLLMProvider",
     "UpliftTTSProvider",

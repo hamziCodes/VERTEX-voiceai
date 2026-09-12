@@ -15,6 +15,7 @@ from core.db.repos.session_repo import SessionRepository
 from core.db.repos.tenant_repo import TenantRepository
 from core.metering.quota_enforcer import QuotaEnforcer
 from core.redis.nonce_store import NonceStore
+from core.runtime.admission import CapacityExceededError, SessionAdmissionController
 from core.types.ids import generate_session_id
 
 
@@ -33,6 +34,7 @@ class MintContext:
     session_repo: Any = field(default_factory=build_session_repository)
     quota: QuotaEnforcer = field(default_factory=QuotaEnforcer)
     rate_limiter: RateLimiter = field(default_factory=lambda: RateLimiter(limit_per_min=120))
+    admission: SessionAdmissionController = field(default_factory=SessionAdmissionController)
     mint_rejections: list[dict[str, Any]] = field(default_factory=list)
     audit_events: list[dict[str, Any]] = field(default_factory=list)
 
@@ -164,6 +166,12 @@ async def handle_session_mint(
     await mint_ctx.nonce_store.mark_used(tenant_id, nonce, ttl_sec=60)
 
     session_id = str(generate_session_id())
+    try:
+        mint_ctx.admission.acquire_sync(session_id)
+    except CapacityExceededError as exc:
+        _record_rejection(mint_ctx, tenant_id, 503, str(exc))
+        return 503, {"error": "Worker capacity limit reached. Please retry shortly."}
+
     session = Session(id=session_id, tenant_id=tenant_id, agent_id=agent_id)
     await mint_ctx.session_repo.create_session(tenant_id, session)
 

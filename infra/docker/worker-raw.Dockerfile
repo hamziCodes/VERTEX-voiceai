@@ -16,6 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY core/pyproject.toml /app/core/pyproject.toml
 COPY core/ /app/core/
+COPY post_call/ /app/post_call/
+COPY telephony_gateway/ /app/telephony_gateway/
 COPY control_plane/ /app/control_plane/
 COPY worker_raw/pyproject.toml /app/worker_raw/pyproject.toml
 COPY worker_raw/ /app/worker_raw/

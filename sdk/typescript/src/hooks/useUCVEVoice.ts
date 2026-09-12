@@ -42,7 +42,10 @@ export function useUCVEVoice(): UseUCVEVoiceReturn {
   }, []);
 
   const sendBargeIn = useCallback(() => {
-    // Cut off agent audio immediately
+    // Cut off agent audio immediately and notify server
+    if (clientRef.current) {
+      clientRef.current.sendBargeIn();
+    }
     setIsSpeaking(false);
   }, []);
 

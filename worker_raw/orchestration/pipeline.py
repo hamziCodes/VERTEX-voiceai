@@ -42,6 +42,8 @@ from core.latency.waterfall import LatencyWaterfall
 from core.mcp.orchestrator import ToolOrchestrator
 from core.metering.usage_meter import UsageMeter
 from core.observability.logging import get_logger
+from core.providers.adapters.cartesia_tts import CartesiaTTSProvider
+from core.providers.adapters.deepgram_stt import DeepgramSTTProvider
 from core.providers.adapters.elevenlabs_tts import ElevenLabsTTSProvider
 from core.providers.adapters.gemini_llm import GeminiLLMProvider
 from core.providers.adapters.gladia_stt import GladiaSTTProvider
@@ -88,10 +90,12 @@ def _metric_session_uuid(session_id: str) -> UUID:
         return uuid5(NAMESPACE_DNS, f"ucve-session:{session_id}")
 
 ProviderRegistry.register_provider_class("gladia", GladiaSTTProvider)
+ProviderRegistry.register_provider_class("deepgram", DeepgramSTTProvider)
 ProviderRegistry.register_provider_class("groq", GroqLLMProvider)
 ProviderRegistry.register_provider_class("gemini", GeminiLLMProvider)
 ProviderRegistry.register_provider_class("uplift", UpliftTTSProvider)
 ProviderRegistry.register_provider_class("elevenlabs", ElevenLabsTTSProvider)
+ProviderRegistry.register_provider_class("cartesia", CartesiaTTSProvider)
 
 
 class PipelineOrchestrator:
@@ -704,6 +708,8 @@ class PipelineOrchestrator:
                 await self._tts_task
             except asyncio.CancelledError:
                 pass
+        if self.fsm.can_transition(SessionEvent.TTS_DRAINED):
+            self.fsm.trigger(SessionEvent.TTS_DRAINED)
 
     async def _synthesize_streaming(
         self, sentences: list[str], session_config: PipelineSessionConfig, waterfall: Any

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -56,10 +57,19 @@ class ScenarioResult:
 _SCENARIO_REGISTRY: dict[str, ScenarioFn] = {}
 
 
+def _get_registry() -> dict[str, ScenarioFn]:
+    """Ensure __main__ and tests.e2e.harness share the same scenario registry instance."""
+    mod = sys.modules.get("tests.e2e.harness")
+    if mod is not None and hasattr(mod, "_SCENARIO_REGISTRY"):
+        return mod._SCENARIO_REGISTRY
+    return _SCENARIO_REGISTRY
+
+
 def register_scenario(name: str) -> Callable[[ScenarioFn], ScenarioFn]:
     """Decorator to register a scenario runner by name."""
 
     def _wrap(fn: ScenarioFn) -> ScenarioFn:
+        _get_registry()[name] = fn
         _SCENARIO_REGISTRY[name] = fn
         return fn
 
@@ -67,14 +77,16 @@ def register_scenario(name: str) -> Callable[[ScenarioFn], ScenarioFn]:
 
 
 def get_scenario(name: str) -> ScenarioFn:
-    if name not in _SCENARIO_REGISTRY:
+    registry = _get_registry()
+    if name not in registry:
         # Lazy-import built-in scenarios so registry populates on first use.
         from tests.e2e.scenarios import sovereign_conversation as _sovereign  # noqa: F401
 
         _ = _sovereign
-    if name not in _SCENARIO_REGISTRY:
-        raise KeyError(f"Unknown scenario: {name!r}. Known: {sorted(_SCENARIO_REGISTRY)}")
-    return _SCENARIO_REGISTRY[name]
+        registry = _get_registry()
+    if name not in registry:
+        raise KeyError(f"Unknown scenario: {name!r}. Known: {sorted(registry)}")
+    return registry[name]
 
 
 def list_scenarios() -> list[str]:
@@ -82,7 +94,7 @@ def list_scenarios() -> list[str]:
         get_scenario("sovereign_conversation")
     except KeyError:
         pass
-    return sorted(_SCENARIO_REGISTRY)
+    return sorted(_get_registry())
 
 
 class E2EHarness:
@@ -132,7 +144,7 @@ class E2EHarness:
             result = asyncio.run(outcome)
         else:
             result = outcome
-        if not isinstance(result, ScenarioResult):
+        if not isinstance(result, ScenarioResult) and type(result).__name__ != "ScenarioResult":
             return ScenarioResult.fail(f"scenario {name!r} returned non-ScenarioResult")
         return result
 
@@ -147,7 +159,7 @@ class E2EHarness:
             result = await outcome
         else:
             result = outcome
-        if not isinstance(result, ScenarioResult):
+        if not isinstance(result, ScenarioResult) and type(result).__name__ != "ScenarioResult":
             return ScenarioResult.fail(f"scenario {name!r} returned non-ScenarioResult")
         return result
 
@@ -168,7 +180,12 @@ def main() -> int:
         return 0
     mode = HarnessMode.COMPOSE if args.compose else HarnessMode.MOCK
     harness = E2EHarness(HarnessConfig(mode=mode, scenario=args.scenario))
-    return 0 if harness.run() else 1
+    res = harness.run_scenario(args.scenario)
+    if res.passed:
+        print(f"Scenario '{args.scenario}' PASSED: {res.metrics}")
+        return 0
+    print(f"Scenario '{args.scenario}' FAILED: {res.failures}")
+    return 1
 
 
 if __name__ == "__main__":

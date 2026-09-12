@@ -44,6 +44,10 @@ transitions:
     to: LISTENING
     event: tts_drained
 
+  - from: PROCESSING_INFERENCE
+    to: LISTENING
+    event: tts_drained
+
   - from: AGENT_SPEAKING
     to: BARGE_IN_VERIFY
     event: vad_speech_start

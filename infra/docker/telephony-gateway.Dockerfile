@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY core/ /app/core/
-COPY telephony/ /app/telephony/
+COPY telephony_gateway/ /app/telephony_gateway/
 
 RUN pip install --no-cache-dir \
     "fastapi>=0.115.0" \
@@ -31,4 +31,4 @@ EXPOSE 8083
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8083/health || exit 1
 
-CMD ["uvicorn", "telephony.main:app", "--host", "0.0.0.0", "--port", "8083"]
+CMD ["uvicorn", "telephony_gateway.main:app", "--host", "0.0.0.0", "--port", "8083"]

@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 
 COPY core/pyproject.toml /app/core/pyproject.toml
 COPY core/ /app/core/
+COPY post_call/ /app/post_call/
 COPY control_plane/pyproject.toml /app/control_plane/pyproject.toml
 COPY control_plane/ /app/control_plane/
 

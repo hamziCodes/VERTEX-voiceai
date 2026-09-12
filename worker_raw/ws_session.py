@@ -17,8 +17,10 @@ from core.listening.frame_slicer import FrameSlicer
 from core.transport.native_websocket import NativeWebSocketTransport
 from core.types.audio import AudioFrame
 from core.types.events import ControlEventType
+from core.types.resampler import Resampler
 from worker_raw.orchestration.pipeline import PipelineOrchestrator
 from worker_raw.orchestration.session_config import PipelineSessionConfig
+from worker_raw.security.ws_policy import WSSecurityPolicy, WSSecurityViolation
 from worker_raw.ws_constants import MAX_AUDIO_FRAME_BYTES, PING_INTERVAL_SEC, PONG_DEADLINE_MULTIPLIER
 
 
@@ -31,11 +33,18 @@ class WebSocketSessionRunner:
         transport: NativeWebSocketTransport,
         orchestrator: PipelineOrchestrator,
         config: PipelineSessionConfig,
+        client_sample_rate: int = 16000,
     ) -> None:
         self.websocket = websocket
         self.transport = transport
         self.orchestrator = orchestrator
         self.config = config
+        self.client_sample_rate = client_sample_rate
+        self._ingress_resampler: Resampler | None = (
+            Resampler(source_rate=client_sample_rate, target_rate=16000)
+            if client_sample_rate != 16000 and client_sample_rate in Resampler.SUPPORTED_RATES
+            else None
+        )
         self.stop = asyncio.Event()
         self.last_pong_monotonic = time.monotonic()
         self._ingress_seq = 0
@@ -50,6 +59,7 @@ class WebSocketSessionRunner:
             if orchestrator.listening_config.enable_frame_slicing
             else None
         )
+        self.security_policy = WSSecurityPolicy()
 
     def _track_turn(self, task: asyncio.Task[Any]) -> None:
         self._active_turns.add(task)
@@ -123,18 +133,34 @@ class WebSocketSessionRunner:
             message = await self.websocket.receive()
             if message.get("type") == "websocket.disconnect":
                 break
+
+            try:
+                self.security_policy.check_rate_limit(self.config.session_id)
+            except WSSecurityViolation as exc:
+                await self.transport.send_control_event(
+                    "error",
+                    {"code": "RATE_LIMIT_EXCEEDED", "message": str(exc)},
+                )
+                await self.websocket.close(code=1008, reason="rate limit exceeded")
+                break
+
             if "bytes" in message and message["bytes"] is not None:
                 pcm_data = message["bytes"]
-                if len(pcm_data) > MAX_AUDIO_FRAME_BYTES:
+                try:
+                    self.security_policy.validate_frame_size(pcm_data)
+                except WSSecurityViolation as exc:
                     await self.transport.send_control_event(
                         "error",
                         {
                             "code": "FRAME_TOO_LARGE",
+                            "message": str(exc),
                             "max_bytes": MAX_AUDIO_FRAME_BYTES,
                         },
                     )
                     await self.websocket.close(code=1009, reason="frame too large")
                     break
+                if self._ingress_resampler is not None:
+                    pcm_data = self._ingress_resampler.process(pcm_data)
                 await self._enqueue_pcm(pcm_data)
                 continue
             text = message.get("text")

@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from core.fsm.events import SessionEvent
 from core.fsm.states import SessionState
+from core.providers.interfaces.llm import LLMStreamChunk
 from core.providers.interfaces.tts import TTSChunk, TTSConfig
 from post_call.models.call_record import CallRecord
 from post_call.models.diarized_turn import DiarizedTurn
@@ -120,7 +121,7 @@ async def run_sovereign_conversation(config: HarnessConfig) -> ScenarioResult:
 
     # --- Turn 1: start TTS, barge-in mid-stream ---
     turn1_task = asyncio.create_task(orch.run_turn(session, "hello sovereign"))
-    for _ in range(100):
+    for _ in range(300):
         if slow_tts.chunks_yielded >= 1 or audio_out:
             break
         await asyncio.sleep(0.01)
