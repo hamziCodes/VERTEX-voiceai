@@ -9,13 +9,14 @@ from core.providers.adapters.elevenlabs_tts import ElevenLabsTTSProvider
 from core.providers.adapters.gemini_llm import GeminiLLMProvider
 from core.providers.adapters.gladia_stt import GladiaSTTProvider
 from core.providers.adapters.groq_llm import GroqLLMProvider
+from core.providers.adapters.openai_llm import OpenAILLMProvider
 from core.providers.adapters.uplift_tts import UpliftTTSProvider
 from core.providers.interfaces.llm import BaseLLMProvider
 from core.providers.interfaces.stt import BaseSTTProvider
 from core.providers.interfaces.tts import BaseTTSProvider
 
 SUPPORTED_STT = frozenset({"gladia", "deepgram"})
-SUPPORTED_LLM = frozenset({"groq", "gemini"})
+SUPPORTED_LLM = frozenset({"groq", "gemini", "openai"})
 SUPPORTED_TTS = frozenset({"uplift", "elevenlabs", "cartesia"})
 
 
@@ -49,6 +50,8 @@ def build_llm_provider(
     pid = normalize_llm_provider(provider_id)
     if pid == "gemini":
         return GeminiLLMProvider(model=model)
+    if pid == "openai":
+        return OpenAILLMProvider(model=model)
     return GroqLLMProvider(model=model)
 
 

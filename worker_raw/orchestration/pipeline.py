@@ -51,6 +51,7 @@ from core.providers.adapters.groq_llm import GroqLLMProvider
 from core.providers.adapters.null_llm import NullLLMProvider
 from core.providers.adapters.null_stt import NullSTTProvider
 from core.providers.adapters.null_tts import NullTTSProvider
+from core.providers.adapters.openai_llm import OpenAILLMProvider
 from core.providers.adapters.uplift_tts import UpliftTTSProvider
 from core.providers.factory import (
     build_llm_provider,
@@ -93,6 +94,7 @@ ProviderRegistry.register_provider_class("gladia", GladiaSTTProvider)
 ProviderRegistry.register_provider_class("deepgram", DeepgramSTTProvider)
 ProviderRegistry.register_provider_class("groq", GroqLLMProvider)
 ProviderRegistry.register_provider_class("gemini", GeminiLLMProvider)
+ProviderRegistry.register_provider_class("openai", OpenAILLMProvider)
 ProviderRegistry.register_provider_class("uplift", UpliftTTSProvider)
 ProviderRegistry.register_provider_class("elevenlabs", ElevenLabsTTSProvider)
 ProviderRegistry.register_provider_class("cartesia", CartesiaTTSProvider)

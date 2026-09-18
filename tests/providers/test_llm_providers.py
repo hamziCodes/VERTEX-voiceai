@@ -8,6 +8,7 @@ import pytest
 from core.buffers.cancellation import AsyncioCancellationToken
 from core.providers.adapters.gemini_llm import GeminiLLMProvider, resolve_gemini_model
 from core.providers.adapters.groq_llm import GroqLLMProvider, resolve_groq_model
+from core.providers.adapters.openai_llm import OpenAILLMProvider, resolve_openai_model
 from core.providers.factory import build_llm_provider, normalize_llm_provider
 from core.providers.interfaces.llm import LLMConfig
 from core.providers.registry import ProviderRegistry
@@ -19,6 +20,8 @@ def test_normalize_llm_provider_defaults_and_allows_vendors() -> None:
     assert normalize_llm_provider("GROQ") == "groq"
     assert normalize_llm_provider("gemini") == "gemini"
     assert normalize_llm_provider("GEMINI") == "gemini"
+    assert normalize_llm_provider("openai") == "openai"
+    assert normalize_llm_provider("OPENAI") == "openai"
     assert normalize_llm_provider("unknown") == "groq"
 
 
@@ -31,12 +34,22 @@ def test_build_llm_provider_switches() -> None:
     assert isinstance(gemini, GeminiLLMProvider)
     assert gemini.default_model == "gemini-2.5-flash"
 
+    openai_p = build_llm_provider("openai", model="gpt-4o-mini")
+    assert isinstance(openai_p, OpenAILLMProvider)
+    assert openai_p.default_model == "gpt-4o-mini"
+
 
 def test_gemini_model_resolution() -> None:
     assert resolve_gemini_model("gemini-2.5-flash") == "gemini-2.5-flash"
     assert resolve_gemini_model("gemini") == "gemini-2.5-flash"
     assert resolve_gemini_model("default") == "gemini-2.5-flash"
     assert resolve_gemini_model("gemini-2.0") == "gemini-2.0-flash"
+
+
+def test_openai_model_resolution() -> None:
+    assert resolve_openai_model("gpt-4o-mini") == "gpt-4o-mini"
+    assert resolve_openai_model("gpt-4o") == "gpt-4o"
+    assert resolve_openai_model("default") == "gpt-4o-mini"
 
 
 def test_groq_model_resolution() -> None:
@@ -78,4 +91,38 @@ async def test_gemini_cancellation_token() -> None:
 def test_provider_registry_contains_gemini() -> None:
     cls = ProviderRegistry.get_provider_class("gemini")
     assert cls is GeminiLLMProvider
+
+
+@pytest.mark.asyncio
+async def test_openai_mock_stream_without_live_flag() -> None:
+    os.environ.pop("RUN_LIVE_PROVIDERS", None)
+    provider = OpenAILLMProvider(api_key="")
+    chunks = []
+    messages = [{"role": "user", "content": "Hello OpenAI"}]
+    async for chunk in provider.generate_stream(messages, LLMConfig(model="gpt-4o-mini")):
+        chunks.append(chunk)
+    assert len(chunks) > 0
+    text = "".join(c.text for c in chunks)
+    assert "Hello OpenAI" in text or "assist you" in text
+
+
+@pytest.mark.asyncio
+async def test_openai_cancellation_token() -> None:
+    os.environ.pop("RUN_LIVE_PROVIDERS", None)
+    provider = OpenAILLMProvider(api_key="")
+    token = AsyncioCancellationToken()
+    token.cancel()
+    chunks = []
+    messages = [{"role": "user", "content": "Hello"}]
+    async for chunk in provider.generate_stream(
+        messages, LLMConfig(model="gpt-4o-mini"), cancellation_token=token
+    ):
+        chunks.append(chunk)
+    assert len(chunks) == 0
+
+
+def test_provider_registry_contains_openai() -> None:
+    cls = ProviderRegistry.get_provider_class("openai")
+    assert cls is OpenAILLMProvider
+
 

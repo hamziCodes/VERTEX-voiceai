@@ -92,4 +92,6 @@ class Pcm16PlayerProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('pcm16-capture', Pcm16CaptureProcessor);
+registerProcessor('Pcm16CaptureProcessor', Pcm16CaptureProcessor);
 registerProcessor('pcm16-player', Pcm16PlayerProcessor);
+registerProcessor('Pcm16PlayerProcessor', Pcm16PlayerProcessor);

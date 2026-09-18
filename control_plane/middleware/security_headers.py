@@ -20,11 +20,23 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), camera=()"
 
+        path = request.url.path
         # Baseline Content-Security-Policy (allows Swagger / ReDoc docs UI when requested)
-        if "/docs" in request.url.path or "/redoc" in request.url.path or "/openapi.json" in request.url.path:
+        if "/docs" in path or "/redoc" in path or "/openapi.json" in path:
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
                 "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com;"
+            )
+        elif path.startswith("/demo") or path == "/":
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self' http: https:; "
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "font-src 'self' data: https://fonts.gstatic.com; "
+                "img-src 'self' data: https:; "
+                "media-src 'self' blob: data:; "
+                "connect-src 'self' ws: wss: http: https:; "
+                "frame-ancestors 'self';"
             )
         else:
             response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none';"

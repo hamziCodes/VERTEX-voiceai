@@ -7,6 +7,7 @@ from typing import AsyncGenerator
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
 from control_plane.auth.jwt import verify_session_jwt
 from control_plane.routes.session import get_default_mint_context
@@ -26,6 +27,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(title="Wavia Worker Raw", version="0.1.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
@@ -81,7 +90,13 @@ async def _load_session_config(
     greeting = (os.environ.get("UCVE_INITIAL_GREETING") or "").strip() or None
     chosen_llm_model = (llm_model or "").strip()
     if not chosen_llm_model:
-        chosen_llm_model = "gemini-2.5-flash" if (llm_provider or "").strip().lower() == "gemini" else "openai/gpt-oss-120b"
+        lp = (llm_provider or "").strip().lower()
+        if lp == "gemini":
+            chosen_llm_model = "gemini-2.5-flash"
+        elif lp == "openai":
+            chosen_llm_model = "gpt-4o-mini"
+        else:
+            chosen_llm_model = "openai/gpt-oss-120b"
     return PipelineSessionConfig(
         session_id=session_id,
         tenant_id=tenant_id,

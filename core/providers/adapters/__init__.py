@@ -13,6 +13,7 @@ from core.providers.adapters.null_s2s import NullS2SProvider
 from core.providers.adapters.null_stt import NullSTTProvider
 from core.providers.adapters.null_tts import NullTTSProvider
 from core.providers.adapters.null_vad import NullVADProvider
+from core.providers.adapters.openai_llm import OpenAILLMProvider
 from core.providers.adapters.uplift_tts import UpliftTTSProvider
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     "DeepgramSTTProvider",
     "GroqLLMProvider",
     "GeminiLLMProvider",
+    "OpenAILLMProvider",
     "UpliftTTSProvider",
     "ElevenLabsTTSProvider",
     "CartesiaTTSProvider",

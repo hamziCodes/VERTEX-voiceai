@@ -144,6 +144,12 @@ async def root() -> RedirectResponse:
     return RedirectResponse(url="/demo/", status_code=307)
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> Response:
+    """Silence browser favicon requests to avoid 404 log noise."""
+    return Response(status_code=204, media_type="image/x-icon")
+
+
 @app.get("/json/version")
 async def json_version() -> dict[str, str]:
     """Chrome/CDP-style probes often hit this on open ports — avoid noisy 404s."""

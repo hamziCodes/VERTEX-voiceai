@@ -256,8 +256,18 @@ class WebSocketSessionRunner:
                     )
                 )
             else:
+                # Coalesce any rapid successive utterance fragments queued during latency
+                accumulated = [user_text]
+                while not self._turn_queue.empty():
+                    try:
+                        extra, _ = self._turn_queue.get_nowait()
+                        if extra and not extra.startswith("__greeting__:"):
+                            accumulated.append(extra)
+                    except Exception:
+                        break
+                combined_text = " ".join(accumulated).strip()
                 task = asyncio.create_task(
-                    self.orchestrator.run_turn(self.config, user_text)
+                    self.orchestrator.run_turn(self.config, combined_text)
                 )
             self._track_turn(task)
             try:

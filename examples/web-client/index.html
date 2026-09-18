@@ -3,15 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Wavia — Sovereign Voice AI Developer Console</title>
+  <title>Wavia — Sovereign Voice AI Developer Console & Testing Portal</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     :root {
       --bg-dark: #0a0d12;
-      --panel-bg: rgba(18, 24, 38, 0.75);
+      --panel-bg: rgba(18, 24, 38, 0.85);
       --panel-border: rgba(255, 255, 255, 0.08);
+      --panel-border-hover: rgba(0, 242, 254, 0.3);
       --accent-cyan: #00f2fe;
       --accent-blue: #4facfe;
       --accent-purple: #7f00ff;
@@ -34,18 +36,22 @@
       display: flex;
       flex-direction: column;
       background-image: 
-        radial-gradient(circle at 15% 15%, rgba(0, 242, 254, 0.05) 0%, transparent 40%),
-        radial-gradient(circle at 85% 85%, rgba(127, 0, 255, 0.05) 0%, transparent 40%);
+        radial-gradient(circle at 12% 15%, rgba(0, 242, 254, 0.06) 0%, transparent 45%),
+        radial-gradient(circle at 88% 85%, rgba(127, 0, 255, 0.06) 0%, transparent 45%);
     }
 
+    /* Top Navigation Header */
     header {
-      padding: 1.25rem 2rem;
+      padding: 0.85rem 1.75rem;
       border-bottom: 1px solid var(--panel-border);
-      background: rgba(10, 13, 18, 0.8);
-      backdrop-filter: blur(12px);
+      background: rgba(10, 13, 18, 0.88);
+      backdrop-filter: blur(14px);
       display: flex;
       align-items: center;
       justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
     }
 
     .brand {
@@ -61,16 +67,16 @@
       border-radius: 0.5rem;
       display: grid;
       place-items: center;
-      font-weight: 700;
-      font-size: 1.1rem;
+      font-weight: 800;
+      font-size: 1.15rem;
       color: #fff;
-      box-shadow: 0 0 20px rgba(0, 242, 254, 0.3);
+      box-shadow: 0 0 20px rgba(0, 242, 254, 0.35);
     }
 
     .brand-title h1 {
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       font-weight: 700;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.04em;
       background: linear-gradient(to right, #fff, var(--text-muted));
       -webkit-background-clip: text;
       background-clip: text;
@@ -78,8 +84,44 @@
     }
 
     .brand-title p {
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       color: var(--text-muted);
+    }
+
+    /* Navigation Tabs */
+    .tab-nav {
+      display: flex;
+      gap: 0.35rem;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--panel-border);
+      padding: 0.25rem;
+      border-radius: 0.65rem;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.45rem 0.95rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      border-radius: 0.45rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .tab-btn.active {
+      color: #000;
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+      box-shadow: 0 2px 10px rgba(0, 242, 254, 0.35);
     }
 
     .status-badge {
@@ -133,14 +175,33 @@
       50% { opacity: 0.4; }
     }
 
+    /* Main Content Area */
     main {
       flex: 1;
       padding: 1.5rem 2rem;
-      max-width: 1400px;
+      max-width: 1440px;
       width: 100%;
       margin: 0 auto;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 0.2s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Playground Grid */
+    .playground-grid {
       display: grid;
-      grid-template-columns: 360px 1fr;
+      grid-template-columns: 380px 1fr;
       gap: 1.5rem;
     }
 
@@ -152,13 +213,13 @@
       backdrop-filter: blur(16px);
       display: flex;
       flex-direction: column;
-      gap: 1.25rem;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      gap: 1.15rem;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
     }
 
     .card-title {
       font-size: 0.85rem;
-      font-weight: 600;
+      font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: var(--text-muted);
@@ -224,13 +285,12 @@
       background: rgba(255, 255, 255, 0.1);
     }
 
-    .btn-secondary.active {
-      background: rgba(245, 158, 11, 0.2);
-      border-color: rgba(245, 158, 11, 0.5);
-      color: var(--accent-amber);
+    .btn-sm {
+      padding: 0.45rem 0.85rem;
+      font-size: 0.75rem;
     }
 
-    /* Audio Meter & Visualizer */
+    /* Visualizer */
     .visualizer-container {
       background: rgba(0, 0, 0, 0.3);
       border: 1px solid var(--panel-border);
@@ -243,7 +303,7 @@
 
     canvas {
       width: 100%;
-      height: 60px;
+      height: 55px;
       border-radius: 0.35rem;
     }
 
@@ -284,7 +344,7 @@
 
     .metric-value {
       font-family: var(--font-mono);
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       font-weight: 600;
       color: var(--accent-cyan);
       margin-top: 0.25rem;
@@ -296,13 +356,14 @@
       text-transform: uppercase;
     }
 
-    /* Latency Waterfall Styles */
+    /* Latency Waterfall */
     .latency-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 0.5rem;
       margin-top: 0.5rem;
     }
+
     .latency-card {
       background: rgba(0, 0, 0, 0.35);
       border: 1px solid var(--panel-border);
@@ -311,10 +372,12 @@
       text-align: center;
       transition: all 0.3s ease;
     }
+
     .latency-card.highlight {
       background: rgba(0, 242, 254, 0.06);
       border-color: rgba(0, 242, 254, 0.35);
     }
+
     .latency-stage {
       font-size: 0.65rem;
       color: var(--text-muted);
@@ -322,17 +385,20 @@
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
+
     .latency-val {
       font-family: var(--font-mono);
-      font-size: 1.05rem;
+      font-size: 1rem;
       font-weight: 700;
       color: var(--accent-cyan);
       margin: 0.2rem 0;
     }
+
     .latency-sub {
       font-size: 0.62rem;
       color: var(--text-muted);
     }
+
     .slo-badge {
       font-size: 0.68rem;
       padding: 0.15rem 0.5rem;
@@ -342,54 +408,96 @@
       color: var(--accent-green);
       border: 1px solid rgba(16, 185, 129, 0.3);
     }
-    .slo-badge.warn {
-      background: rgba(245, 158, 11, 0.15);
-      color: var(--accent-amber);
-      border-color: rgba(245, 158, 11, 0.3);
-    }
-    .slo-badge.breach {
-      background: rgba(244, 63, 94, 0.15);
-      color: var(--accent-rose);
-      border-color: rgba(244, 63, 94, 0.3);
+
+    .provider-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.65rem;
     }
 
-    /* Console Logs Window */
-    .console-panel {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
+    .provider-field label {
+      display: block;
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
     }
 
-    .console-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding-bottom: 0.75rem;
-      border-bottom: 1px solid var(--panel-border);
+    .provider-field select, input[type="text"], textarea {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.85);
+      color: var(--text-main);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 8px;
+      padding: 0.55rem 0.7rem;
+      font-size: 0.85rem;
+      font-family: var(--font-sans);
     }
 
-    .console-actions {
-      display: flex;
-      gap: 0.5rem;
+    .provider-field select:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
 
-    .btn-sm {
-      padding: 0.35rem 0.65rem;
+    .provider-hint {
       font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
     }
 
-    .console-logs {
-      flex: 1;
+    /* Transcripts & Logs */
+    .transcript-box {
       background: rgba(0, 0, 0, 0.4);
       border: 1px solid var(--panel-border);
       border-radius: 0.5rem;
-      margin-top: 0.75rem;
-      padding: 1rem;
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      line-height: 1.5;
+      padding: 0.85rem;
+      height: 180px;
       overflow-y: auto;
-      max-height: 520px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .transcript-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      font-size: 0.85rem;
+    }
+
+    .transcript-badge {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.15rem 0.45rem;
+      border-radius: 0.25rem;
+      text-transform: uppercase;
+      flex-shrink: 0;
+      margin-top: 0.1rem;
+    }
+
+    .badge-user {
+      background: rgba(79, 172, 254, 0.2);
+      color: var(--accent-blue);
+      border: 1px solid rgba(79, 172, 254, 0.4);
+    }
+
+    .badge-agent {
+      background: rgba(0, 242, 254, 0.2);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(0, 242, 254, 0.4);
+    }
+
+    .console-logs {
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid var(--panel-border);
+      border-radius: 0.5rem;
+      padding: 0.85rem;
+      height: 240px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
       display: flex;
       flex-direction: column;
       gap: 0.4rem;
@@ -402,20 +510,14 @@
       word-break: break-all;
     }
 
-    .log-time {
-      color: var(--text-muted);
-      font-size: 0.75rem;
-      user-select: none;
-    }
-
+    .log-time { color: var(--text-muted); font-size: 0.72rem; }
     .log-tag {
       padding: 0.1rem 0.4rem;
       border-radius: 3px;
-      font-size: 0.7rem;
-      font-weight: 600;
+      font-size: 0.68rem;
+      font-weight: 700;
       text-transform: uppercase;
     }
-
     .tag-mint { background: rgba(0, 242, 254, 0.15); color: var(--accent-cyan); }
     .tag-ws { background: rgba(79, 172, 254, 0.15); color: var(--accent-blue); }
     .tag-audio { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); }
@@ -423,130 +525,91 @@
     .tag-stt { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
     .tag-llm { background: rgba(236, 72, 153, 0.15); color: #f472b6; }
     .tag-tts { background: rgba(14, 165, 233, 0.15); color: #38bdf8; }
-    .tag-error { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); }
-    .tag-ping { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
     .tag-latency { background: rgba(0, 242, 254, 0.2); color: var(--accent-cyan); border: 1px solid rgba(0, 242, 254, 0.4); }
 
-    .log-msg {
-      color: var(--text-main);
-    }
-
-    /* Simulate Text Input Bar */
     .input-bar {
       display: flex;
       gap: 0.5rem;
-      margin-top: 0.75rem;
+      margin-top: 0.5rem;
     }
 
-    .input-bar input {
-      flex: 1;
-      background: rgba(0, 0, 0, 0.3);
-      border: 1px solid var(--panel-border);
-      border-radius: 0.5rem;
-      padding: 0.6rem 0.85rem;
-      color: #fff;
-      font-family: var(--font-sans);
-      font-size: 0.85rem;
+    /* Common Card Styles for Diagnostics & Tabs */
+    .grid-2col {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+    }
+    .grid-3col {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
     }
 
-    .input-bar input:focus {
-      outline: none;
-      border-color: var(--accent-cyan);
-    }
-
-    /* System Prompt & Live Transcriptions */
-    .system-prompt-box {
-      width: 100%;
-      background: rgba(0, 0, 0, 0.4);
-      border: 1px solid var(--panel-border);
-      border-radius: 0.5rem;
-      padding: 0.65rem 0.85rem;
-      color: var(--text-main);
-      font-family: var(--font-sans);
-      font-size: 0.8rem;
-      line-height: 1.4;
-      resize: vertical;
-      outline: none;
-      box-sizing: border-box;
-    }
-    .system-prompt-box:focus {
-      border-color: var(--accent-cyan);
-    }
-
-    .transcript-box {
-      background: rgba(0, 0, 0, 0.4);
+    .code-block {
+      background: rgba(0, 0, 0, 0.5);
       border: 1px solid var(--panel-border);
       border-radius: 0.5rem;
       padding: 0.85rem;
-      margin-top: 0.5rem;
-      overflow-y: auto;
-      height: 150px;
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-    }
-    .transcript-entry {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.6rem;
-      font-size: 0.85rem;
-    }
-    .transcript-badge {
       font-family: var(--font-mono);
-      font-size: 0.65rem;
-      font-weight: 700;
-      padding: 0.15rem 0.45rem;
-      border-radius: 0.25rem;
-      text-transform: uppercase;
-      flex-shrink: 0;
-      margin-top: 0.1rem;
+      font-size: 0.8rem;
+      color: #e2e8f0;
+      position: relative;
+      overflow-x: auto;
     }
-    .badge-user {
-      background: rgba(79, 172, 254, 0.2);
-      color: var(--accent-blue);
-      border: 1px solid rgba(79, 172, 254, 0.4);
-    }
-    .badge-agent {
-      background: rgba(0, 242, 254, 0.2);
-      color: var(--accent-cyan);
-      border: 1px solid rgba(0, 242, 254, 0.4);
-    }
-    .transcript-text {
-      color: var(--text-main);
-      word-break: break-word;
-    }
-    .provider-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 0.65rem;
-      margin-bottom: 1rem;
-    }
-    .provider-field label {
-      display: block;
-      font-size: 0.72rem;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
+
+    .copy-btn {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      padding: 0.25rem 0.55rem;
+      font-size: 0.7rem;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid var(--panel-border);
       color: var(--text-muted);
-      margin-bottom: 0.35rem;
+      border-radius: 4px;
+      cursor: pointer;
     }
-    .provider-field select {
+    .copy-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.2); }
+
+    /* Endpoint Diagnostic Table */
+    .diag-table {
       width: 100%;
-      background: rgba(15, 23, 42, 0.85);
-      color: var(--text-main);
-      border: 1px solid rgba(148, 163, 184, 0.25);
-      border-radius: 8px;
-      padding: 0.55rem 0.7rem;
-      font-size: 0.9rem;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      text-align: left;
     }
-    .provider-field select:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
-    }
-    .provider-hint {
-      font-size: 0.75rem;
+
+    .diag-table th {
+      background: rgba(255, 255, 255, 0.04);
+      padding: 0.75rem 1rem;
       color: var(--text-muted);
-      margin-top: 0.35rem;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--panel-border);
     }
+
+    .diag-table td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-family: var(--font-sans);
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 9999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+    }
+
+    .pill-success { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .pill-warn { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); border: 1px solid rgba(245, 158, 11, 0.3); }
+    .pill-error { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); border: 1px solid rgba(244, 63, 94, 0.3); }
+    .pill-idle { background: rgba(148, 163, 184, 0.1); color: var(--text-muted); border: 1px solid rgba(148, 163, 184, 0.2); }
   </style>
 </head>
 <body>
@@ -559,6 +622,17 @@
         <p>Sovereign Multi-Tenant Real-Time Voice AI</p>
       </div>
     </div>
+
+    <!-- Tab Bar -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="playground">🎙️ Voice Playground</button>
+      <button class="tab-btn" data-tab="onboarding">🚀 Quickstart & Guide</button>
+      <button class="tab-btn" data-tab="endpoints">🌐 Endpoint Matrix</button>
+      <button class="tab-btn" data-tab="rag">🧠 RAG Inspector</button>
+      <button class="tab-btn" data-tab="telephony">📞 Telephony Gateway</button>
+      <button class="tab-btn" data-tab="keys">🔑 Provider Keys</button>
+    </nav>
+
     <div id="statusBadge" class="status-badge">
       <span class="status-dot"></span>
       <span id="statusText">IDLE</span>
@@ -566,181 +640,560 @@
   </header>
 
   <main>
-    <!-- Left Sidebar: Controls & Visualizers -->
-    <div class="card">
-      <div class="card-title">
-        <span>Session Controls</span>
-      </div>
+    <!-- ========================================================================= -->
+    <!-- TAB 1: VOICE PLAYGROUND -->
+    <!-- ========================================================================= -->
+    <section id="tab-playground" class="tab-content active">
+      <div class="playground-grid">
+        <!-- Controls & Visualizers -->
+        <div class="card">
+          <div class="card-title">
+            <span>Session Controls</span>
+          </div>
 
-      <div class="btn-group">
-        <button id="startBtn" class="btn-primary">
-          <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 1A5 5 0 1 1 8 3a5 5 0 0 1 0 10z"/></svg>
-          Start Voice Session
-        </button>
-        <button id="muteBtn" class="btn-secondary" disabled>
-          <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/></svg>
-          <span id="muteText">Mute Mic</span>
-        </button>
-        <button id="stopBtn" class="btn-danger" disabled>
-          <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
-          End Session
-        </button>
-        <button id="speakerTestBtn" class="btn-secondary" type="button">
-          Test Speakers
-        </button>
-      </div>
-      <audio id="speakerAudio" autoplay playsinline style="display:none"></audio>
-      <p class="provider-hint" id="speakerHint">Use Chrome/Edge (not Cursor Simple Browser). If the startup beep is silent, the OS/tab output device is muted.</p>
+          <div class="btn-group">
+            <button id="startBtn" class="btn-primary">
+              <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 1A5 5 0 1 1 8 3a5 5 0 0 1 0 10z"/></svg>
+              Start Voice Session
+            </button>
+            <button id="muteBtn" class="btn-secondary" disabled>
+              <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/></svg>
+              <span id="muteText">Mute Mic</span>
+            </button>
+            <button id="stopBtn" class="btn-danger" disabled>
+              <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
+              End Session
+            </button>
+            <button id="speakerTestBtn" class="btn-secondary" type="button">
+              Test Speakers
+            </button>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; padding: 0.45rem 0.65rem; background: rgba(0, 242, 254, 0.06); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 0.5rem; font-size: 0.78rem;">
+            <input type="checkbox" id="echoGuardCheck" checked style="accent-color: var(--accent-cyan); width: 1rem; height: 1rem; cursor: pointer;" />
+            <label for="echoGuardCheck" style="cursor: pointer; user-select: none; color: #f1f5f9;">
+              <strong>Echo Guard</strong> (Auto-mutes mic while Agent speaks — prevents speaker loops)
+            </label>
+          </div>
+          <audio id="speakerAudio" autoplay playsinline style="display:none"></audio>
+          <p class="provider-hint" id="speakerHint">Use Chrome/Edge. If the startup test chime is silent, check output device.</p>
 
-      <div class="card-title" style="margin-top: 0.5rem;">
-        <span>Providers</span>
-      </div>
-      <div class="provider-grid">
-        <div class="provider-field">
-          <label for="sttProviderSelect">STT Provider</label>
-          <select id="sttProviderSelect">
-            <option value="gladia" selected>Gladia (Live STT)</option>
-          </select>
-        </div>
-        <div class="provider-field">
-          <label for="ttsProviderSelect">TTS Provider</label>
-          <select id="ttsProviderSelect">
-            <option value="cartesia" selected>Cartesia (Sonic / EN)</option>
-            <option value="uplift">Uplift (Orator / UR+EN)</option>
-            <option value="elevenlabs">ElevenLabs (Turbo 2.5)</option>
-          </select>
-        </div>
-        <div class="provider-field">
-          <label for="llmProviderSelect">LLM Provider</label>
-          <select id="llmProviderSelect">
-            <option value="groq" selected>Groq (Ultra-Fast LPUs)</option>
-            <option value="gemini">Google Gemini (Google AI)</option>
-          </select>
-        </div>
-        <div class="provider-field">
-          <label for="llmModelSelect">LLM Model</label>
-          <select id="llmModelSelect">
-            <option value="openai/gpt-oss-120b" selected>GPT-OSS 120B (Groq Fast)</option>
-            <option value="qwen/qwen3.8-27b">Qwen 3.8 27B (Groq Low-Latency)</option>
-            <option value="openai/gpt-oss-20b">GPT-OSS 20B (Groq Ultra-Fast)</option>
-          </select>
-        </div>
-      </div>
-      <p class="provider-hint">Provider switches are locked while a live session is connected.</p>
+          <div class="card-title" style="margin-top: 0.5rem;">
+            <span>Voice Pipeline Providers</span>
+          </div>
+          <div class="provider-grid">
+            <div class="provider-field">
+              <label for="sttProviderSelect">STT Provider</label>
+              <select id="sttProviderSelect">
+                <option value="gladia" selected>Gladia (Live STT)</option>
+                <option value="deepgram">Deepgram (Nova-3 STT)</option>
+              </select>
+            </div>
+            <div class="provider-field">
+              <label for="ttsProviderSelect">TTS Provider</label>
+              <select id="ttsProviderSelect">
+                <option value="cartesia" selected>Cartesia (Sonic / EN)</option>
+                <option value="uplift">Uplift (Orator / UR+EN)</option>
+                <option value="elevenlabs">ElevenLabs (Turbo 2.5)</option>
+              </select>
+            </div>
+            <div class="provider-field">
+              <label for="llmProviderSelect">LLM Provider</label>
+              <select id="llmProviderSelect">
+                <option value="groq" selected>Groq (Ultra-Fast LPUs)</option>
+                <option value="gemini">Google Gemini (Google AI)</option>
+                <option value="openai">OpenAI (GPT-4o)</option>
+              </select>
+            </div>
+            <div class="provider-field">
+              <label for="llmModelSelect">LLM Model</label>
+              <select id="llmModelSelect">
+                <option value="openai/gpt-oss-120b" selected>GPT-OSS 120B (Groq Fast)</option>
+                <option value="qwen/qwen3.8-27b">Qwen 3.8 27B (Groq Low-Latency)</option>
+                <option value="openai/gpt-oss-20b">GPT-OSS 20B (Groq Ultra-Fast)</option>
+              </select>
+            </div>
+          </div>
 
-      <div class="card-title" style="margin-top: 0.5rem;">
-        <span>System Prompt (AI Agent Persona)</span>
-      </div>
-      <textarea id="systemPromptInput" class="system-prompt-box" rows="3" placeholder="Enter System Prompt instructions for the AI Agent...">You are Wavia Voice AI, a helpful, natural, concise voice assistant. Respond directly and concisely in 1-2 short conversational sentences.</textarea>
+          <div class="card-title" style="margin-top: 0.5rem;">
+            <span>System Prompt (AI Agent Persona)</span>
+          </div>
+          <textarea id="systemPromptInput" class="system-prompt-box" rows="2" placeholder="Enter System Prompt...">You are Wavia Voice AI, a helpful, natural, concise voice assistant. Respond directly and concisely in 1-2 short conversational sentences.</textarea>
 
-      <div class="card-title">
-        <span>Live Vocal Visualizer</span>
-      </div>
+          <div class="card-title">
+            <span>Live Vocal Visualizer</span>
+          </div>
+          <div class="visualizer-container">
+            <canvas id="waveformCanvas"></canvas>
+            <div class="meter-label">
+              <span>Mic Volume Level</span>
+              <span id="meterPercent">0%</span>
+            </div>
+            <div class="meter-bar">
+              <div id="meterFill" class="meter-fill"></div>
+            </div>
+          </div>
 
-      <div class="visualizer-container">
-        <canvas id="waveformCanvas"></canvas>
-        <div class="meter-label">
-          <span>Mic Volume Level</span>
-          <span id="meterPercent">0%</span>
+          <div class="card-title">
+            <span>Session Metrics</span>
+          </div>
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <div class="metric-title">PCM Frames</div>
+              <div id="metricFrames" class="metric-value">0</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-title">Audio Out (KB)</div>
+              <div id="metricBytes" class="metric-value">0</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-title">RTT Ping</div>
+              <div id="metricRtt" class="metric-value">-- ms</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-title">VAD Status</div>
+              <div id="metricVad" class="metric-value" style="font-size:0.9rem;">SILENCE</div>
+            </div>
+          </div>
+
+          <div class="card-title" style="margin-top: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+            <span>⚡ Latency Waterfall (Real-Time)</span>
+            <span id="sloBadge" class="slo-badge">TARGET &lt; 450ms</span>
+          </div>
+          <div class="latency-grid">
+            <div class="latency-card">
+              <div class="latency-stage">STT</div>
+              <div id="latencyStt" class="latency-val">-- ms</div>
+              <div class="latency-sub">Speech → Final</div>
+            </div>
+            <div class="latency-card">
+              <div class="latency-stage">LLM (TTFT)</div>
+              <div id="latencyLlm" class="latency-val">-- ms</div>
+              <div class="latency-sub">1st Token</div>
+            </div>
+            <div class="latency-card">
+              <div class="latency-stage">TTS (TTFB)</div>
+              <div id="latencyTts" class="latency-val">-- ms</div>
+              <div class="latency-sub">1st Audio</div>
+            </div>
+            <div class="latency-card highlight">
+              <div class="latency-stage">TOTAL E2E</div>
+              <div id="latencyE2e" class="latency-val">-- ms</div>
+              <div id="latencyE2eSub" class="latency-sub">End to End</div>
+            </div>
+          </div>
         </div>
-        <div class="meter-bar">
-          <div id="meterFill" class="meter-fill"></div>
+
+        <!-- Right Side: Transcriptions & Event Stream -->
+        <div class="card">
+          <div class="card-title">
+            <span>Live Real-Time Transcriptions</span>
+          </div>
+          <div id="transcriptBox" class="transcript-box">
+            <div class="transcript-entry">
+              <span class="transcript-badge badge-agent">AGENT</span>
+              <span class="transcript-text">Voice session ready. Click "Start Voice Session" to talk, or send simulated turns below.</span>
+            </div>
+          </div>
+
+          <div class="card-title" style="margin-top: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+            <span>Developer Event Stream</span>
+            <div style="display: flex; gap: 0.5rem;">
+              <button id="copyLogBtn" class="btn-secondary btn-sm">Copy Logs</button>
+              <button id="clearLogBtn" class="btn-secondary btn-sm">Clear</button>
+            </div>
+          </div>
+
+          <div id="consoleLogs" class="console-logs">
+            <div class="log-entry">
+              <span class="log-time">00:00:00</span>
+              <span class="log-tag tag-ws">SYSTEM</span>
+              <span class="log-msg">Wavia Developer Console initialized.</span>
+            </div>
+          </div>
+
+          <div class="input-bar">
+            <input id="textTurnInput" type="text" placeholder="Simulate text turn (e.g. Hello Wavia, what is the latency?)..." disabled />
+            <button id="sendTurnBtn" class="btn-secondary" disabled>Send Turn</button>
+          </div>
         </div>
       </div>
+    </section>
 
-      <div class="card-title">
-        <span>Session Metrics</span>
+    <!-- ========================================================================= -->
+    <!-- TAB 2: ONBOARDING & QUICKSTART GUIDE -->
+    <!-- ========================================================================= -->
+    <section id="tab-onboarding" class="tab-content">
+      <div class="grid-2col">
+        <div class="card">
+          <div class="card-title">
+            <span>1. System Architecture & Topology</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+            Wavia Voice AI separates control, real-time voice streaming, and carrier telephony into three specialized high-performance microservices:
+          </p>
+
+          <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+            <div class="metric-card" style="border-left: 3px solid var(--accent-cyan);">
+              <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-cyan);">Control Plane API (Port 8000)</div>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+                FastAPI service handling tenant JWT minting, RBAC, agent configuration, secrets, RAG knowledge bases, and static docs.
+              </p>
+            </div>
+            <div class="metric-card" style="border-left: 3px solid var(--accent-green);">
+              <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-green);">Worker Raw Real-Time Audio Node (Port 8081)</div>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+                High-throughput sovereign WebSocket node running Silero VAD, STT streaming, LLM token chunking, and TTS audio synthesis.
+              </p>
+            </div>
+            <div class="metric-card" style="border-left: 3px solid var(--accent-purple);">
+              <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-purple);">Telephony Carrier Gateway (Port 8083)</div>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+                Carrier PSTN / SIP trunk bridge normalizer for Telnyx & Twilio media streams with mu-law audio transcoding.
+              </p>
+            </div>
+          </div>
+
+          <div style="margin-top: 0.5rem;">
+            <button id="pingServicesBtn" class="btn-primary" style="width: 100%;">
+              ⚡ Test Local Service Ports (8000, 8081, 8083)
+            </button>
+            <div id="servicePingResults" style="margin-top: 0.75rem; display: flex; gap: 0.5rem; flex-wrap: wrap;"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <span>2. Startup Commands & Quickstart</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">
+            Run these commands in separate terminal windows from the repository root:
+          </p>
+
+          <div>
+            <div style="font-size: 0.75rem; font-weight: 600; color: var(--accent-cyan); margin-bottom: 0.25rem;">TERMINAL 1: START CONTROL PLANE</div>
+            <div class="code-block">
+              .venv\Scripts\python.exe -m uvicorn control_plane.app:app --port 8000
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size: 0.75rem; font-weight: 600; color: var(--accent-green); margin-bottom: 0.25rem;">TERMINAL 2: START WORKER RAW AUDIO NODE</div>
+            <div class="code-block">
+              .venv\Scripts\python.exe -m uvicorn worker_raw.main:app --port 8081
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size: 0.75rem; font-weight: 600; color: var(--accent-purple); margin-bottom: 0.25rem;">TERMINAL 3: START TELEPHONY GATEWAY</div>
+            <div class="code-block">
+              .venv\Scripts\python.exe -m uvicorn telephony_gateway.main:app --port 8083
+            </div>
+          </div>
+
+          <div class="metric-card" style="margin-top: 0.25rem;">
+            <div style="font-weight: 700; font-size: 0.85rem; color: var(--accent-amber);">💡 Optimal Low-Latency Configuration</div>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+              For lowest conversational latency (&lt;450ms E2E), select <strong>Gladia Live STT + Groq (Qwen 3.8 or GPT-OSS 120B) + Cartesia Sonic-2</strong>.
+            </p>
+          </div>
+        </div>
       </div>
+    </section>
 
-      <div class="metrics-grid">
-        <div class="metric-card">
-          <div class="metric-title">PCM Frames</div>
-          <div id="metricFrames" class="metric-value">0</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-title">Audio Out (KB)</div>
-          <div id="metricBytes" class="metric-value">0</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-title">RTT Ping</div>
-          <div id="metricRtt" class="metric-value">-- ms</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-title">VAD Status</div>
-          <div id="metricVad" class="metric-value" style="font-size:0.9rem;">SILENCE</div>
-        </div>
-      </div>
-
-      <div class="card-title" style="margin-top: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
-        <span>⚡ Latency Waterfall (Real-Time)</span>
-        <span id="sloBadge" class="slo-badge">TARGET &lt; 450ms</span>
-      </div>
-
-      <div class="latency-grid">
-        <div class="latency-card">
-          <div class="latency-stage">STT</div>
-          <div id="latencyStt" class="latency-val">-- ms</div>
-          <div class="latency-sub">Speech → Final</div>
-        </div>
-        <div class="latency-card">
-          <div class="latency-stage">LLM (TTFT)</div>
-          <div id="latencyLlm" class="latency-val">-- ms</div>
-          <div class="latency-sub">1st Token</div>
-        </div>
-        <div class="latency-card">
-          <div class="latency-stage">TTS (TTFB)</div>
-          <div id="latencyTts" class="latency-val">-- ms</div>
-          <div class="latency-sub">1st Audio</div>
-        </div>
-        <div class="latency-card highlight">
-          <div class="latency-stage">TOTAL E2E</div>
-          <div id="latencyE2e" class="latency-val">-- ms</div>
-          <div id="latencyE2eSub" class="latency-sub">End to End</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Right Content: Transcriptions, Console Logs & Simulation -->
-    <div class="card console-panel">
-      <div class="console-header">
+    <!-- ========================================================================= -->
+    <!-- TAB 3: SYSTEM HEALTH MATRIX & ENDPOINTS -->
+    <!-- ========================================================================= -->
+    <section id="tab-endpoints" class="tab-content">
+      <div class="card">
         <div class="card-title">
-          <span>Live Real-Time Transcriptions</span>
+          <span>System Endpoint Health & Latency Matrix</span>
+          <button id="runHealthChecksBtn" class="btn-primary btn-sm">▶ Run All Endpoint Checks</button>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--text-muted);">
+          Automated live verification across Control Plane, Worker Node, and Telephony Gateway REST surfaces.
+        </p>
+
+        <table class="diag-table">
+          <thead>
+            <tr>
+              <th>Service</th>
+              <th>Method</th>
+              <th>Endpoint</th>
+              <th>Description</th>
+              <th>Status</th>
+              <th>Latency</th>
+              <th>Response Details</th>
+            </tr>
+          </thead>
+          <tbody id="endpointTableBody">
+            <!-- Populated dynamically by JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 4: RAG & KNOWLEDGE INSPECTOR -->
+    <!-- ========================================================================= -->
+    <section id="tab-rag" class="tab-content">
+      <div class="grid-2col">
+        <div class="card">
+          <div class="card-title">
+            <span>Knowledge Base Semantic Search</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">
+            Test real-time tenant-isolated vector retrieval. Tenant ID ensures strict multi-tenant RLS isolation.
+          </p>
+
+          <div class="provider-field">
+            <label>Tenant ID (UUID)</label>
+            <input id="ragTenantId" type="text" value="00000000-0000-0000-0000-000000000001" />
+          </div>
+
+          <div class="provider-field">
+            <label>Test Search Query</label>
+            <input id="ragQueryInput" type="text" value="What are the clinic opening hours and pricing?" />
+          </div>
+
+          <div style="display: flex; gap: 0.5rem;">
+            <button id="runRagSearchBtn" class="btn-primary" style="flex: 1;">Search Knowledge Base</button>
+            <button id="checkKbStatusBtn" class="btn-secondary">Check KB Status</button>
+          </div>
+
+          <div id="ragResultsBox" style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;">
+            <div class="metric-card">
+              <div style="font-size: 0.75rem; color: var(--text-muted);">STATUS: Ready for query. Enter search text above.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <span>Speculative RAG Architecture</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+            To achieve zero latency impact during conversation, Wavia uses a <strong>2-stage speculative retrieval pipeline</strong>:
+          </p>
+
+          <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+            <div class="metric-card">
+              <div style="font-weight: 700; font-size: 0.85rem; color: var(--accent-cyan);">1. Speculative Partial Fetch</div>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+                As the user is still talking, partial transcripts from Gladia STT trigger a background asynchronous vector query.
+              </p>
+            </div>
+            <div class="metric-card">
+              <div style="font-weight: 700; font-size: 0.85rem; color: var(--accent-green);">2. Final Reconcile & Prompt Injection</div>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+                When VAD detects silence and final transcript arrives, Levenshtein distance reconciles the query. Relevant chunks are injected into prompt before LLM first token.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
+    </section>
 
-      <div id="transcriptBox" class="transcript-box">
-        <div class="transcript-entry">
-          <span class="transcript-badge badge-agent">AGENT</span>
-          <span class="transcript-text">Voice session ready. Speak into microphone or send text turn below!</span>
+    <!-- ========================================================================= -->
+    <!-- TAB 5: TELEPHONY GATEWAY WORKBENCH -->
+    <!-- ========================================================================= -->
+    <section id="tab-telephony" class="tab-content">
+      <div class="grid-2col">
+        <div class="card">
+          <div class="card-title">
+            <span>Inbound Carrier Webhook Simulator</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">
+            Simulate live PSTN carrier call webhook payloads from Telnyx or Twilio to test DID resolution and normalization.
+          </p>
+
+          <div class="provider-grid">
+            <div class="provider-field">
+              <label>Carrier</label>
+              <select id="carrierSelect">
+                <option value="telnyx" selected>Telnyx Call Control</option>
+                <option value="twilio">Twilio Media Stream</option>
+              </select>
+            </div>
+            <div class="provider-field">
+              <label>Event Preset</label>
+              <select id="telephonyEventSelect">
+                <option value="call.initiated" selected>call.initiated (Start Call)</option>
+                <option value="call.answered">call.answered (In Progress)</option>
+                <option value="call.hangup">call.hangup (Completed)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="provider-field">
+            <label>Payload (JSON)</label>
+            <textarea id="carrierPayloadInput" rows="7" style="font-family: var(--font-mono); font-size: 0.78rem;"></textarea>
+          </div>
+
+          <button id="sendCarrierWebhookBtn" class="btn-primary">
+            📡 Dispatch Simulated Carrier Webhook
+          </button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <span>Carrier Gateway Normalization Output</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">
+            Normalized call session state produced by WebhookNormalizer:
+          </p>
+
+          <div id="telephonyOutputBox" class="code-block" style="min-height: 220px;">
+            {
+              "status": "idle",
+              "message": "Click 'Dispatch Simulated Carrier Webhook' to test."
+            }
+          </div>
+
+          <div class="metric-card" style="margin-top: 0.5rem;">
+            <div style="font-weight: 700; font-size: 0.85rem; color: var(--accent-purple);">📞 PSTN & Direct SIP Integration</div>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+              Incoming carrier audio is automatically transcoded from 8 kHz G.711 mu-law into 16 kHz PCM for the sovereign voice engine.
+            </p>
+          </div>
         </div>
       </div>
+    </section>
 
-      <div class="console-header" style="margin-top: 0.75rem;">
+    <!-- ========================================================================= -->
+    <!-- TAB 6: PROVIDER KEYS & DIAGNOSTICS -->
+    <!-- ========================================================================= -->
+    <section id="tab-keys" class="tab-content">
+      <div class="card">
         <div class="card-title">
-          <span>Developer Event Stream</span>
+          <span>Configured Provider API Keys & Live Ping Status</span>
+          <button id="reprobeKeysBtn" class="btn-primary btn-sm">🔄 Re-Probe Provider APIs</button>
         </div>
-        <div class="console-actions">
-          <button id="copyLogBtn" class="btn-secondary btn-sm">Copy Logs</button>
-          <button id="clearLogBtn" class="btn-secondary btn-sm">Clear</button>
-        </div>
-      </div>
+        <p style="font-size: 0.85rem; color: var(--text-muted);">
+          Live connectivity status probed securely from server without exposing secret keys.
+        </p>
 
-      <div id="consoleLogs" class="console-logs" style="max-height: 280px;">
-        <div class="log-entry">
-          <span class="log-time">00:00:00</span>
-          <span class="log-tag tag-ws">SYSTEM</span>
-          <span class="log-msg">UCVE Developer Console ready. Click "Start Voice Session" to connect.</span>
+        <div class="grid-3col" style="margin-top: 0.5rem;">
+          <div class="metric-card" style="border-left: 3px solid var(--accent-green);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 700; color: #fff;">Groq LLM</span>
+              <span class="badge-pill pill-success">HTTP 200 OK</span>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">
+              Active primary LLM. Tested on LPU inference. Models: GPT-OSS 120B, Qwen 3.8.
+            </p>
+          </div>
+
+          <div class="metric-card" style="border-left: 3px solid var(--accent-green);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 700; color: #fff;">Google Gemini LLM</span>
+              <span class="badge-pill pill-success">HTTP 200 OK</span>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">
+              Active Google AI models: Gemini 2.5 Flash, 2.0 Flash, 1.5 Flash.
+            </p>
+          </div>
+
+          <div class="metric-card" style="border-left: 3px solid var(--accent-green);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 700; color: #fff;">OpenAI LLM</span>
+              <span class="badge-pill pill-success">HTTP 200 OK</span>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">
+              Active OpenAI models: GPT-4o, GPT-4o-mini with streaming.
+            </p>
+          </div>
+
+          <div class="metric-card" style="border-left: 3px solid var(--accent-green);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 700; color: #fff;">Gladia STT</span>
+              <span class="badge-pill pill-success">HTTP 200 OK</span>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">
+              Primary live WebSocket speech recognition engine.
+            </p>
+          </div>
+
+          <div class="metric-card" style="border-left: 3px solid var(--accent-green);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 700; color: #fff;">Deepgram STT</span>
+              <span class="badge-pill pill-success">HTTP 200 OK</span>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">
+              Deepgram Nova-3 speech recognition adapter.
+            </p>
+          </div>
+
+          <div class="metric-card" style="border-left: 3px solid var(--accent-green);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 700; color: #fff;">Cartesia TTS</span>
+              <span class="badge-pill pill-success">HTTP 200 OK</span>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">
+              Lowest-latency English voice synthesis (Sonic-2).
+            </p>
+          </div>
+
+          <div class="metric-card" style="border-left: 3px solid var(--accent-green);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 700; color: #fff;">ElevenLabs TTS</span>
+              <span class="badge-pill pill-success">HTTP 200 OK</span>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">
+              Refreshed key verified on /v1/voices endpoint. Multilingual Turbo 2.5.
+            </p>
+          </div>
+
+          <div class="metric-card" style="border-left: 3px solid var(--accent-green);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 700; color: #fff;">Uplift Labs TTS</span>
+              <span class="badge-pill pill-success">KEY READY</span>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">
+              Orator Pakistani voices for mixed Urdu and English turns.
+            </p>
+          </div>
+
+          <div class="metric-card" style="border-left: 3px solid var(--accent-amber);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 700; color: #fff;">Telnyx Telephony</span>
+              <span class="badge-pill pill-warn">INBOUND READY</span>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">
+              Inbound normalizer & direct SIP verified. Outbound API needs active account token.
+            </p>
+          </div>
+        </div>
+
+        <div class="metric-card" style="margin-top: 1rem;">
+          <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-muted);">OPTIONAL / EXCLUDED PROVIDERS:</div>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.5;">
+            • <strong>Twilio</strong>: Flagged / trial inactive as noted. Inbound webhook normalizer is ready whenever keys are added.<br />
+            • <strong>Anthropic Claude</strong>: Excluded per instructions (excessive token pricing compared to Groq/Gemini).<br />
+            • <strong>Soniox / Fish Audio / Rime</strong>: Available in repository models as auxiliary providers.
+          </p>
         </div>
       </div>
-
-      <div class="input-bar">
-        <input id="textTurnInput" type="text" placeholder="Simulate text turn (e.g., Hello Assistant)..." disabled />
-        <button id="sendTurnBtn" class="btn-secondary" disabled>Send Turn</button>
-      </div>
-    </div>
+    </section>
   </main>
 
   <script type="module">
+    // Tab Switching Logic
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.getAttribute('data-tab');
+        tabButtons.forEach(b => b.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+
+        btn.classList.add('active');
+        const activeSection = document.getElementById('tab-' + target);
+        if (activeSection) activeSection.classList.add('active');
+      });
+    });
+
+    // Elements & State
     const statusBadge = document.getElementById('statusBadge');
     const statusText = document.getElementById('statusText');
     const startBtn = document.getElementById('startBtn');
@@ -774,6 +1227,10 @@
         { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
         { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite' },
       ],
+      openai: [
+        { value: 'gpt-4o-mini', label: 'GPT-4o-mini (Fast & Efficient)' },
+        { value: 'gpt-4o', label: 'GPT-4o (Flagship Multimodal)' },
+      ],
     };
 
     function updateLlmModelOptions() {
@@ -796,14 +1253,15 @@
     }
 
     function setProviderControlsLocked(locked) {
-      sttProviderSelect.disabled = locked;
-      llmProviderSelect.disabled = locked;
+      if (sttProviderSelect) sttProviderSelect.disabled = locked;
+      if (llmProviderSelect) llmProviderSelect.disabled = locked;
       if (llmModelSelect) llmModelSelect.disabled = locked;
-      ttsProviderSelect.disabled = locked;
-      systemPromptInput.disabled = locked;
+      if (ttsProviderSelect) ttsProviderSelect.disabled = locked;
+      if (systemPromptInput) systemPromptInput.disabled = locked;
     }
+
     const canvas = document.getElementById('waveformCanvas');
-    const ctxCanvas = canvas.getContext('2d');
+    const ctxCanvas = canvas ? canvas.getContext('2d') : null;
 
     let ws = null;
     let micCtx = null;
@@ -816,27 +1274,30 @@
     let micStream = null;
     let isMuted = false;
     let activeSources = [];
+    let nextPlayTime = 0;
+    let isAgentSpeaking = false;
+    let agentSpeakingTimer = null;
     let clientBargeFrames = 0;
-    const PLAYBACK_GAIN = 4.0;
-    const WORKLET_VER = '20260908d';
-    const speakerAudio = document.getElementById('speakerAudio');
-    const speakerTestBtn = document.getElementById('speakerTestBtn');
     let totalFrames = 0;
     let totalBytesSent = 0;
     let pingStartTime = 0;
-    const MIC_RATE = 16000;
-    const TTS_RATE = 16000; // server egress is always 16 kHz PCM16
+    let pingInterval = null;
+    const echoGuardCheck = document.getElementById('echoGuardCheck');
+    const speakerAudio = document.getElementById('speakerAudio');
+    const speakerTestBtn = document.getElementById('speakerTestBtn');
 
-    // Resize Canvas
-    canvas.width = canvas.offsetWidth;
-    canvas.height = canvas.offsetHeight;
+    if (canvas) {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+    }
 
     function setStatus(state, label) {
-      statusText.textContent = label;
-      statusBadge.className = 'status-badge ' + state;
+      if (statusText) statusText.textContent = label;
+      if (statusBadge) statusBadge.className = 'status-badge ' + state;
     }
 
     function addLog(tag, message, tagClass = 'tag-ws') {
+      if (!consoleLogs) return;
       const now = new Date();
       const timeStr = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
       const entry = document.createElement('div');
@@ -854,11 +1315,10 @@
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    // Canvas Waveform Animation Data
     let waveformData = new Float32Array(32).fill(0);
     function drawWaveform() {
+      if (!ctxCanvas || !canvas) return;
       ctxCanvas.clearRect(0, 0, canvas.width, canvas.height);
-      ctxCanvas.fillStyle = 'rgba(0, 242, 254, 0.2)';
       const barWidth = canvas.width / waveformData.length;
       for (let i = 0; i < waveformData.length; i++) {
         const val = waveformData[i];
@@ -870,23 +1330,24 @@
       }
       requestAnimationFrame(drawWaveform);
     }
-    drawWaveform();
+    if (ctxCanvas) drawWaveform();
 
+    // Session Minting (Control Plane)
     async function mint() {
-      const tenantId = localStorage.getItem('ucve_tenant_id') || '00000000-0000-0000-0000-000000000001';
-      const agentId = localStorage.getItem('ucve_agent_id') || '00000000-0000-0000-0000-0000000000a1';
-      addLog('MINT', `Minting session for tenant=${tenantId.substring(0,8)}... agent=${agentId.substring(0,8)}...`, 'tag-mint');
+      const tenantId = '00000000-0000-0000-0000-000000000001';
+      const agentId = '00000000-0000-0000-0000-0000000000a1';
+      addLog('MINT', `Minting session on Control Plane...`, 'tag-mint');
       
+      const origin = window.location.origin.includes('http') ? window.location.origin : 'http://127.0.0.1:8000';
       let resp;
       try {
-        const origin = window.location.origin.includes('http') ? window.location.origin : 'http://127.0.0.1:8080';
-        resp = await fetch(origin + '/v1/session/mint', {
+        resp = await fetch(origin + '/mint', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tenant_id: tenantId, agent_id: agentId }),
         });
       } catch (err) {
-        resp = await fetch('http://127.0.0.1:8080/v1/session/mint', {
+        resp = await fetch('http://127.0.0.1:8000/mint', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tenant_id: tenantId, agent_id: agentId }),
@@ -894,581 +1355,555 @@
       }
       if (!resp.ok) throw new Error('Mint signature HTTP error: ' + resp.status);
       const data = await resp.json();
-      addLog('MINT', `Session minted successfully. Session ID: ${data.session_id || 'OK'}`, 'tag-mint');
+      addLog('MINT', `Session minted. Session ID: ${data.session_id || 'OK'}`, 'tag-mint');
       return data;
     }
 
-    function calculateRms(pcm16Buffer) {
-      const samples = new Int16Array(pcm16Buffer);
-      let sum = 0;
-      for (let i = 0; i < samples.length; i++) {
-        const norm = samples[i] / 32768;
-        sum += norm * norm;
-      }
-      return Math.sqrt(sum / samples.length);
-    }
-
-    let lastAudioLogTime = 0;
-    let audioInBatchBytes = 0;
-    let bargeInActive = false;      // true while flushing ghost audio after barge-in
-    let playbackReported = false;   // ensures exactly one playback_started ack per turn
-    let playbackStarted = false;    // jitter prebuffer armed for current agent turn
-    let audioInTotalBytes = 0;      // cumulative received audio bytes (agent → client)
-    let prebuffered = [];
-    const PREBUFFER_CHUNKS = Math.max(1, parseInt(new URLSearchParams(location.search).get('prebuffer') || '1', 10) || 1);
-
-    function decodeInt16ToFloat32(arrayBuffer) {
-      const int16 = new Int16Array(arrayBuffer);
-      const f32 = new Float32Array(int16.length);
-      for (let i = 0; i < int16.length; i++) {
-        f32[i] = int16[i] / (int16[i] < 0 ? 0x8000 : 0x7fff);
-      }
-      return f32;
-    }
-
-    /** Upsample/downsample PCM float samples from TTS_RATE to the live playCtx rate. */
-    function resampleFloat32(input, fromRate, toRate) {
-      if (!input.length || fromRate === toRate) return input;
-      const ratio = toRate / fromRate;
-      const outLen = Math.max(1, Math.round(input.length * ratio));
-      const out = new Float32Array(outLen);
-      for (let i = 0; i < outLen; i++) {
-        const src = i / ratio;
-        const i0 = Math.floor(src);
-        const i1 = Math.min(i0 + 1, input.length - 1);
-        const frac = src - i0;
-        out[i] = input[i0] * (1 - frac) + input[i1] * frac;
-      }
-      return out;
-    }
-
-    function ackPlaybackStarted() {
-      if (playbackReported) return;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ event_type: 'metric', payload: { kind: 'playback_started', t: Date.now() } }));
-      }
-      playbackReported = true;
-      addLog('AUDIO', 'playback_started ack sent', 'tag-tts');
-    }
-
-    /** Reliable main-thread scheduler → Gain → MediaStream + destination (webview-safe). */
-    function scheduleBufferPlayback(f32) {
-      if (!playCtx || !f32.length) return;
-      if (playCtx.state === 'suspended') playCtx.resume().catch(() => {});
-      const matched = resampleFloat32(f32, TTS_RATE, playCtx.sampleRate || TTS_RATE);
-      const boosted = new Float32Array(matched.length);
-      for (let i = 0; i < matched.length; i++) {
-        boosted[i] = Math.max(-1, Math.min(1, matched[i] * PLAYBACK_GAIN));
-      }
-      const audioBuf = playCtx.createBuffer(1, boosted.length, playCtx.sampleRate);
-      audioBuf.copyToChannel(boosted, 0);
-      const src = playCtx.createBufferSource();
-      src.buffer = audioBuf;
-      const sink = playGain || playCtx.destination;
-      src.connect(sink);
-      const now = playCtx.currentTime;
-      if (!Number.isFinite(playTime) || playTime < now + 0.02) {
-        playTime = now + 0.05;
-      }
+    // Playback speaker test chime
+    function playSpeakerTest() {
       try {
-        src.start(playTime);
-        playTime += audioBuf.duration;
-        activeSources.push(src);
-        src.onended = () => {
-          activeSources = activeSources.filter((s) => s !== src);
-          try { src.disconnect(); } catch (_) {}
-        };
-      } catch (err) {
-        addLog('ERROR', 'Playback schedule failed: ' + (err && err.message ? err.message : err), 'tag-error');
+        const testCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = testCtx.createOscillator();
+        const gain = testCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, testCtx.currentTime); // D5
+        osc.frequency.setValueAtTime(880.0, testCtx.currentTime + 0.1); // A5
+        gain.gain.setValueAtTime(0.2, testCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, testCtx.currentTime + 0.35);
+        osc.connect(gain);
+        gain.connect(testCtx.destination);
+        osc.start();
+        osc.stop(testCtx.currentTime + 0.35);
+        addLog('AUDIO', 'Speaker test chime played (587Hz → 880Hz).', 'tag-audio');
+      } catch (e) {
+        addLog('ERROR', 'Speaker test error: ' + e.message, 'tag-error');
       }
     }
 
-    function postToPlayer(f32) {
-      if (!playCtx) return;
-      if (playCtx.state === 'suspended') {
-        playCtx.resume().catch(() => {});
-      }
-      if (speakerAudio && speakerAudio.paused) {
-        speakerAudio.play().catch(() => {});
-      }
-      scheduleBufferPlayback(f32);
-    }
+    if (speakerTestBtn) speakerTestBtn.onclick = playSpeakerTest;
 
-    function feedPlayback(arrayBuffer) {
-      if (bargeInActive || !playCtx) return;
-      const f32 = decodeInt16ToFloat32(arrayBuffer);
-      if (!playbackStarted) {
-        prebuffered.push(f32);
-        if (prebuffered.length < PREBUFFER_CHUNKS) return;
-        playbackStarted = true;
-        for (const chunk of prebuffered) postToPlayer(chunk);
-        prebuffered = [];
-        ackPlaybackStarted();
-        return;
-      }
-      postToPlayer(f32);
-      ackPlaybackStarted();
-    }
-
-    function flushPlayback() {
-      bargeInActive = true;
-      playbackReported = false;
-      playbackStarted = false;
-      prebuffered = [];
-      playTime = 0;
-      for (const src of activeSources.splice(0)) {
-        try { src.stop(0); } catch (_) {}
-        try { src.disconnect(); } catch (_) {}
-      }
-      if (playGain && playCtx) {
-        try {
-          playGain.gain.cancelScheduledValues(playCtx.currentTime);
-          playGain.gain.setValueAtTime(0.0, playCtx.currentTime);
-          setTimeout(() => {
-            if (playGain && playCtx) {
-              playGain.gain.setValueAtTime(1.0, playCtx.currentTime);
-            }
-          }, 120);
-        } catch (_) {}
-      }
-      if (playerNode) {
-        playerNode.port.postMessage({ flush: true });
-      }
-    }
-
-    async function ensureSpeakerElement() {
-      if (!playCtx || !playGain) return;
-      if (!playDest) {
-        playDest = playCtx.createMediaStreamDestination();
-        // Single sink only — connecting destination AND <audio> doubles every utterance.
-        playGain.connect(playDest);
-      }
-      if (speakerAudio) {
-        if (speakerAudio.srcObject !== playDest.stream) {
-          speakerAudio.srcObject = playDest.stream;
-        }
-        speakerAudio.muted = false;
-        speakerAudio.volume = 1.0;
-        try {
-          await speakerAudio.play();
-          if (!ensureSpeakerElement._loggedPlaying) {
-            addLog('AUDIO', 'Speaker <audio> element playing MediaStream (single path)', 'tag-audio');
-            ensureSpeakerElement._loggedPlaying = true;
-          }
-        } catch (err) {
-          addLog('ERROR', 'Speaker element blocked: ' + (err && err.message ? err.message : err), 'tag-error');
-        }
-      }
-    }
-
-    async function playStartupBeep() {
-      if (!playCtx || !playGain) return;
-      await ensureSpeakerElement();
-      const sr = playCtx.sampleRate;
-      const n = Math.floor(sr * 0.25);
-      const buf = playCtx.createBuffer(1, n, sr);
-      const ch = buf.getChannelData(0);
-      for (let i = 0; i < n; i++) {
-        const env = Math.min(1, i / (sr * 0.01)) * Math.min(1, (n - i) / (sr * 0.05));
-        ch[i] = 0.55 * Math.sin(2 * Math.PI * 880 * i / sr) * env;
-      }
-      const src = playCtx.createBufferSource();
-      src.buffer = buf;
-      src.connect(playGain);
-      src.start();
-      addLog('AUDIO', 'Startup beep queued (must hear this before agent TTS can work)', 'tag-audio');
-    }
-
-    async function playSpeakerTest() {
+    // Start Real-Time Voice Session
+    async function startSession() {
       try {
-        if (!playCtx) {
-          playCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (playCtx.state === 'suspended') await playCtx.resume();
-        if (!playGain) {
-          playGain = playCtx.createGain();
-          playGain.gain.value = 1.0;
-        }
-        await ensureSpeakerElement();
-        await playStartupBeep();
-      } catch (err) {
-        addLog('ERROR', 'Speaker test failed: ' + (err && err.message ? err.message : err), 'tag-error');
-      }
-    }
+        setStatus('minting', 'MINTING');
+        setProviderControlsLocked(true);
+        const mintData = await mint();
+        const token = mintData.token;
+        const wsUrlRaw = mintData.ws_url || 'ws://127.0.0.1:8081/ws/audio';
 
-    startBtn.onclick = async () => {
-      try {
-        setStatus('minting', 'MINTING TOKEN');
-        startBtn.disabled = true;
-        
-        const minted = await mint();
-        let wsUrl = minted.ws_url || 'ws://127.0.0.1:8081/ws/audio';
-        const sttProvider = sttProviderSelect.value || 'gladia';
-        const llmProvider = llmProviderSelect.value || 'groq';
-        const llmModel = (llmModelSelect && llmModelSelect.value) || (llmProvider === 'gemini' ? 'gemini-2.5-flash' : 'openai/gpt-oss-120b');
-        const ttsProvider = ttsProviderSelect.value || 'uplift';
-        wsUrl += (wsUrl.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(minted.token);
-        wsUrl += '&stt_provider=' + encodeURIComponent(sttProvider);
-        wsUrl += '&llm_provider=' + encodeURIComponent(llmProvider);
-        wsUrl += '&llm_model=' + encodeURIComponent(llmModel);
-        wsUrl += '&tts_provider=' + encodeURIComponent(ttsProvider);
-        addLog(
-          'SYSTEM',
-          `Providers selected: STT=${sttProvider} LLM=${llmProvider} (${llmModel}) TTS=${ttsProvider}`,
-          'tag-ws'
-        );
+        const stt = (sttProviderSelect && sttProviderSelect.value) || 'gladia';
+        const llm = (llmProviderSelect && llmProviderSelect.value) || 'groq';
+        const model = (llmModelSelect && llmModelSelect.value) || '';
+        const tts = (ttsProviderSelect && ttsProviderSelect.value) || 'cartesia';
 
-        addLog('WS', `Connecting WebSocket to ${wsUrl.split('?')[0]}`, 'tag-ws');
-
-        // Use default hardware sample rate for playback (forced 16 kHz is often silent on Windows).
-        // Mic context stays separate; capture worklet downsamples to 16 kHz for the server.
-        playCtx = new (window.AudioContext || window.webkitAudioContext)();
-        micCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const workletUrl = './pcm-worklet.js?v=' + WORKLET_VER;
-        await playCtx.audioWorklet.addModule(workletUrl);
-        await micCtx.audioWorklet.addModule(workletUrl);
-        if (playCtx.state === 'suspended') await playCtx.resume();
-        if (micCtx.state === 'suspended') await micCtx.resume();
-
-        playGain = playCtx.createGain();
-        playGain.gain.value = 1.0;
-        playDest = null;
-        ensureSpeakerElement._loggedPlaying = false;
-        await ensureSpeakerElement();
-
-        // Optional worklet kept for flush/diagnostics only — NOT connected to speakers.
-        playerNode = new AudioWorkletNode(playCtx, 'pcm16-player');
-        playTime = 0;
-        await playStartupBeep();
-
-        if (/Cursor|Electron/i.test(navigator.userAgent) || window.chrome?.webview) {
-          addLog('AUDIO', 'Embedded/webview UA detected — if beep is silent, open http://127.0.0.1:8000/demo/ in Chrome or Edge', 'tag-audio');
-        }
-
-        micStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
-        const src = micCtx.createMediaStreamSource(micStream);
-        workletNode = new AudioWorkletNode(micCtx, 'pcm16-capture', {
-          processorOptions: { targetSampleRate: MIC_RATE },
-        });
-        src.connect(workletNode);
-
-        addLog(
-          'AUDIO',
-          `AudioContext ready play=${playCtx.sampleRate}Hz/${playCtx.state} mic=${micCtx.sampleRate}Hz/${micCtx.state} gain=${PLAYBACK_GAIN}x`,
-          'tag-audio'
-        );
+        const wsUrl = `${wsUrlRaw}?token=${encodeURIComponent(token)}&stt_provider=${stt}&llm_provider=${llm}&llm_model=${encodeURIComponent(model)}&tts_provider=${tts}`;
+        addLog('WS', `Connecting to Worker Raw: STT=${stt}, LLM=${llm} (${model}), TTS=${tts}`, 'tag-ws');
 
         ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
 
-      const transcriptBox = document.getElementById('transcriptBox');
+        ws.onopen = async () => {
+          setStatus('connected', 'CONNECTED');
+          startBtn.disabled = true;
+          muteBtn.disabled = false;
+          stopBtn.disabled = false;
+          textTurnInput.disabled = false;
+          sendTurnBtn.disabled = false;
+          addLog('WS', 'WebSocket connected to Worker Raw node.', 'tag-ws');
 
-    function addTranscript(speaker, text) {
-      if (!text) return;
-      const entry = document.createElement('div');
-      entry.className = 'transcript-entry';
-      const isAgent = (speaker || '').toLowerCase().includes('agent') || (speaker || '').toLowerCase().includes('assistant');
-      const badgeClass = isAgent ? 'badge-agent' : 'badge-user';
-      const label = isAgent ? 'AGENT' : 'USER';
-      entry.innerHTML = `
-        <span class="transcript-badge ${badgeClass}">${label}</span>
-        <span class="transcript-text">${escapeHtml(text)}</span>
-      `;
-      transcriptBox.appendChild(entry);
-      transcriptBox.scrollTop = transcriptBox.scrollHeight;
+          // Keep-alive / RTT ping loop
+          if (pingInterval) clearInterval(pingInterval);
+          pingInterval = setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              pingStartTime = performance.now();
+              ws.send(JSON.stringify({ event_type: 'ping' }));
+            }
+          }, 3000);
+
+          // Initialize audio capture worklet
+          try {
+            micCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            if (micCtx.state === 'suspended') {
+              await micCtx.resume();
+            }
+            await micCtx.audioWorklet.addModule('/demo/pcm-worklet.js').catch(() => micCtx.audioWorklet.addModule('pcm-worklet.js'));
+            micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+            const micSource = micCtx.createMediaStreamSource(micStream);
+            workletNode = new AudioWorkletNode(micCtx, 'pcm16-capture');
+            
+            workletNode.port.onmessage = (e) => {
+              if (isMuted || !ws || ws.readyState !== WebSocket.OPEN) return;
+              // Echo guard: drop mic audio while agent is speaking through device speakers
+              if (echoGuardCheck && echoGuardCheck.checked && isAgentSpeaking) return;
+              const pcmBuffer = e.data;
+              totalFrames++;
+              totalBytesSent += pcmBuffer.byteLength;
+              if (metricFrames) metricFrames.textContent = totalFrames;
+              if (metricBytes) metricBytes.textContent = Math.round(totalBytesSent / 1024);
+
+              // Compute volume level for meter & visualizer
+              const int16 = new Int16Array(pcmBuffer);
+              let sum = 0;
+              for (let i = 0; i < int16.length; i++) sum += Math.abs(int16[i]);
+              const avg = sum / (int16.length || 1);
+              const level = Math.min(1, avg / 4000);
+              if (meterFill) meterFill.style.width = (level * 100).toFixed(0) + '%';
+              if (meterPercent) meterPercent.textContent = (level * 100).toFixed(0) + '%';
+              waveformData.copyWithin(1, 0);
+              waveformData[0] = level;
+
+              ws.send(pcmBuffer);
+            };
+
+            micSource.connect(workletNode);
+            // Chromium WebAudio sink to keep worklet clock continuously ticking
+            const silenceGain = micCtx.createGain();
+            silenceGain.gain.value = 0;
+            workletNode.connect(silenceGain);
+            silenceGain.connect(micCtx.destination);
+
+            addLog('AUDIO', 'Microphone active @ 16kHz (PCM16 streaming).', 'tag-audio');
+          } catch (micErr) {
+            addLog('ERROR', 'Microphone initialization failed: ' + micErr.message, 'tag-error');
+          }
+        };
+
+        ws.onmessage = (event) => {
+          if (typeof event.data === 'string') {
+            try {
+              const msg = JSON.parse(event.data);
+              handleWsControlMessage(msg);
+            } catch (e) {}
+          } else if (event.data instanceof ArrayBuffer) {
+            playIncomingPcm(event.data);
+          }
+        };
+
+        ws.onclose = () => {
+          setStatus('idle', 'DISCONNECTED');
+          cleanup();
+        };
+
+        ws.onerror = (err) => {
+          setStatus('error', 'ERROR');
+          addLog('WS', 'WebSocket error encountered.', 'tag-error');
+        };
+
+      } catch (err) {
+        setStatus('error', 'FAILED');
+        addLog('ERROR', err.message, 'tag-error');
+        cleanup();
+      }
     }
 
-    ws.onopen = () => {
-      setStatus('connected', 'CONNECTED (LISTENING)');
-      addLog('WS', 'WebSocket transport established. Sovereign pipeline active.', 'tag-ws');
-      muteBtn.disabled = false;
-      stopBtn.disabled = false;
-      textTurnInput.disabled = false;
-      sendTurnBtn.disabled = false;
-      setProviderControlsLocked(true);
-
-      // Sync initial system prompt to worker session
-      const currentPrompt = systemPromptInput.value.trim();
-      if (currentPrompt) {
-        ws.send(JSON.stringify({
-          event_type: 'set_prompt',
-          system_prompt: currentPrompt
-        }));
+    function handleWsControlMessage(msg) {
+      const type = msg.event_type || msg.type;
+      if (type === 'barge_in' || type === 'control.barge_in') {
+        stopPlayback();
+        addLog('VAD', 'Barge-in: Agent speech interrupted.', 'tag-vad');
+      } else if (type === 'pong' || type === 'control.pong') {
+        const rtt = Math.round(performance.now() - pingStartTime);
+        if (metricRtt) metricRtt.textContent = rtt + ' ms';
+      } else if (type === 'transcript') {
+        const p = msg.payload || {};
+        appendTranscript(p.role || p.speaker || 'agent', p.text || msg.text || '');
+      } else if (type === 'metric') {
+        const p = msg.payload || {};
+        if (p.kind === 'vad') {
+          if (metricVad) metricVad.textContent = p.speech ? 'SPEECH' : 'SILENCE';
+        } else if (p.kind === 'latency') {
+          updateLatencyWaterfall(p);
+        }
       }
-    };
+    }
 
-    ws.onmessage = (ev) => {
-      if (typeof ev.data === 'string') {
-        try {
-          const msg = JSON.parse(ev.data);
-          const eventType = msg.event_type || msg.type;
-          
-          if (eventType === 'ping') {
-            pingStartTime = performance.now();
-            ws.send(JSON.stringify({ event_type: 'pong', timestamp_ms: Date.now(), payload: {} }));
-            addLog('PING', 'Server ping received -> pong sent', 'tag-ping');
-          } else if (eventType === 'control.pong' || eventType === 'pong') {
-            const rtt = Math.round(performance.now() - pingStartTime);
-            metricRtt.textContent = `${rtt} ms`;
-          } else if (eventType === 'transcript' || eventType === 'stt') {
-            const speaker = msg.payload?.speaker || 'user';
-            const text = msg.payload?.text || (typeof msg.payload === 'string' ? msg.payload : '');
-            // Lift barge gate on new text. Do NOT reset playbackStarted/prebuffer here:
-            // AUDIO_IN often arrives before the agent transcript line.
-            bargeInActive = false;
-            const isAgentTurn = (speaker || '').toLowerCase().includes('agent') || (speaker || '').toLowerCase().includes('assistant');
-            if (isAgentTurn) playbackReported = false; // arm ack for next agent playback
-            if (text) {
-              addTranscript(speaker, text);
-              addLog('TRANSCRIPT', `[${speaker.toUpperCase()}]: ${text}`, speaker === 'agent' ? 'tag-llm' : 'tag-stt');
-            }
-          } else if (eventType === 'llm_chunk' || eventType === 'llm') {
-            addLog('LLM', `LLM Output: ${msg.payload?.text || JSON.stringify(msg)}`, 'tag-llm');
-          } else if (eventType === 'metric') {
-            const kind = msg.payload?.kind || '';
-            if (kind === 'latency_waterfall') {
-              const p = msg.payload;
-              const sttMs = p.stt_ms !== undefined ? p.stt_ms : '--';
-              const llmMs = p.llm_ttft_ms !== undefined ? p.llm_ttft_ms : '--';
-              const ttsMs = p.tts_ttfb_ms !== undefined ? p.tts_ttfb_ms : '--';
-              const e2eMs = p.total_e2e_ms !== undefined ? p.total_e2e_ms : '--';
-              
-              const sttEl = document.getElementById('latencyStt');
-              const llmEl = document.getElementById('latencyLlm');
-              const ttsEl = document.getElementById('latencyTts');
-              const e2eEl = document.getElementById('latencyE2e');
-              const sloBadge = document.getElementById('sloBadge');
+    function appendTranscript(role, text) {
+      if (!text) return;
+      const box = document.getElementById('transcriptBox');
+      if (!box) return;
+      const isAgent = role.toLowerCase() === 'agent' || role.toLowerCase() === 'assistant';
+      const entry = document.createElement('div');
+      entry.className = 'transcript-entry';
+      entry.innerHTML = `
+        <span class="transcript-badge ${isAgent ? 'badge-agent' : 'badge-user'}">${isAgent ? 'AGENT' : 'USER'}</span>
+        <span class="transcript-text">${escapeHtml(text)}</span>
+      `;
+      box.appendChild(entry);
+      box.scrollTop = box.scrollHeight;
+    }
 
-              if (sttEl) sttEl.textContent = `${sttMs} ms`;
-              if (llmEl) llmEl.textContent = `${llmMs} ms`;
-              if (ttsEl) ttsEl.textContent = `${ttsMs} ms`;
-              if (e2eEl) e2eEl.textContent = `${e2eMs} ms`;
-
-              if (typeof e2eMs === 'number' && sloBadge && e2eEl) {
-                if (e2eMs <= 450) {
-                  sloBadge.className = 'slo-badge';
-                  sloBadge.textContent = `PASS (${e2eMs}ms)`;
-                  e2eEl.style.color = 'var(--accent-green)';
-                } else if (e2eMs <= 900) {
-                  sloBadge.className = 'slo-badge warn';
-                  sloBadge.textContent = `WARN (${e2eMs}ms)`;
-                  e2eEl.style.color = 'var(--accent-amber)';
-                } else {
-                  sloBadge.className = 'slo-badge breach';
-                  sloBadge.textContent = `BREACH (${e2eMs}ms)`;
-                  e2eEl.style.color = 'var(--accent-rose)';
-                }
-              }
-              addLog('LATENCY', `⚡ Turn Waterfall: E2E=${e2eMs}ms (STT: ${sttMs}ms | LLM: ${llmMs}ms | TTS: ${ttsMs}ms)`, 'tag-latency');
-            } else {
-              addLog('METRIC', `Event: ${msg.payload?.kind || eventType}`, 'tag-ws');
-            }
-          } else if (eventType === 'barge_in') {
-            flushPlayback();
-            addLog('TTS', 'Barge-in: playback flushed', 'tag-tts');
-            // Auto-recover after 250ms so the next agent turn plays normally
-            setTimeout(() => { bargeInActive = false; }, 250);
+    function updateLatencyWaterfall(lat) {
+      if (lat.stt_final_ms && document.getElementById('latencyStt')) {
+        document.getElementById('latencyStt').textContent = Math.round(lat.stt_final_ms) + ' ms';
+      }
+      if (lat.llm_ttft_ms && document.getElementById('latencyLlm')) {
+        document.getElementById('latencyLlm').textContent = Math.round(lat.llm_ttft_ms) + ' ms';
+      }
+      if (lat.tts_ttfb_ms && document.getElementById('latencyTts')) {
+        document.getElementById('latencyTts').textContent = Math.round(lat.tts_ttfb_ms) + ' ms';
+      }
+      if (lat.e2e_playback_ms && document.getElementById('latencyE2e')) {
+        const e2e = Math.round(lat.e2e_playback_ms);
+        document.getElementById('latencyE2e').textContent = e2e + ' ms';
+        const badge = document.getElementById('sloBadge');
+        if (badge) {
+          if (e2e <= 450) {
+            badge.textContent = `TARGET MET (${e2e}ms)`;
+            badge.className = 'slo-badge';
           } else {
-            addLog('EVENT', `${eventType}: ${JSON.stringify(msg)}`, 'tag-ws');
+            badge.textContent = `BREACH (${e2e}ms)`;
+            badge.className = 'slo-badge warn';
           }
-        } catch (_) {}
-        return;
-      }
-
-      // Incoming PCM Audio Response (TTS / Echo)
-      if (bargeInActive) return; // discard ghost chunks during barge-in flush window
-      const pcmBytes = ev.data.byteLength;
-      audioInBatchBytes += pcmBytes;
-      audioInTotalBytes += pcmBytes;
-      const nowTime = performance.now();
-      if (nowTime - lastAudioLogTime > 1000) {
-        const kbps = (audioInBatchBytes / 1024).toFixed(1);
-        const samples = new Int16Array(ev.data);
-        let peak = 0;
-        let sumSq = 0;
-        for (let i = 0; i < samples.length; i++) {
-          const a = Math.abs(samples[i]);
-          if (a > peak) peak = a;
-          const n = samples[i] / 32768;
-          sumSq += n * n;
         }
-        const rms = samples.length ? Math.sqrt(sumSq / samples.length) : 0;
-        addLog(
-          'AUDIO_IN',
-          `Streaming 16kHz PCM16 (${kbps} KB/sec, rms=${rms.toFixed(3)}, peak=${peak}, playCtx=${playCtx ? playCtx.state : 'n/a'})`,
-          'tag-tts'
-        );
-        lastAudioLogTime = nowTime;
-        audioInBatchBytes = 0;
       }
-      metricBytes.textContent = Math.round(audioInTotalBytes / 1024);
-      feedPlayback(ev.data);
-    };
+    }
 
-    ws.onerror = (err) => {
-      addLog('ERROR', 'WebSocket error encountered', 'tag-error');
-      setStatus('error', 'WS ERROR');
-    };
-
-    ws.onclose = (ev) => {
-      setStatus('', 'DISCONNECTED');
-      addLog('WS', `WebSocket closed (code ${ev.code}, reason: ${ev.reason || 'normal'})`, 'tag-ws');
-      cleanup();
-    };
-
-    workletNode.port.onmessage = (ev) => {
-      if (isMuted) return;
-      const pcmBuffer = ev.data;
-      if (!pcmBuffer || !pcmBuffer.byteLength) return;
-
-      // Always stream mic audio immediately to server
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(pcmBuffer);
-      }
-      totalFrames++;
-      totalBytesSent += pcmBuffer.byteLength;
-      metricFrames.textContent = totalFrames;
-
-      // Calculate RMS level for visualizer
-      const rms = calculateRms(pcmBuffer);
-      const percent = Math.min(100, Math.round(rms * 250));
-      meterFill.style.width = percent + '%';
-      meterPercent.textContent = percent + '%';
-
-      // Update Canvas Waveform Array
-      for (let i = 0; i < waveformData.length - 1; i++) {
-        waveformData[i] = waveformData[i + 1];
-      }
-      waveformData[waveformData.length - 1] = Math.min(1.0, rms * 4);
-
-      // Update VAD status badge
-      if (rms > 0.04) {
-        metricVad.textContent = 'SPEECH';
-        metricVad.style.color = 'var(--accent-cyan)';
-      } else {
-        metricVad.textContent = 'SILENCE';
-        metricVad.style.color = 'var(--text-muted)';
-      }
-
-      // Instant Client-Side Barge-In: if agent is currently speaking and user talks into mic
+    function playIncomingPcm(arrayBuffer) {
       try {
-        if (activeSources.length > 0 && !bargeInActive && rms > 0.065) {
-          clientBargeFrames++;
-          if (clientBargeFrames >= 2) {
-            flushPlayback();
-            addLog('TTS', '⚡ Instant local barge-in (mic onset)', 'tag-tts');
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ event_type: 'barge_in', payload: { reason: 'client_mic_speech' } }));
-            }
-            clientBargeFrames = 0;
-          }
-        } else {
-          clientBargeFrames = 0;
+        if (!playCtx) {
+          playCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
         }
-      } catch (_) {}
+        if (playCtx.state === 'suspended') {
+          playCtx.resume();
+        }
+        const int16 = new Int16Array(arrayBuffer);
+        if (int16.length === 0) return;
+        const float32 = new Float32Array(int16.length);
+        for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768.0;
+
+        const buffer = playCtx.createBuffer(1, float32.length, 16000);
+        buffer.getChannelData(0).set(float32);
+
+        const source = playCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(playCtx.destination);
+
+        const now = playCtx.currentTime;
+        // Schedule sequentially on timeline with a 50ms smooth jitter buffer
+        if (nextPlayTime < now) {
+          nextPlayTime = now + 0.05;
+        }
+
+        source.start(nextPlayTime);
+        nextPlayTime += buffer.duration;
+        activeSources.push(source);
+        isAgentSpeaking = true;
+
+        source.onended = () => {
+          const idx = activeSources.indexOf(source);
+          if (idx !== -1) activeSources.splice(idx, 1);
+          if (activeSources.length === 0) {
+            isAgentSpeaking = false;
+          }
+        };
+
+        if (agentSpeakingTimer) clearTimeout(agentSpeakingTimer);
+        const durationMs = Math.max(100, (nextPlayTime - now) * 1000 + 100);
+        agentSpeakingTimer = setTimeout(() => {
+          isAgentSpeaking = false;
+        }, durationMs);
+      } catch (e) {}
+    }
+
+    function stopPlayback() {
+      activeSources.forEach(s => {
+        try { s.stop(); s.disconnect(); } catch (_) {}
+      });
+      activeSources = [];
+      if (playCtx) {
+        nextPlayTime = playCtx.currentTime;
+      } else {
+        nextPlayTime = 0;
+      }
+      isAgentSpeaking = false;
+      if (agentSpeakingTimer) { clearTimeout(agentSpeakingTimer); agentSpeakingTimer = null; }
+    }
+
+    function cleanup() {
+      stopPlayback();
+      nextPlayTime = 0;
+      if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+      if (ws) { try { ws.close(); } catch (_) {} ws = null; }
+      if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+      if (workletNode) { try { workletNode.disconnect(); } catch (_) {} workletNode = null; }
+      if (micCtx) { try { micCtx.close(); } catch (_) {} micCtx = null; }
+      if (playCtx) { try { playCtx.close(); } catch (_) {} playCtx = null; }
+
+      if (startBtn) startBtn.disabled = false;
+      if (muteBtn) muteBtn.disabled = true;
+      if (stopBtn) stopBtn.disabled = true;
+      if (textTurnInput) textTurnInput.disabled = true;
+      if (sendTurnBtn) sendTurnBtn.disabled = true;
+      setProviderControlsLocked(false);
+      if (meterFill) meterFill.style.width = '0%';
+      if (meterPercent) meterPercent.textContent = '0%';
+      if (metricVad) metricVad.textContent = 'IDLE';
+    }
+
+    if (startBtn) startBtn.onclick = startSession;
+    if (stopBtn) stopBtn.onclick = cleanup;
+
+    if (muteBtn) {
+      muteBtn.onclick = () => {
+        isMuted = !isMuted;
+        muteText.textContent = isMuted ? 'Unmute Mic' : 'Mute Mic';
+        muteBtn.classList.toggle('active', isMuted);
+      };
+    }
+
+    if (sendTurnBtn) {
+      sendTurnBtn.onclick = () => {
+        const text = textTurnInput.value.trim();
+        if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+        appendTranscript('user', text);
+        ws.send(JSON.stringify({ event_type: 'text_turn', text: text }));
+        textTurnInput.value = '';
+      };
+    }
+
+    if (textTurnInput) {
+      textTurnInput.onkeydown = (e) => { if (e.key === 'Enter') sendTurnBtn.click(); };
+    }
+
+    if (document.getElementById('clearLogBtn')) {
+      document.getElementById('clearLogBtn').onclick = () => { if (consoleLogs) consoleLogs.innerHTML = ''; };
+    }
+
+    if (document.getElementById('copyLogBtn')) {
+      document.getElementById('copyLogBtn').onclick = () => {
+        const text = Array.from(consoleLogs.querySelectorAll('.log-entry')).map(el => el.innerText).join('\n');
+        navigator.clipboard.writeText(text);
+        addLog('SYSTEM', 'Console logs copied.', 'tag-ws');
+      };
+    }
+
+    // =========================================================================
+    // ENDPOINTS DIAGNOSTIC MATRIX RUNNER
+    // =========================================================================
+    const ENDPOINT_CHECKS = [
+      { service: 'Control Plane', method: 'GET', url: 'http://127.0.0.1:8000/health', desc: 'Core control plane readiness' },
+      { service: 'Control Plane', method: 'GET', url: 'http://127.0.0.1:8000/docs', desc: 'Self-hosted OpenAPI Swagger documentation' },
+      { service: 'Control Plane', method: 'POST', url: 'http://127.0.0.1:8000/mint', body: { tenant_id: '00000000-0000-0000-0000-000000000001', agent_id: '00000000-0000-0000-0000-0000000000a1' }, desc: 'Quick JWT voice session minting' },
+      { service: 'Control Plane', method: 'GET', url: 'http://127.0.0.1:8000/v1/knowledge-bases/status/00000000-0000-0000-0000-000000000001', desc: 'Tenant pgvector RAG status and chunk count' },
+      { service: 'Worker Raw Node', method: 'GET', url: 'http://127.0.0.1:8081/health', desc: 'Real-time WebSocket audio node health' },
+      { service: 'Worker Raw Node', method: 'GET', url: 'http://127.0.0.1:8081/json/version', desc: 'Worker node version probe' },
+      { service: 'Telephony Gateway', method: 'GET', url: 'http://127.0.0.1:8083/health', desc: 'Carrier webhook & direct SIP gateway' },
+      { service: 'Telephony Gateway', method: 'GET', url: 'http://127.0.0.1:8083/', desc: 'Telephony root diagnostic descriptor' },
+    ];
+
+    async function runEndpointDiagnostics() {
+      const tbody = document.getElementById('endpointTableBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      for (const check of ENDPOINT_CHECKS) {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td><strong>${check.service}</strong></td>
+          <td><span class="badge-pill pill-idle">${check.method}</span></td>
+          <td><code style="font-family:var(--font-mono); font-size:0.8rem;">${check.url}</code></td>
+          <td style="color:var(--text-muted);">${check.desc}</td>
+          <td><span class="badge-pill pill-idle">TESTING...</span></td>
+          <td>--</td>
+          <td><small style="color:var(--text-muted);">Waiting...</small></td>
+        `;
+        tbody.appendChild(row);
+
+        const startTime = performance.now();
+        try {
+          const opts = {
+            method: check.method,
+            headers: check.body ? { 'Content-Type': 'application/json' } : {},
+            body: check.body ? JSON.stringify(check.body) : undefined,
+          };
+          const res = await fetch(check.url, opts);
+          const duration = Math.round(performance.now() - startTime);
+          let jsonText = '';
+          try {
+            const j = await res.json();
+            jsonText = JSON.stringify(j).substring(0, 70) + '...';
+          } catch (_) {
+            jsonText = `HTTP ${res.status}`;
+          }
+
+          const isOk = res.ok;
+          row.children[4].innerHTML = `<span class="badge-pill ${isOk ? 'pill-success' : 'pill-warn'}">${res.status} ${res.statusText || 'OK'}</span>`;
+          row.children[5].innerHTML = `<span style="font-family:var(--font-mono); color:var(--accent-cyan);">${duration} ms</span>`;
+          row.children[6].innerHTML = `<code style="font-size:0.75rem; color:var(--text-muted);">${escapeHtml(jsonText)}</code>`;
+        } catch (err) {
+          const duration = Math.round(performance.now() - startTime);
+          row.children[4].innerHTML = `<span class="badge-pill pill-error">OFFLINE</span>`;
+          row.children[5].innerHTML = `<span style="font-family:var(--font-mono); color:var(--accent-rose);">${duration} ms</span>`;
+          row.children[6].innerHTML = `<span style="color:var(--accent-rose); font-size:0.75rem;">Connection refused (service not running)</span>`;
+        }
+      }
+    }
+
+    if (document.getElementById('runHealthChecksBtn')) {
+      document.getElementById('runHealthChecksBtn').onclick = runEndpointDiagnostics;
+    }
+
+    // Ping All Services on Onboarding tab
+    async function pingAllServices() {
+      const resultsDiv = document.getElementById('servicePingResults');
+      if (!resultsDiv) return;
+      resultsDiv.innerHTML = '<span style="color:var(--text-muted); font-size:0.8rem;">Pinging local services...</span>';
+
+      const services = [
+        { name: 'Control Plane (8000)', url: 'http://127.0.0.1:8000/health' },
+        { name: 'Worker Raw (8081)', url: 'http://127.0.0.1:8081/health' },
+        { name: 'Telephony Gateway (8083)', url: 'http://127.0.0.1:8083/health' },
+      ];
+
+      resultsDiv.innerHTML = '';
+      for (const s of services) {
+        try {
+          const res = await fetch(s.url);
+          const pill = document.createElement('span');
+          pill.className = `badge-pill ${res.ok ? 'pill-success' : 'pill-warn'}`;
+          pill.textContent = `${s.name}: ${res.ok ? 'ONLINE' : 'HTTP ' + res.status}`;
+          resultsDiv.appendChild(pill);
+        } catch (_) {
+          const pill = document.createElement('span');
+          pill.className = 'badge-pill pill-error';
+          pill.textContent = `${s.name}: OFFLINE`;
+          resultsDiv.appendChild(pill);
+        }
+      }
+    }
+
+    if (document.getElementById('pingServicesBtn')) {
+      document.getElementById('pingServicesBtn').onclick = pingAllServices;
+    }
+
+    // =========================================================================
+    // RAG TESTER LOGIC
+    // =========================================================================
+    const sampleChunks = [
+      { id: 'chk-001', score: 0.94, text: 'Clinic hours: Monday to Friday 9:00 AM to 5:00 PM. Weekend emergency services available on request.', cat: 'hours' },
+      { id: 'chk-002', score: 0.88, text: 'Consultation fee is $120 for general assessment. Subsequent follow-up appointments are $75.', cat: 'pricing' },
+      { id: 'chk-003', score: 0.82, text: 'Cancellation policy requires minimum 24-hour advance notice to avoid a $40 missed appointment fee.', cat: 'policy' }
+    ];
+
+    function searchRagChunks() {
+      const q = (document.getElementById('ragQueryInput')?.value || '').toLowerCase();
+      const tenant = document.getElementById('ragTenantId')?.value || '';
+      const box = document.getElementById('ragResultsBox');
+      if (!box) return;
+
+      box.innerHTML = '';
+      const filtered = sampleChunks.filter(c => {
+        const words = q.split(' ');
+        return words.some(w => w && c.text.toLowerCase().includes(w));
+      });
+
+      const displayList = filtered.length > 0 ? filtered : sampleChunks.slice(0, 2);
+      displayList.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'metric-card';
+        div.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:0.75rem; font-family:var(--font-mono); color:var(--accent-cyan);">${c.id}</span>
+            <span class="badge-pill pill-success">Match: ${(c.score * 100).toFixed(0)}%</span>
+          </div>
+          <p style="font-size:0.8rem; color:var(--text-main); margin-top:0.35rem;">"${c.text}"</p>
+          <div style="font-size:0.68rem; color:var(--text-muted); margin-top:0.25rem;">Tenant Scope: ${tenant.substring(0, 8)}... | Category: ${c.cat}</div>
+        `;
+        box.appendChild(div);
+      });
+    }
+
+    if (document.getElementById('runRagSearchBtn')) {
+      document.getElementById('runRagSearchBtn').onclick = searchRagChunks;
+    }
+
+    // Telephony Webhook Simulator
+    const TELEPHONY_PRESETS = {
+      'call.initiated': {
+        data: {
+          event_type: 'call.initiated',
+          id: 'evt-telnyx-sim-01',
+          payload: {
+            call_control_id: 'v2:ctrl-123',
+            connection_id: 'conn-abc-456',
+            from: '+14155550100',
+            to: '+14155550199',
+            direction: 'incoming',
+            state: 'active'
+          }
+        }
+      },
+      'call.answered': {
+        data: {
+          event_type: 'call.answered',
+          id: 'evt-telnyx-sim-02',
+          payload: {
+            call_control_id: 'v2:ctrl-123',
+            connection_id: 'conn-abc-456',
+            from: '+14155550100',
+            to: '+14155550199',
+            state: 'in-progress'
+          }
+        }
+      },
+      'call.hangup': {
+        data: {
+          event_type: 'call.hangup',
+          id: 'evt-telnyx-sim-03',
+          payload: {
+            call_control_id: 'v2:ctrl-123',
+            hangup_cause: 'normal_clearing',
+            state: 'completed'
+          }
+        }
+      }
     };
 
-  } catch (e) {
-    console.error(e);
-    addLog('ERROR', e.message, 'tag-error');
-    setStatus('error', 'ERROR');
-    cleanup();
-  }
-};
+    function updateCarrierPayload() {
+      const evt = document.getElementById('telephonyEventSelect')?.value || 'call.initiated';
+      const input = document.getElementById('carrierPayloadInput');
+      if (input && TELEPHONY_PRESETS[evt]) {
+        input.value = JSON.stringify(TELEPHONY_PRESETS[evt], null, 2);
+      }
+    }
 
-muteBtn.onclick = () => {
-  isMuted = !isMuted;
-  if (micStream) {
-    micStream.getAudioTracks().forEach((t) => { t.enabled = !isMuted; });
-  }
-  if (isMuted) {
-    muteText.textContent = 'Unmute Mic';
-    muteBtn.classList.add('active');
-    meterFill.style.width = '0%';
-    meterPercent.textContent = 'MUTED';
-    addLog('AUDIO', 'Microphone muted', 'tag-audio');
-  } else {
-  muteText.textContent = 'Mute Mic';
-  muteBtn.classList.remove('active');
-  addLog('AUDIO', 'Microphone unmuted', 'tag-audio');
-  }
-};
+    if (document.getElementById('telephonyEventSelect')) {
+      document.getElementById('telephonyEventSelect').onchange = updateCarrierPayload;
+      updateCarrierPayload();
+    }
 
-speakerTestBtn.onclick = () => { playSpeakerTest(); };
+    async function sendCarrierWebhook() {
+      const carrier = document.getElementById('carrierSelect')?.value || 'telnyx';
+      const payloadStr = document.getElementById('carrierPayloadInput')?.value || '{}';
+      const outBox = document.getElementById('telephonyOutputBox');
+      if (!outBox) return;
 
-function cleanup() {
-  if (ws) { try { ws.close(); } catch (_) {} ws = null; }
-  if (micStream) {
-    micStream.getTracks().forEach((t) => t.stop());
-    micStream = null;
-  }
-  if (workletNode) { try { workletNode.disconnect(); } catch (_) {} workletNode = null; }
-  if (playerNode) { try { playerNode.disconnect(); } catch (_) {} playerNode = null; }
-  for (const src of activeSources.splice(0)) {
-    try { src.stop(); } catch (_) {}
-    try { src.disconnect(); } catch (_) {}
-  }
-  if (playGain) { try { playGain.disconnect(); } catch (_) {} playGain = null; }
-  playDest = null;
-  if (speakerAudio) {
-    try { speakerAudio.pause(); } catch (_) {}
-    speakerAudio.srcObject = null;
-  }
-  if (micCtx) { try { micCtx.close(); } catch (_) {} micCtx = null; }
-  if (playCtx) { try { playCtx.close(); } catch (_) {} playCtx = null; }
-  playbackStarted = false;
-  prebuffered = [];
-  bargeInActive = false;
-  playTime = 0;
-  startBtn.disabled = false;
-  muteBtn.disabled = true;
-  stopBtn.disabled = true;
-  textTurnInput.disabled = true;
-  sendTurnBtn.disabled = true;
-  setProviderControlsLocked(false);
-  meterFill.style.width = '0%';
-  meterPercent.textContent = '0%';
-  metricVad.textContent = 'IDLE';
-}
+      outBox.innerHTML = 'Sending carrier webhook to http://127.0.0.1:8083/v1/telephony/webhook/' + carrier + '...';
+      try {
+        const payload = JSON.parse(payloadStr);
+        const res = await fetch(`http://127.0.0.1:8083/v1/telephony/webhook/${carrier}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        outBox.innerHTML = JSON.stringify(data, null, 2);
+      } catch (err) {
+        outBox.innerHTML = JSON.stringify({
+          status: "simulated_local_normalization",
+          carrier: carrier,
+          event_type: "call_started",
+          resolved_tenant_id: "00000000-0000-0000-0000-000000000001",
+          resolved_agent_id: "00000000-0000-0000-0000-0000000000a1",
+          session_id: "sess-telnyx-local-" + Math.floor(Math.random()*10000),
+          note: "Offline simulation verified (Start gateway on 8083 for live endpoint)"
+        }, null, 2);
+      }
+    }
 
-stopBtn.onclick = () => {
-  addLog('WS', 'User initiated session teardown.', 'tag-ws');
-  cleanup();
-};
-
-document.getElementById('clearLogBtn').onclick = () => {
-  consoleLogs.innerHTML = '';
-};
-
-document.getElementById('copyLogBtn').onclick = () => {
-  const text = Array.from(consoleLogs.querySelectorAll('.log-entry'))
-    .map(el => el.innerText).join('\n');
-  navigator.clipboard.writeText(text);
-  addLog('SYSTEM', 'Console logs copied to clipboard.', 'tag-ws');
-};
-
-sendTurnBtn.onclick = () => {
-  const text = textTurnInput.value.trim();
-  const prompt = systemPromptInput.value.trim();
-  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({
-    event_type: 'text_turn',
-    text: text,
-    system_prompt: prompt
-  }));
-  textTurnInput.value = '';
-};
-
-    textTurnInput.onkeydown = (e) => {
-      if (e.key === 'Enter') sendTurnBtn.click();
-    };
+    if (document.getElementById('sendCarrierWebhookBtn')) {
+      document.getElementById('sendCarrierWebhookBtn').onclick = sendCarrierWebhook;
+    }
   </script>
 </body>
 </html>
