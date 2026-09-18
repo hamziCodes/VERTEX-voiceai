@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest ruff pip-audit
+          pip install pytest pytest-asyncio ruff pip-audit
           if [ -f pyproject.toml ]; then pip install -e .; fi
 
       - name: Run Anti-Pattern Security Tests
