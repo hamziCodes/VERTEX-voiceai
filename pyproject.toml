@@ -16,6 +16,15 @@ dependencies = [
     "post-call",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = [
+    "core",
+    "control_plane",
+    "worker_raw",
+    "telephony_gateway",
+    "post_call",
+]
+
 [tool.uv]
 dev-dependencies = [
     "pytest>=8.0.0",
