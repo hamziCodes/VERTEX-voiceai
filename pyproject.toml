@@ -9,11 +9,18 @@ description = "Wavia — Sovereign Real-Time Voice AI Engine (UCVE Architecture)
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "core",
-    "control-plane",
-    "worker-raw",
-    "telephony-gateway",
-    "post-call",
+    "cryptography>=43.0.0",
+    "fastapi>=0.115.0",
+    "httpx>=0.27.0",
+    "numpy>=2.0.0",
+    "onnxruntime>=1.19.0",
+    "psycopg[binary]>=3.2.0",
+    "pydantic>=2.9.0",
+    "PyJWT>=2.9.0",
+    "PyYAML>=6.0.2",
+    "redis>=5.0.0",
+    "uvicorn[standard]>=0.32.0",
+    "websockets>=13.0",
 ]
 
 [tool.hatch.build.targets.wheel]
