@@ -16,7 +16,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
 
-app = FastAPI(title="UCVE Telephony Gateway", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Wavia Telephony Gateway", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/health")

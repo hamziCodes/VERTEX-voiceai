@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ucve-voice-sdk"
 version = "1.0.0"
-description = "Official Python Client SDK for UCVE Real-Time Sovereign Voice AI Engine"
+description = "Official Python Client SDK for Wavia Real-Time Sovereign Voice AI Engine"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

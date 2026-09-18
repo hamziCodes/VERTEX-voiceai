@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
-  title: UCVE Control Plane API
-  description: Sovereign Real-Time Voice AI Control Plane REST API for agent management, session minting, telephony, and extraction schemas.
+  title: Wavia Voice AI — Control Plane API
+  description: Sovereign Real-Time Voice AI Control Plane REST API for Wavia agent management, session minting, telephony, and extraction schemas.
   version: 1.0.0
 servers:
   - url: http://localhost:8080

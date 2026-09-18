@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 from control_plane.middleware.security_headers import SecurityHeadersMiddleware
 
-app = FastAPI(title="UCVE Control Plane", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Wavia Voice AI — Control Plane", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(SecurityHeadersMiddleware)
 

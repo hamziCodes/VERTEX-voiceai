@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ucve-monorepo"
 version = "0.1.0"
-description = "Unified Core Voice Engine (UCVE) Sovereign Monorepo"
+description = "Wavia — Sovereign Real-Time Voice AI Engine (UCVE Architecture)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
