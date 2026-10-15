@@ -103,6 +103,8 @@ class SileroVADAdapter(BaseVADProvider):
                     if self._silero_state is None:
                         self._silero_state = np.zeros((2, 1, 128), dtype=np.float32)
                     ort_inputs[self._session.get_inputs()[1].name] = self._silero_state
+                if len(self._session.get_inputs()) > 2:
+                    ort_inputs[self._session.get_inputs()[2].name] = np.array(16000, dtype=np.int64)
                 outs = self._session.run(None, ort_inputs)
                 if len(outs) > 1:
                     self._silero_state = outs[1]

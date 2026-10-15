@@ -175,6 +175,7 @@ class WebSocketSessionRunner:
                 self.last_pong_monotonic = time.monotonic()
                 continue
             if event_type in ("ping", "control.ping"):
+                self.last_pong_monotonic = time.monotonic()
                 await self.transport.send_control_event(
                     ControlEventType.PONG, {"t": time.time()}
                 )

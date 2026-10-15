@@ -669,7 +669,7 @@
             </button>
           </div>
           <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; padding: 0.45rem 0.65rem; background: rgba(0, 242, 254, 0.06); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 0.5rem; font-size: 0.78rem;">
-            <input type="checkbox" id="echoGuardCheck" checked style="accent-color: var(--accent-cyan); width: 1rem; height: 1rem; cursor: pointer;" />
+            <input type="checkbox" id="echoGuardCheck" style="accent-color: var(--accent-cyan); width: 1rem; height: 1rem; cursor: pointer;" />
             <label for="echoGuardCheck" style="cursor: pointer; user-select: none; color: #f1f5f9;">
               <strong>Echo Guard</strong> (Auto-mutes mic while Agent speaks — prevents speaker loops)
             </label>
@@ -1504,6 +1504,10 @@
       } else if (type === 'pong' || type === 'control.pong') {
         const rtt = Math.round(performance.now() - pingStartTime);
         if (metricRtt) metricRtt.textContent = rtt + ' ms';
+      } else if (type === 'ping' || type === 'control.ping') {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ event_type: 'pong' }));
+        }
       } else if (type === 'transcript') {
         const p = msg.payload || {};
         appendTranscript(p.role || p.speaker || 'agent', p.text || msg.text || '');

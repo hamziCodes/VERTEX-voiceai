@@ -87,8 +87,8 @@ class ListeningPipelineConfig:
 
     # VAD timing (§8.2)
     vad_threshold: float = 0.5
-    vad_min_speech_ms: int = 100
-    vad_min_silence_ms: int = 380
+    vad_min_speech_ms: int = 160
+    vad_min_silence_ms: int = 960
     vad_pre_speech_ms: int = 200
 
     # Adaptive noise gate (§8.2)
@@ -179,8 +179,8 @@ class ListeningPipelineConfig:
         return cls(
             enabled_phases=_parse_phases(os.environ.get("UCVE_PIPELINE_V2")),
             vad_threshold=_env_float("UCVE_VAD_THRESHOLD", 0.5),
-            vad_min_speech_ms=_env_int("UCVE_VAD_MIN_SPEECH_MS", 100),
-            vad_min_silence_ms=_env_int("UCVE_VAD_MIN_SILENCE_MS", 380),
+            vad_min_speech_ms=_env_int("UCVE_VAD_MIN_SPEECH_MS", 160),
+            vad_min_silence_ms=_env_int("UCVE_VAD_MIN_SILENCE_MS", 960),
             vad_pre_speech_ms=_env_int("UCVE_VAD_PRE_SPEECH_MS", 200),
             noise_gate_k=_env_float("UCVE_NOISE_GATE_K", 3.0),
             noise_gate_window=_env_int("UCVE_NOISE_GATE_WINDOW", 50),

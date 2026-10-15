@@ -569,6 +569,7 @@ class PipelineOrchestrator:
         """Run VAD / speech-capture; drive barge-verify and live STT when flagged."""
         agent_speaking = self.fsm.state in (
             SessionState.AGENT_SPEAKING,
+            SessionState.PROCESSING_INFERENCE,
             SessionState.BARGE_IN_VERIFY,
         )
         evt = await self._observe_frame(frame, agent_speaking=agent_speaking)
@@ -576,7 +577,7 @@ class PipelineOrchestrator:
         if self._barge_verify is not None and self._barge_verify.is_verifying:
             self._barge_verify.note_vad(evt.probability)
 
-        if evt.speech_start and self.fsm.state == SessionState.AGENT_SPEAKING:
+        if evt.speech_start and self.fsm.state in (SessionState.AGENT_SPEAKING, SessionState.PROCESSING_INFERENCE):
             if self._barge_verify is not None:
                 if self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
                     self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
