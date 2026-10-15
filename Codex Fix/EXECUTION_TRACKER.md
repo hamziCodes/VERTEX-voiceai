@@ -4,7 +4,7 @@ This is the authoritative progress record. Update it only from evidence: impleme
 
 | Phase | Status | Implementation evidence | Automated verification | Human gate/evidence | Notes |
 |---:|---|---|---|---|---|
-| 00 | COMPLETE | `89912a8` plus corpus/profile follow-up commit pending | 15 Phase 00 tests passed; Ruff/compile/diff checks passed; existing suite 64 passed/3 pre-existing failed; 42-sample artifact | H01/H02 resolved 2026-10-15 | Six local FLEURS clips verified; web and Telnyx profiles separated; no live calls |
+| 00 | COMPLETE | `89912a8` — harness; `8fe6f22` — multilingual fixtures/profiles | 15 Phase 00 tests passed; Ruff/compile/diff checks passed; existing suite 64 passed/3 pre-existing failed; 42-sample artifact | H01/H02 resolved 2026-10-15 | Six local FLEURS clips verified; web and Telnyx profiles separated; no live calls |
 | 01 | NOT STARTED | — | — | H03 open | Metric truth |
 | 02 | NOT STARTED | — | — | H04 after A/B | Listening/STT latency |
 | 03 | NOT STARTED | — | — | Provider/listening approval later | First audio/DSP |

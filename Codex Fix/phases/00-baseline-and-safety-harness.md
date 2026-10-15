@@ -65,3 +65,4 @@ If real speech fixtures are supplied, Hamzi confirms they are non-sensitive and 
 - Implementation checkpoint: `89912a8` (`test: add offline latency baseline harness`).
 - Corpus extension: pinned FLEURS revision `70bb2e84b976b7e960aa89f1c648e09c59f894dd`; six local Git-ignored clips for English, Urdu, and Arabic were normalized to 16 kHz mono PCM16. Fetcher/import tests and attribution are versioned; code-switch accuracy still requires a confirmed transcript.
 - Final Phase 00 verification: `py -3.12 -m pytest tests/latency -q` → 15 passed in 0.33 seconds; Ruff and `git diff --check` passed. No live provider or carrier operation was performed.
+- Corpus/profile checkpoint: `8fe6f22` (`test: add pinned multilingual latency fixtures`).
