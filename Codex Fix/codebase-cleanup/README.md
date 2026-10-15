@@ -19,8 +19,8 @@ This program cleans repository clutter without beginning production remediation 
 | C00 | Inventory, classification, rollback point, and Phase 00 handoff | COMPLETE |
 | C01 | Quarantine generated local clutter | COMPLETE |
 | C02 | Quarantine proven duplicate/dead tracked code | COMPLETE |
-| C03 | Validate package boundaries and compatibility paths | READY |
-| C04 | Align names and hierarchy where tests prove it is safe | NOT STARTED |
+| C03 | Validate package boundaries and compatibility paths | COMPLETE |
+| C04 | Align names and hierarchy where tests prove it is safe | COMPLETE - NO RENAME |
 | C05 | Classify stubs, roadmap code, and historical/reference material | NOT STARTED |
 | C06 | Full offline regression and final structure report | NOT STARTED |
 
@@ -49,6 +49,8 @@ This program cleans repository clutter without beginning production remediation 
 - `tests/latency_benchmarks/__init__.py` and its generated cache were quarantined.
 
 The canonical Phase 00 suite is `tests/latency/`. Historical plan references remain unchanged as historical evidence. `core/latency/benchmarks/` remains in place because an operational runbook names its class; C05 must decide whether to repair that contract or retire it.
+
+See `STRUCTURE_DECISIONS.md` for the full hierarchy map. C04 intentionally makes no broad naming change: underscore Python packages and hyphenated distribution/service names are valid, tested layers of the current structure.
 
 ## Resume point
 
