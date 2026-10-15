@@ -18,8 +18,8 @@ This program cleans repository clutter without beginning production remediation 
 |---:|---|---|
 | C00 | Inventory, classification, rollback point, and Phase 00 handoff | COMPLETE |
 | C01 | Quarantine generated local clutter | COMPLETE |
-| C02 | Quarantine proven duplicate/dead tracked code | READY |
-| C03 | Validate package boundaries and compatibility paths | NOT STARTED |
+| C02 | Quarantine proven duplicate/dead tracked code | COMPLETE |
+| C03 | Validate package boundaries and compatibility paths | READY |
 | C04 | Align names and hierarchy where tests prove it is safe | NOT STARTED |
 | C05 | Classify stubs, roadmap code, and historical/reference material | NOT STARTED |
 | C06 | Full offline regression and final structure report | NOT STARTED |
@@ -43,13 +43,12 @@ This program cleans repository clutter without beginning production remediation 
 - stale `.venv/` after confirming system Python runs the required offline suite
 - Python `__pycache__/` directories, except that scanning and moving them is deferred until tracked work is stable because they regenerate during verification
 
-### Tracked quarantine candidates requiring proof
+### Tracked duplicate cleanup
 
-- `tests/latency-benchmarks/harness.py`
-- `tests/latency_benchmarks/__init__.py`
-- `core/latency/benchmarks/harness.py` and package initializer
+- `tests/latency-benchmarks/harness.py` and its generated cache were quarantined.
+- `tests/latency_benchmarks/__init__.py` and its generated cache were quarantined.
 
-These older harness paths have no active imports in the non-legacy codebase. The canonical Phase 00 suite is `tests/latency/`. C02 must still capture a before/after test and import scan before moving them.
+The canonical Phase 00 suite is `tests/latency/`. Historical plan references remain unchanged as historical evidence. `core/latency/benchmarks/` remains in place because an operational runbook names its class; C05 must decide whether to repair that contract or retire it.
 
 ## Resume point
 
