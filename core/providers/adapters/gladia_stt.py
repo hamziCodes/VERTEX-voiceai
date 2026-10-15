@@ -8,11 +8,10 @@ from collections.abc import AsyncIterator
 import httpx
 
 from core.buffers.cancellation import CancellationToken
-from core.providers.interfaces.stt import BaseSTTProvider, STTConfig, Transcript
-from core.types.audio import AudioFrame, pcm16_to_wav
-
-
 from core.observability.logging import get_logger
+from core.providers.interfaces.stt import BaseSTTProvider, STTConfig, Transcript
+from core.providers.mode import should_use_mock_provider
+from core.types.audio import AudioFrame, pcm16_to_wav
 
 logger = get_logger("ucve.providers.gladia")
 
@@ -42,34 +41,37 @@ class GladiaSTTProvider(BaseSTTProvider):
         cancellation_token: CancellationToken | None = None,
     ) -> AsyncIterator[Transcript]:
         buf = bytearray()
-        _MAX_BUF = 512 * 1024
+        max_buf = 512 * 1024
         async for frame in audio_stream:
             if cancellation_token and cancellation_token.is_cancelled:
                 return
             if frame.pcm16:
-                if len(buf) + len(frame.pcm16) > _MAX_BUF:
+                if len(buf) + len(frame.pcm16) > max_buf:
                     break
                 buf.extend(frame.pcm16)
 
-        use_mock = (
-            not self.api_key
-            or os.environ.get("RUN_MOCK_PROVIDERS") == "1"
-            or os.environ.get("RUN_LIVE_PROVIDERS") != "1"
-        )
+        use_mock = should_use_mock_provider(provider_id="gladia", api_key=self.api_key)
         if use_mock:
             # Fix "hello" loop: never fabricate a transcript for a false/short
             # VAD trigger, and only emit mock text when explicitly configured.
             if len(buf) < _MIN_PCM_BYTES or not self.mock_text:
                 if not self.api_key:
-                    logger.info("Gladia STT (mock) — no transcript for short/empty buffer.")
+                    logger.info(
+                        "Gladia STT (mock) — no transcript for short/empty buffer."
+                    )
                 return
             yield Transcript(
-                text=self.mock_text, is_final=True, confidence=1.0, language=config.language
+                text=self.mock_text,
+                is_final=True,
+                confidence=1.0,
+                language=config.language,
             )
             return
 
         if len(buf) < _MIN_PCM_BYTES:
-            logger.warning("Gladia STT skipped — utterance too short", pcm_bytes=len(buf))
+            logger.warning(
+                "Gladia STT skipped — utterance too short", pcm_bytes=len(buf)
+            )
             return
 
         wav_bytes = pcm16_to_wav(bytes(buf), sample_rate=16000, channel_count=1)
@@ -77,7 +79,9 @@ class GladiaSTTProvider(BaseSTTProvider):
             return
 
         try:
-            logger.info("Initiating Gladia STT pre-recorded request", pcm_bytes=len(buf))
+            logger.info(
+                "Initiating Gladia STT pre-recorded request", pcm_bytes=len(buf)
+            )
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(
                     f"{self._base}/v2/pre-recorded",
@@ -94,13 +98,17 @@ class GladiaSTTProvider(BaseSTTProvider):
                     resp.raise_for_status()
                 data = resp.json()
                 text = (
-                    data.get("result", {})
-                    .get("transcription", {})
-                    .get("full_transcript", "")
-                ) or data.get("prediction", "") or ""
-                yield Transcript(text=text, is_final=True, confidence=1.0, language=config.language)
+                    (
+                        data.get("result", {})
+                        .get("transcription", {})
+                        .get("full_transcript", "")
+                    )
+                    or data.get("prediction", "")
+                    or ""
+                )
+                yield Transcript(
+                    text=text, is_final=True, confidence=1.0, language=config.language
+                )
         except Exception as exc:
             logger.error(f"Gladia STT Exception: {exc}", error=str(exc))
-            yield Transcript(
-                text=self.mock_text, is_final=True, confidence=0.5, language=config.language
-            )
+            raise

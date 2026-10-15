@@ -8,10 +8,9 @@ from collections.abc import AsyncIterator
 import httpx
 
 from core.buffers.cancellation import CancellationToken
-from core.providers.interfaces.tts import BaseTTSProvider, TTSChunk, TTSConfig
-
-
 from core.observability.logging import get_logger
+from core.providers.interfaces.tts import BaseTTSProvider, TTSChunk, TTSConfig
+from core.providers.mode import should_use_mock_provider
 
 logger = get_logger("ucve.providers.uplift")
 
@@ -52,7 +51,8 @@ class UpliftTTSProvider(BaseTTSProvider):
         self._client: httpx.AsyncClient | None = None
         # Output batching: larger chunks smooth WS throughput (Phase 6).
         self.chunk_size_bytes = max(320, int(chunk_size_bytes))
-        # Prefer 16 kHz PCM to match sovereign WS egress (override via UPLIFT_OUTPUT_FORMAT).
+        # Prefer 16 kHz PCM to match sovereign WS egress.
+        # Override with UPLIFT_OUTPUT_FORMAT when required.
         self._output_format = os.environ.get("UPLIFT_OUTPUT_FORMAT", "PCM_16000_16")
 
     def _get_client(self) -> httpx.AsyncClient:
@@ -77,11 +77,7 @@ class UpliftTTSProvider(BaseTTSProvider):
         if cancellation_token and cancellation_token.is_cancelled:
             return
 
-        use_mock = (
-            not self.api_key
-            or os.environ.get("RUN_MOCK_PROVIDERS") == "1"
-            or os.environ.get("RUN_LIVE_PROVIDERS") != "1"
-        )
+        use_mock = should_use_mock_provider(provider_id="uplift", api_key=self.api_key)
         if use_mock:
             if not self.api_key:
                 logger.info("Uplift TTS API key not set — using Mock TTS provider.")

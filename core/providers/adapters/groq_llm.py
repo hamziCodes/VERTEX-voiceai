@@ -10,10 +10,9 @@ from typing import Any
 import httpx
 
 from core.buffers.cancellation import CancellationToken
-from core.providers.interfaces.llm import BaseLLMProvider, LLMConfig, LLMStreamChunk
-
-
 from core.observability.logging import get_logger
+from core.providers.interfaces.llm import BaseLLMProvider, LLMConfig, LLMStreamChunk
+from core.providers.mode import should_use_mock_provider
 
 logger = get_logger("ucve.providers.groq")
 
@@ -93,15 +92,14 @@ class GroqLLMProvider(BaseLLMProvider):
         if cancellation_token and cancellation_token.is_cancelled:
             return
 
-        use_mock = (
-            not self.api_key
-            or os.environ.get("RUN_MOCK_PROVIDERS") == "1"
-            or os.environ.get("RUN_LIVE_PROVIDERS") != "1"
-        )
+        use_mock = should_use_mock_provider(provider_id="groq", api_key=self.api_key)
         if use_mock:
             if not self.api_key:
                 logger.info("Groq API key not set — using Mock LLM provider.")
-            user = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
+            user = next(
+                (m["content"] for m in reversed(messages) if m.get("role") == "user"),
+                "",
+            )
             reply = f"Mock reply to: {user}" if user else "Mock reply"
             for i, word in enumerate(reply.split()):
                 if cancellation_token and cancellation_token.is_cancelled:
@@ -129,7 +127,8 @@ class GroqLLMProvider(BaseLLMProvider):
                     "function": {
                         "name": t.name,
                         "description": t.description,
-                        "parameters": t.parameters or {"type": "object", "properties": {}},
+                        "parameters": t.parameters
+                        or {"type": "object", "properties": {}},
                     },
                 }
                 for t in config.tools
