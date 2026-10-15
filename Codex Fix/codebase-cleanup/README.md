@@ -17,8 +17,8 @@ This program cleans repository clutter without beginning production remediation 
 | Phase | Scope | Status |
 |---:|---|---|
 | C00 | Inventory, classification, rollback point, and Phase 00 handoff | COMPLETE |
-| C01 | Quarantine generated local clutter | READY |
-| C02 | Quarantine proven duplicate/dead tracked code | NOT STARTED |
+| C01 | Quarantine generated local clutter | COMPLETE |
+| C02 | Quarantine proven duplicate/dead tracked code | READY |
 | C03 | Validate package boundaries and compatibility paths | NOT STARTED |
 | C04 | Align names and hierarchy where tests prove it is safe | NOT STARTED |
 | C05 | Classify stubs, roadmap code, and historical/reference material | NOT STARTED |
