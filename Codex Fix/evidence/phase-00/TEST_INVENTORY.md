@@ -23,6 +23,7 @@ Date: 2026-10-15
 - `tests/e2e`: mock process scenarios, endpoints, telephony simulation, post-call, failover, and WebSocket flow.
 - `tests/latency_benchmarks` and `tests/latency-benchmarks`: incomplete or duplicate historical aggregation harnesses; neither measures acoustic end-of-speech through acknowledged playback.
 - `tests/latency`: Phase 00 network-denied baseline, report schema, deterministic providers, corpus, and production credential guard.
+- `tests/latency/fixtures/fetch_fleurs.py`: pinned, size-bounded FLEURS subset fetcher with WAV normalization, hash recording, and a Git-ignored output directory.
 
 ## Side effects and network boundaries
 

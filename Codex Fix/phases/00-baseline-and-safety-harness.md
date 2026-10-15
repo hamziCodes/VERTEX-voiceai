@@ -1,6 +1,6 @@
 # Phase 00 — Baseline and Safety Harness
 
-**Status:** IMPLEMENTED — AWAITING H01/H02
+**Status:** COMPLETE
 
 **Goal:** Establish a deterministic, free, network-denied baseline that can distinguish orchestration latency, correctness, audio quality, and fake-success behavior before any optimization.
 
@@ -55,7 +55,7 @@ If real speech fixtures are supplied, Hamzi confirms they are non-sensitive and 
 
 - 2026-10-15: Phase started on `wavia-fixv1` from pushed checkpoint `1700041`.
 - Runtime inventory: installed Python 3.12.10 and pytest 9.1.1 are available through `py -3.12`; repository `.venv` points to an obsolete Microsoft Store interpreter and is not usable.
-- H01/H02 remain open. Synthetic fixtures are permitted for harness verification; real-language and listening acceptance remain `BLOCKED — HAMZI`.
+- H01/H02 resolved 2026-10-15. Browser and Telnyx benchmark profiles are recorded; Hamzi delegated public-corpus selection.
 - TDD red evidence: focused suite initially failed collection because `tests.latency.baseline` and `tests.latency.network_guard` did not exist; the generator contract then failed because `tests.latency.fixtures.generate` did not exist.
 - Focused verification: `py -3.12 -m pytest tests/latency/test_no_live_network.py tests/latency/test_pipeline_baseline.py -q` → 11 passed in 0.30 seconds.
 - Static verification: Ruff passed for all Phase 00 Python files; `compileall` passed; `git diff --check` passed.
@@ -63,3 +63,5 @@ If real speech fixtures are supplied, Hamzi confirms they are non-sensitive and 
 - Existing regression suite: 64 passed, 3 failed in 18.67 seconds. Failures are recorded in `evidence/phase-00/TEST_INVENTORY.md` and were not changed in this phase.
 - Human setup and fixture fields are listed in `evidence/phase-00/HUMAN_BASELINE_INPUT.md`. Phase 01 must not begin until H01/H02 are answered or explicitly deferred by Hamzi.
 - Implementation checkpoint: `89912a8` (`test: add offline latency baseline harness`).
+- Corpus extension: pinned FLEURS revision `70bb2e84b976b7e960aa89f1c648e09c59f894dd`; six local Git-ignored clips for English, Urdu, and Arabic were normalized to 16 kHz mono PCM16. Fetcher/import tests and attribution are versioned; code-switch accuracy still requires a confirmed transcript.
+- Final Phase 00 verification: `py -3.12 -m pytest tests/latency -q` → 15 passed in 0.33 seconds; Ruff and `git diff --check` passed. No live provider or carrier operation was performed.

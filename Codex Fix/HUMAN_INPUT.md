@@ -4,8 +4,8 @@ The executor records dated answers here. No secret values belong in this file.
 
 | ID | Needed by | Decision or information required | Why it matters | Status |
 |---|---:|---|---|---|
-| H01 | 00 | Reference machine, browser, and audio device for latency | Makes baselines comparable | OPEN |
-| H02 | 00 | Approved non-sensitive Urdu/English fixtures | Endpoint/accuracy tuning needs representative audio | OPEN |
+| H01 | 00 | Reference machine and separate browser/Telnyx benchmark profiles | Makes baselines comparable | RESOLVED 2026-10-15 — local Windows/Chrome profile recorded; web and calling paths measured separately |
+| H02 | 00 | Approved non-sensitive multilingual fixtures | Endpoint/accuracy tuning needs representative audio | RESOLVED 2026-10-15 — Hamzi delegated corpus choice; pinned FLEURS subset selected and legacy mixed-language clip retained for timing |
 | H03 | 01 | Confirm latency definition and proposed live p50/p95 1,000/1,800 ms | Defines release/marketing gate | OPEN |
 | H04 | 02 | Choose aggressive (~400 ms), balanced (~550–650 ms), or adaptive endpoint after evidence | Speed versus cutoff tradeoff | DEFER UNTIL EVIDENCE |
 | H05 | 05 | Is Flutter in v1? Is LiveKit offered or roadmap-only? | Decides whether stubs block release | OPEN |
