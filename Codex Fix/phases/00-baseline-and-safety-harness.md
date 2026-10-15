@@ -62,3 +62,4 @@ If real speech fixtures are supplied, Hamzi confirms they are non-sensitive and 
 - Baseline: 42 included, 0 excluded, p50 1.1 ms, p95 22.4 ms, p99 24.7 ms. This is scripted harness overhead, not provider or user-perceived production latency. Artifact: `evidence/phase-00/latency-baseline-20261015T151356930783Z.json`.
 - Existing regression suite: 64 passed, 3 failed in 18.67 seconds. Failures are recorded in `evidence/phase-00/TEST_INVENTORY.md` and were not changed in this phase.
 - Human setup and fixture fields are listed in `evidence/phase-00/HUMAN_BASELINE_INPUT.md`. Phase 01 must not begin until H01/H02 are answered or explicitly deferred by Hamzi.
+- Implementation checkpoint: `89912a8` (`test: add offline latency baseline harness`).

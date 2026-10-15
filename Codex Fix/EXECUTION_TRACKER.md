@@ -4,7 +4,7 @@ This is the authoritative progress record. Update it only from evidence: impleme
 
 | Phase | Status | Implementation evidence | Automated verification | Human gate/evidence | Notes |
 |---:|---|---|---|---|---|
-| 00 | IMPLEMENTED — AWAITING HUMAN INPUT | `wavia-fixv1`; Phase 00 commit pending | 11 focused passed; Ruff/compile/diff checks passed; existing suite 64 passed/3 pre-existing failed; 42-sample artifact | H01/H02 open; real-language acceptance blocked | Technical harness complete; do not start Phase 01 yet |
+| 00 | IMPLEMENTED — AWAITING HUMAN INPUT | `89912a8` — offline latency and safety harness | 11 focused passed; Ruff/compile/diff checks passed; existing suite 64 passed/3 pre-existing failed; 42-sample artifact | H01/H02 open; real-language acceptance blocked | Technical harness complete; do not start Phase 01 yet |
 | 01 | NOT STARTED | — | — | H03 open | Metric truth |
 | 02 | NOT STARTED | — | — | H04 after A/B | Listening/STT latency |
 | 03 | NOT STARTED | — | — | Provider/listening approval later | First audio/DSP |
