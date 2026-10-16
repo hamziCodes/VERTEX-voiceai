@@ -7,12 +7,12 @@
 | C02 | COMPLETE | Two unused test-layout files and generated caches quarantined; Git blob IDs recorded in manifest | `tests/latency`: 15 passed; 70 targeted tests collected; canonical latency Ruff passed | Runtime `core/latency/benchmarks` retained due runbook contract; 19 pre-existing Ruff findings recorded |
 | C03 | COMPLETE | `STRUCTURE_DECISIONS.md` maps package, service, Docker, test, reference, and local-tool boundaries | Canonical imports passed; targeted layout/deployment set 17 passed/1 existing config-guard failure; UV exposed invalid lock | Compatibility paths must remain under current Phase 00 contract |
 | C04 | COMPLETE - NO CHANGE | Naming analysis found underscore imports and hyphenated distributions/services are correctly separated | Existing layout tests and Docker consumers confirm contract | Broad rename would create breakage; public-path changes still require approval |
-| C05 | NOT STARTED | - | - | Preserve useful roadmap/reference material |
+| C05 | COMPLETE - RETAIN | `C05_CLASSIFICATION.md`; reference scans for latency harness, lifecycle, telephony, jobs, managed worker, and reference trees | Phase 17/18 imports and Docker/docs consumers verified | No tracked runtime deletion was safe; incomplete capabilities remain non-production |
 | C06 | NOT STARTED | - | - | Offline regression and final report |
 
 ## Next exact action
 
-Start C05 by reviewing the audit's stub/dead-code candidates one bounded group at a time. Begin with `core/latency/benchmarks`, `worker_raw/handlers/session_lifecycle.py`, and `worker_raw/telephony/inbound_handler.py`; classify public/docs/test consumers before moving or editing anything.
+Start C06 with the full safe offline pytest suite, plan-integrity check, canonical import check, Git diff/secret-path review, and final tree/quarantine report. Move newly generated caches only after verification, then commit and push the cleanup closure.
 
 ## Pre-existing lint debt found during C02
 
