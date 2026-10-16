@@ -393,6 +393,24 @@ class PipelineOrchestrator:
         except Exception:
             pass
 
+    async def _emit_vad_state(self, *, speaking: bool, probability: float) -> None:
+        """Emit VAD transitions without enabling per-frame debug telemetry."""
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is None:
+            return
+        try:
+            await transport.send_control_event(
+                ControlEventType.METRIC,
+                {
+                    "kind": "vad_state",
+                    "speech": speaking,
+                    "probability": round(float(probability), 4),
+                },
+            )
+        except Exception as exc:
+            logger.debug("Failed to emit VAD state", error=str(exc))
+
     async def _run_barge_verify(self) -> None:
         """Pause → verify → commit or resume (Phase 4)."""
         engine = self._barge_verify
@@ -584,6 +602,7 @@ class PipelineOrchestrator:
                 self._capturing_speech = True
             else:
                 self._capturing_speech = self._speech_capture.capturing
+            await self._emit_vad_state(speaking=True, probability=evt.probability)
             await self._maybe_start_live_stt()
 
         capturing = self._capturing_speech or (
@@ -630,6 +649,7 @@ class PipelineOrchestrator:
             if not (self._live_stt is not None and self._live_stt.is_live):
                 if not self._live_final_text:
                     self._speech_end_pending = True
+            await self._emit_vad_state(speaking=False, probability=evt.probability)
 
         await self._emit_debug_listening(evt, frame)
         return evt

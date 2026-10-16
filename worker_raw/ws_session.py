@@ -12,6 +12,7 @@ from core.buffers.policy import INBOUND_MIC_POLICY, BufferPolicy, OverflowPolicy
 from core.buffers.typed_queue import TypedAsyncQueue
 from core.fsm.events import SessionEvent
 from core.listening.frame_slicer import FrameSlicer
+from core.providers.mode import provider_runtime_status
 from core.transport.native_websocket import NativeWebSocketTransport
 from core.types.audio import AudioFrame
 from core.types.events import ControlEventType
@@ -86,9 +87,14 @@ class WebSocketSessionRunner:
         self.orchestrator.vad_adapter.reset()
         # Open Gladia Live once for the whole call (legacy pattern).
         await self.orchestrator._maybe_start_live_stt()
+        runtime_status = provider_runtime_status()
         await self.transport.send_control_event(
             ControlEventType.METRIC,
-            {"kind": "session_ready", "session_id": self.config.session_id},
+            {
+                "kind": "session_ready",
+                "session_id": self.config.session_id,
+                **runtime_status,
+            },
         )
         greeting = (self.config.initial_greeting or "").strip()
         if greeting:
