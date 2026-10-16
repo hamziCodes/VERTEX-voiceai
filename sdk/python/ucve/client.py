@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import websockets
 
-from sdk.python.ucve.version import SDK_VERSION_MANIFEST, __version__
+from sdk.python.ucve.version import SDK_VERSION_MANIFEST
 
 
 class UCVEVoiceClient:
@@ -29,6 +30,7 @@ class UCVEVoiceClient:
         tts_provider: str = "cartesia",
         on_transcript: Callable[[str, str], Any] | None = None,
         on_audio: Callable[[bytes], Any] | None = None,
+        on_audio_start: Callable[[dict[str, Any]], Any] | None = None,
         on_metric: Callable[[dict[str, Any]], Any] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -41,7 +43,10 @@ class UCVEVoiceClient:
                 )
 
         if not token or not token.strip():
-            raise ValueError("An ephemeral session token is required to initialize UCVEVoiceClient.")
+            raise ValueError(
+                "An ephemeral session token is required to initialize "
+                "UCVEVoiceClient."
+            )
 
         self.token = token.strip()
         self.ws_url = ws_url.strip()
@@ -50,6 +55,7 @@ class UCVEVoiceClient:
         self.tts_provider = tts_provider
         self.on_transcript = on_transcript
         self.on_audio = on_audio
+        self.on_audio_start = on_audio_start
         self.on_metric = on_metric
         self._ws: Any | None = None
         self._running = False
@@ -57,7 +63,7 @@ class UCVEVoiceClient:
         self.version_manifest = SDK_VERSION_MANIFEST
 
     async def connect(self) -> None:
-        """Establish Sovereign WebSocket connection and start background receiver loop."""
+        """Establish the WebSocket and start the background receiver loop."""
         url = self.ws_url
         separator = "&" if "?" in url else "?"
         query = (
@@ -87,9 +93,18 @@ class UCVEVoiceClient:
                         event_type = data.get("event_type") or data.get("type")
                         if event_type == "transcript" and self.on_transcript:
                             payload = data.get("payload", {})
-                            speaker = payload.get("speaker") or data.get("speaker") or "agent"
+                            speaker = (
+                                payload.get("speaker")
+                                or data.get("speaker")
+                                or "agent"
+                            )
                             text = payload.get("text") or data.get("text") or ""
                             res = self.on_transcript(speaker, text)
+                            if asyncio.iscoroutine(res):
+                                await res
+                        elif event_type == "audio_start" and self.on_audio_start:
+                            payload = data.get("payload") or {}
+                            res = self.on_audio_start(payload)
                             if asyncio.iscoroutine(res):
                                 await res
                         elif event_type == "metric" and self.on_metric:
@@ -112,13 +127,32 @@ class UCVEVoiceClient:
             raise RuntimeError("Client is not connected. Call connect() first.")
         await self._ws.send(pcm16_bytes)
 
-    async def emit_playback_started(self) -> None:
-        """Notify pipeline that audio playback has begun on speakers (Phase 24 latency anchor)."""
+    async def emit_playback_started(
+        self,
+        turn_id: str,
+        *,
+        client_scheduled_playback_ms: float | None = None,
+        audio_context_time_sec: float | None = None,
+        prebuffer_ms: float | None = None,
+        underrun: bool | None = None,
+    ) -> None:
+        """Report actual playback onset for one server-issued turn ID."""
         if not self._ws:
             return
+        if not turn_id.strip():
+            raise ValueError("turn_id is required for playback correlation")
         msg = {
             "event_type": "control.playback_started",
-            "payload": {"t": time.time() * 1000, "kind": "playback_started"},
+            "payload": {
+                "kind": "playback_started",
+                "turn_id": turn_id,
+                "client_clock_domain": "client_performance_ms",
+                "client_playback_started_ms": time.perf_counter() * 1000.0,
+                "client_scheduled_playback_ms": client_scheduled_playback_ms,
+                "audio_context_time_sec": audio_context_time_sec,
+                "prebuffer_ms": prebuffer_ms,
+                "underrun": underrun,
+            },
         }
         await self._ws.send(json.dumps(msg))
 

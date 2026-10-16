@@ -115,25 +115,39 @@ Emitted when the server detects and commits a barge-in (agent TTS cancelled).
 }
 ```
 
-#### `latency_waterfall`
-Per-turn latency breakdown emitted after TTS first byte.
+#### `latency`
+Versioned per-turn telemetry emitted as stages become available and again after a correlated playback acknowledgement.
 ```json
 {
   "event_type": "metric",
   "payload": {
-    "kind": "latency_waterfall",
-    "turn_id": "...",
-    "stt_ms": 220.0,
-    "llm_ttft_ms": 140.5,
-    "tts_ttfb_ms": 85.2,
-    "rag_ms": 0.0,
-    "total_e2e_ms": 445.7,
-    "breached": false
+    "kind": "latency",
+    "schema_version": "1.0",
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "turn_id": "00000000-0000-0000-0000-000000000002",
+    "clock_domain": "server_monotonic_ms",
+    "client_clock_domain": "client_performance_ms",
+    "measurement_quality": "server_ack_upper_bound",
+    "timestamps_ms": {
+      "acoustic_end": 1000.0,
+      "vad_end": 1120.0,
+      "stt_final": 1380.0,
+      "server_send": 1650.0,
+      "playback_ack_received": 1710.0,
+      "client_playback_started": 8420.5
+    },
+    "durations_ms": {
+      "vad_tail": 120.0,
+      "stt_after_acoustic_end": 380.0,
+      "user_perceived_e2e": 710.0
+    },
+    "missing_reasons": [],
+    "slo": {"status": "provisional", "breached": null}
   }
 }
 ```
 
-> `breached: true` means total E2E latency exceeded the 450ms SLA threshold.
+Client timestamps are never subtracted from server monotonic timestamps. `server_ack_upper_bound` includes acknowledgement network delay. Missing anchors are `null`; the server does not substitute or cap measurements.
 
 #### `vad_debug`
 Emitted per audio frame when `UCVE_DEBUG_LISTENING=1` is set.
@@ -193,14 +207,20 @@ Client-side barge-in signal (e.g. from a UI stop button).
 }
 ```
 
-#### `playback_started`
-Inform the server when the client began rendering audio (for latency measurement).
+#### `control.playback_started`
+Send once when the first scheduled audio source for the server-issued `turn_id` begins rendering.
 ```json
 {
-  "event_type": "playback_started",
+  "event_type": "control.playback_started",
   "payload": {
     "kind": "playback_started",
-    "t": 1726123456.789
+    "turn_id": "00000000-0000-0000-0000-000000000002",
+    "client_clock_domain": "client_performance_ms",
+    "client_playback_started_ms": 8420.5,
+    "client_scheduled_playback_ms": 8418.2,
+    "audio_context_time_sec": 12.45,
+    "prebuffer_ms": 50.0,
+    "underrun": false
   }
 }
 ```

@@ -6,13 +6,11 @@ import asyncio
 import json
 import time
 from typing import Any
-from uuid import uuid4
+from uuid import UUID
 
-from core.buffers.policy import INBOUND_MIC_POLICY
-from core.buffers.policy import BufferPolicy, OverflowPolicy
+from core.buffers.policy import INBOUND_MIC_POLICY, BufferPolicy, OverflowPolicy
 from core.buffers.typed_queue import TypedAsyncQueue
 from core.fsm.events import SessionEvent
-from core.latency.playback import PlaybackMetricHandler
 from core.listening.frame_slicer import FrameSlicer
 from core.transport.native_websocket import NativeWebSocketTransport
 from core.types.audio import AudioFrame
@@ -21,7 +19,11 @@ from core.types.resampler import Resampler
 from worker_raw.orchestration.pipeline import PipelineOrchestrator
 from worker_raw.orchestration.session_config import PipelineSessionConfig
 from worker_raw.security.ws_policy import WSSecurityPolicy, WSSecurityViolation
-from worker_raw.ws_constants import MAX_AUDIO_FRAME_BYTES, PING_INTERVAL_SEC, PONG_DEADLINE_MULTIPLIER
+from worker_raw.ws_constants import (
+    MAX_AUDIO_FRAME_BYTES,
+    PING_INTERVAL_SEC,
+    PONG_DEADLINE_MULTIPLIER,
+)
 
 
 class WebSocketSessionRunner:
@@ -205,17 +207,45 @@ class WebSocketSessionRunner:
                 reason = str((data.get("payload") or {}).get("reason") or "client_barge_in")
                 await self.orchestrator.execute_immediate_barge_in(reason=reason)
                 continue
-            if event_type in ("metric", "playback_started", ControlEventType.PLAYBACK_STARTED.value):
+            if event_type in (
+                "metric",
+                "playback_started",
+                "control.playback_started",
+                ControlEventType.PLAYBACK_STARTED.value,
+            ):
                 payload = data.get("payload") if isinstance(data.get("payload"), dict) else data
                 kind = str(payload.get("kind") or event_type or "")
                 if kind in ("playback_started", ControlEventType.PLAYBACK_STARTED.value):
-                    waterfall = getattr(self.orchestrator, "_current_waterfall", None)
-                    if waterfall is not None:
-                        client_t = float(
-                            payload.get("t") or payload.get("timestamp_ms") or 0.0
+                    try:
+                        turn_id = UUID(str(payload.get("turn_id") or ""))
+                        result = self.orchestrator.latency_collector.acknowledge_playback(
+                            turn_id=turn_id,
+                            client_playback_started_ms=float(
+                                payload.get("client_playback_started_ms")
+                                or payload.get("t")
+                                or 0.0
+                            ),
+                            client_scheduled_playback_ms=(
+                                float(payload["client_scheduled_playback_ms"])
+                                if payload.get("client_scheduled_playback_ms") is not None
+                                else None
+                            ),
+                            receipt_monotonic_ms=self.orchestrator.latency_hooks.now_ms(),
+                            underrun=(
+                                bool(payload["underrun"])
+                                if payload.get("underrun") is not None
+                                else None
+                            ),
+                            prebuffer_ms=(
+                                float(payload["prebuffer_ms"])
+                                if payload.get("prebuffer_ms") is not None
+                                else None
+                            ),
                         )
-                        PlaybackMetricHandler.handle_playback_started(waterfall, client_t)
-                        await self.orchestrator._emit_latency_telemetry(waterfall)
+                    except (TypeError, ValueError):
+                        continue
+                    if result.accepted and result.waterfall is not None:
+                        await self.orchestrator._emit_latency_telemetry(result.waterfall)
                 continue
 
     async def _ingress_worker(self) -> None:
@@ -250,11 +280,8 @@ class WebSocketSessionRunner:
                 break
             if user_text.startswith("__greeting__:"):
                 phrase = user_text.split(":", 1)[1].strip() or "Hello."
-                waterfall = self.orchestrator.latency_hooks.start_turn(uuid4())
                 task = asyncio.create_task(
-                    self.orchestrator._finish_turn_tts(
-                        [phrase], self.config, waterfall
-                    )
+                    self.orchestrator.run_greeting(self.config, phrase)
                 )
             else:
                 # Coalesce any rapid successive utterance fragments queued during latency

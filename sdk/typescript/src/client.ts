@@ -2,6 +2,8 @@
  * Official UCVE Sovereign Voice Client (TypeScript / Browser).
  */
 
+import type { AudioStartPayload } from './events';
+
 export interface UCVEVoiceClientOptions {
   wsUrl?: string;
   sttProvider?: string;
@@ -9,6 +11,7 @@ export interface UCVEVoiceClientOptions {
   ttsProvider?: string;
   onTranscript?: (speaker: 'user' | 'agent', text: string) => void;
   onAudio?: (pcm16: Int16Array) => void;
+  onAudioStart?: (event: AudioStartPayload) => void;
   onMetric?: (metric: Record<string, unknown>) => void;
   onError?: (err: Error) => void;
   [key: string]: unknown;
@@ -82,6 +85,8 @@ export class UCVEVoiceClient {
                 const speaker = data.payload?.speaker || data.speaker || 'agent';
                 const text = data.payload?.text || data.text || '';
                 this.options.onTranscript?.(speaker, text);
+              } else if (eventType === 'audio_start') {
+                this.options.onAudioStart?.(data.payload as AudioStartPayload);
               } else if (eventType === 'metric') {
                 this.options.onMetric?.(data.payload || data);
               } else if (eventType === 'error') {
@@ -105,12 +110,30 @@ export class UCVEVoiceClient {
     this.ws.send(pcmBytes);
   }
 
-  public emitPlaybackStarted(): void {
+  public emitPlaybackStarted(
+    turnId: string,
+    details: {
+      clientScheduledPlaybackMs?: number;
+      audioContextTimeSec?: number;
+      prebufferMs?: number;
+      underrun?: boolean;
+    } = {}
+  ): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (!turnId.trim()) throw new Error('turnId is required for playback correlation.');
     this.ws.send(
       JSON.stringify({
         event_type: 'control.playback_started',
-        payload: { t: Date.now(), kind: 'playback_started' },
+        payload: {
+          kind: 'playback_started',
+          turn_id: turnId,
+          client_clock_domain: 'client_performance_ms',
+          client_playback_started_ms: performance.now(),
+          client_scheduled_playback_ms: details.clientScheduledPlaybackMs ?? null,
+          audio_context_time_sec: details.audioContextTimeSec ?? null,
+          prebuffer_ms: details.prebufferMs ?? null,
+          underrun: details.underrun ?? null,
+        },
       })
     );
   }

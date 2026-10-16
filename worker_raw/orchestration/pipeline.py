@@ -39,7 +39,6 @@ from core.mcp.filler import ConversationalFillerSynth, FillerConfig
 from core.providers.adapters.gladia_live_stt import GladiaLiveSTTSession
 from core.latency.collector import LatencyCollector
 from core.latency.waterfall import LatencyWaterfall
-from core.mcp.orchestrator import ToolOrchestrator
 from core.metering.usage_meter import UsageMeter
 from core.observability.logging import get_logger
 from core.providers.adapters.cartesia_tts import CartesiaTTSProvider
@@ -62,15 +61,15 @@ from core.providers.factory import (
     normalize_tts_provider,
 )
 from core.providers.failover import FailoverRouter
-from core.providers.interfaces.llm import LLMConfig, LLMStreamChunk
+from core.providers.interfaces.llm import LLMConfig
 from core.providers.interfaces.stt import STTConfig
 from core.providers.interfaces.tts import TTSConfig
 from core.providers.registry import ProviderRegistry
 from core.rag.retriever import PgVectorRetriever
 from core.rag.speculative import SpeculativeRetrieval
-from core.runtime.env import is_test_env
 from core.session.redis_store import RedisSessionStore
 from core.transport.resample_egress import EgressResampler
+from core.types.audio import AudioFrame
 from core.types.events import ControlEventType
 from core.vad.silero_adapter import SileroVADAdapter
 from post_call.models.call_record import CallRecord
@@ -166,6 +165,7 @@ class PipelineOrchestrator:
         self._speech_buffer = bytearray()
         self._capturing_speech = False
         self._speech_end_pending = False
+        self._last_acoustic_speech_ms: float = 0.0
         self._last_vad_speech_end_ms: float = 0.0
         self._last_stt_final_ms: float = 0.0
 
@@ -190,7 +190,7 @@ class PipelineOrchestrator:
         self._playback_pause_event = asyncio.Event()
         self._playback_pause_event.set()
         self._barge_verify_task: asyncio.Task[None] | None = None
-        self._current_waterfall: Any | None = None
+        self._active_latency_turn_id: UUID | None = None
         # Always flush egress on three-point cancel (fixes ghost audio after barge).
         self.three_point_cancel.register_flush_callback(self._flush_egress_queue)
 
@@ -318,7 +318,23 @@ class PipelineOrchestrator:
         if not self._playback_started:
             self._playback_started = True
             if waterfall is not None:
-                waterfall.playback_start_ms = self.latency_hooks.now_ms()
+                waterfall.server_send_ms = self.latency_hooks.now_ms()
+                session = self._ws_session
+                transport = (
+                    getattr(session, "transport", None) if session is not None else None
+                )
+                if transport is not None:
+                    try:
+                        await transport.send_control_event(
+                            "audio_start",
+                            {
+                                "turn_id": str(waterfall.turn_id),
+                                "server_send_ms": waterfall.server_send_ms,
+                                "clock_domain": waterfall.clock_domain,
+                            },
+                        )
+                    except Exception as exc:
+                        logger.debug("Client audio_start notify failed", error=str(exc))
             if self.fsm.can_transition(SessionEvent.TTS_FIRST_BYTE):
                 self.fsm.trigger(SessionEvent.TTS_FIRST_BYTE)
         await self._ensure_egress_sender()
@@ -337,52 +353,14 @@ class PipelineOrchestrator:
             logger.debug("Client barge_in notify failed", error=str(exc))
 
     async def _emit_latency_telemetry(self, waterfall: LatencyWaterfall) -> None:
-        """Broadcast live per-stage latency waterfall metrics to the client."""
+        """Broadcast the canonical versioned latency payload to the client."""
         session = self._ws_session
         transport = getattr(session, "transport", None) if session is not None else None
         if transport is None:
             return
         try:
-            total_e2e = waterfall.compute_e2e_latency()
-            if waterfall.stt_final_ms > 0 and waterfall.vad_end_of_speech_ms > 0:
-                raw_stt_diff = waterfall.stt_final_ms - waterfall.vad_end_of_speech_ms
-                stt_ms = min(raw_stt_diff, 800.0) if raw_stt_diff > 0 else 220.0
-            else:
-                stt_ms = 220.0
-
-            if waterfall.llm_ttft_ms > 0 and waterfall.stt_final_ms > 0:
-                llm_ttft_ms = max(0.0, waterfall.llm_ttft_ms - waterfall.stt_final_ms)
-            else:
-                llm_ttft_ms = 0.0
-
-            if waterfall.tts_ttfb_ms > 0 and waterfall.llm_ttft_ms > 0:
-                tts_ttfb_ms = max(0.0, waterfall.tts_ttfb_ms - waterfall.llm_ttft_ms)
-            elif waterfall.tts_ttfb_ms > 0 and waterfall.stt_final_ms > 0:
-                tts_ttfb_ms = max(0.0, waterfall.tts_ttfb_ms - waterfall.stt_final_ms)
-            else:
-                tts_ttfb_ms = 0.0
-
-            rag_ms = (
-                max(0.0, waterfall.rag_retrieve_ms - waterfall.stt_final_ms)
-                if (waterfall.rag_retrieve_ms > 0 and waterfall.stt_final_ms > 0)
-                else 0.0
-            )
-
-            if waterfall.playback_start_ms > 0 and waterfall.vad_end_of_speech_ms > 0:
-                total_e2e = max(total_e2e, waterfall.playback_start_ms - waterfall.vad_end_of_speech_ms)
-            elif total_e2e <= 0:
-                total_e2e = stt_ms + llm_ttft_ms + tts_ttfb_ms + 40.0
-
-            payload = {
-                "kind": "latency_waterfall",
-                "turn_id": str(waterfall.turn_id),
-                "stt_ms": round(stt_ms, 1),
-                "llm_ttft_ms": round(llm_ttft_ms, 1),
-                "tts_ttfb_ms": round(tts_ttfb_ms, 1),
-                "rag_ms": round(rag_ms, 1),
-                "total_e2e_ms": round(total_e2e, 1),
-                "breached": bool(total_e2e > 450.0),
-            }
+            payload = waterfall.to_metric_payload()
+            payload["population"] = self.latency_collector.percentile_summary()
             await transport.send_control_event(ControlEventType.METRIC, payload)
         except Exception as exc:
             logger.debug("Failed to emit latency telemetry", error=str(exc))
@@ -452,6 +430,11 @@ class PipelineOrchestrator:
     async def execute_immediate_barge_in(self, reason: str = "VAD speech onset") -> None:
         """Instant sub-100ms barge-in: cancel LLM/TTS, flush queues, notify client, transition FSM."""
         logger.info("Executing immediate barge-in", reason=reason, state=str(self.fsm.state))
+        if self._active_latency_turn_id is not None:
+            self.latency_collector.cancel_turn(
+                self._active_latency_turn_id,
+                reason="barge_in",
+            )
         if self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
             self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
         self._llm_cancel.cancel()
@@ -610,6 +593,9 @@ class PipelineOrchestrator:
             SessionState.BARGE_IN_INTERRUPTED,
         )
 
+        if capturing and evt.probability > 0.5:
+            self._last_acoustic_speech_ms = self.latency_hooks.now_ms()
+
         # Always stream mic audio into the live Gladia session while it is up.
         # Legacy agents keep one live socket for the whole call; gating only on
         # "capturing" dropped frames around VAD edges and starved STT.
@@ -677,6 +663,8 @@ class PipelineOrchestrator:
         async for transcript in self.stt_provider.transcribe_stream(_audio_iter(), cfg):
             if transcript.text:
                 text = transcript.text
+        if text:
+            self._last_stt_final_ms = self.latency_hooks.now_ms()
         return text.strip()
 
     def resume_listening(self) -> None:
@@ -790,20 +778,16 @@ class PipelineOrchestrator:
                 user_text = str(redacted[0].get("text") or user_text)
 
         waterfall = self.latency_hooks.start_turn(
-            _metric_session_uuid(session_config.session_id)
+            _metric_session_uuid(session_config.session_id),
+            acoustic_end_ms=self._last_acoustic_speech_ms or None,
+            vad_end_ms=self._last_vad_speech_end_ms or None,
         )
-        if self._last_vad_speech_end_ms > 0:
-            waterfall.vad_end_of_speech_ms = self._last_vad_speech_end_ms
-            self._last_vad_speech_end_ms = 0.0
+        self._active_latency_turn_id = waterfall.turn_id
+        self._last_acoustic_speech_ms = 0.0
+        self._last_vad_speech_end_ms = 0.0
         if self._last_stt_final_ms > 0:
             waterfall.stt_final_ms = self._last_stt_final_ms
             self._last_stt_final_ms = 0.0
-        else:
-            waterfall.stt_final_ms = self.latency_hooks.now_ms()
-
-        if waterfall.vad_end_of_speech_ms <= 0:
-            waterfall.vad_end_of_speech_ms = max(0.0, waterfall.stt_final_ms - 220.0)
-        self._current_waterfall = waterfall
         sc = self.speaking_config
         self.apply_language_vad_overrides(session_config.language)
 
@@ -1067,10 +1051,29 @@ class PipelineOrchestrator:
 
         self.latency_collector.record_turn(waterfall)
         await self._emit_latency_telemetry(waterfall)
+        if self._active_latency_turn_id == waterfall.turn_id:
+            self._active_latency_turn_id = None
         if self.fsm.can_transition(SessionEvent.TTS_DRAINED):
             self.fsm.trigger(SessionEvent.TTS_DRAINED)
         self._turn_ends.append(time.monotonic())
         return normalized
+
+    async def run_greeting(
+        self, session_config: PipelineSessionConfig, phrase: str
+    ) -> None:
+        """Speak a synthetic greeting with a correlated, non-E2E latency trace."""
+        self._playback_started = False
+        waterfall = self.latency_hooks.start_turn(
+            _metric_session_uuid(session_config.session_id)
+        )
+        self._active_latency_turn_id = waterfall.turn_id
+        try:
+            await self._finish_turn_tts([phrase], session_config, waterfall)
+        finally:
+            self.latency_collector.record_turn(waterfall)
+            await self._emit_latency_telemetry(waterfall)
+            if self._active_latency_turn_id == waterfall.turn_id:
+                self._active_latency_turn_id = None
 
     async def _finish_turn_tts(
         self,

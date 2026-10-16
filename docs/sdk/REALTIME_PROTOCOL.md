@@ -1,32 +1,34 @@
-# UCVE Realtime Audio & Event WebSocket Protocol
+# UCVE Realtime Audio and Event WebSocket Protocol
 
-## 1. Transport & Connection
-- **Endpoint**: `ws://<host>:8081/ws/audio?token=<JWT>&stt_provider=...&llm_provider=...&tts_provider=...`
-- **Authentication**: Ephemeral mint token issued via `POST /v1/session/mint`.
-- **Multiplexing**: Single sovereign WebSocket carries both binary raw audio and JSON control frames.
+## Transport and connection
 
----
+- Endpoint: `ws://<host>:8081/ws/audio?token=<JWT>&stt_provider=...&llm_provider=...&tts_provider=...`
+- Authentication: ephemeral mint token issued by `POST /v1/session/mint`.
+- Multiplexing: one WebSocket carries binary PCM audio and JSON control frames.
 
-## 2. Audio Framing Contract
-- **Encoding**: Raw linear signed 16-bit PCM (`pcm_s16le`).
-- **Sample Rate**: 16,000 Hz (16 kHz).
-- **Channels**: 1 (mono).
-- **Frame Size**: 320 bytes (10 ms) or 640 bytes (20 ms).
-- **Format**: Sent as binary WebSocket frames (`opcode=0x02`).
+## Audio framing contract
 
----
+- Encoding: raw signed 16-bit little-endian PCM (`pcm_s16le`).
+- Sample rate: 16,000 Hz.
+- Channels: one (mono).
+- Transport: binary WebSocket frames. The worker slices accepted ingress chunks into its canonical internal frame size.
 
-## 3. Realtime Control & Telemetry Events (`UCVERealtimeEvent`)
+## Control and telemetry events
 
-Sent as JSON text WebSocket frames (`opcode=0x01`):
-
-| Event Direction | Event Type | Payload Fields | Purpose & Meaning |
+| Direction | Event | Required payload | Meaning |
 |---|---|---|---|
-| **Client → Server** | `control.pong` | `{"t": timestamp_ms}` | Heartbeat response to server ping (prevents disconnect). |
-| **Client → Server** | `control.playback_started` | `{"t": timestamp_ms, "kind": "playback_started"}` | **Phase 24 Latency Anchor**: Signals speaker heard first audio chunk. |
-| **Client → Server** | `control.barge_in` | `{"rms": float, "t": timestamp_ms}` | Instant client-side mic energy cut-through signal. |
-| **Client → Server** | `text.turn` | `{"text": string}` | Text input turn injection bypassing mic STT. |
-| **Server → Client** | `control.ping` | `{"t": timestamp_ms}` | Liveness heartbeat (expected pong within 10s). |
-| **Server → Client** | `transcript` | `{"speaker": "user"\|"agent", "text": string}` | Diarized live speech recognition and agent reply tokens. |
-| **Server → Client** | `metric` | `{"event": string, "waterfall": {...}}` | Waterfall breakdown (`stt_final_ms`, `llm_ttft_ms`, `tts_ttfb_ms`, `e2e_latency_ms`). |
-| **Server → Client** | `event` | `{"event_type": "session_ready"\|"audio_start"\|"audio_stop"\|"info"\|"error"}` | Session lifecycle state transitions. |
+| Client to server | `pong` or `control.pong` | optional client timestamp | Heartbeat response |
+| Client to server | `control.playback_started` | `turn_id`, client performance timestamp and clock domain | Correlated actual playback onset |
+| Client to server | `barge_in` or `control.barge_in` | reason or energy metadata | Client interruption request |
+| Client to server | `text.turn`, `text_turn`, or `user_turn` | text | Text turn that bypasses STT |
+| Server to client | `ping` | interval | Liveness heartbeat |
+| Server to client | `audio_start` | `turn_id`, server send timestamp and clock domain | Identifies the turn for following audio |
+| Server to client | `transcript` | speaker and text | User or agent transcript |
+| Server to client | `metric` with `kind: latency` | versioned latency payload | Raw timestamps, valid durations, missing reasons, queue state and population percentiles |
+| Server to client | `barge_in` | reason | Stop and clear scheduled agent audio |
+
+The primary user metric is acoustic end-of-speech to playback acknowledgement receipt using the server monotonic clock. It is labeled `server_ack_upper_bound` because it includes acknowledgement network delay. Client `performance.now()` values stay in the client clock domain and are never subtracted from server timestamps.
+
+Missing anchors remain `null` and appear in `missing_reasons`. The server does not substitute, cap, or invent stage durations. SLO evaluation remains provisional until production measurements establish contractual targets.
+
+The canonical machine-readable contract is `sdk/shared/event_schema.json`.

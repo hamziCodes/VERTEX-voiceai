@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UCVERealtimeEvent",
-  "description": "Unified event protocol specification for UCVE WebSocket audio streaming sessions.",
+  "description": "Canonical realtime event protocol for Wavia voice sessions.",
   "type": "object",
   "oneOf": [
     {
@@ -9,12 +9,23 @@
       "type": "object",
       "required": ["event_type", "payload"],
       "properties": {
-        "event_type": { "const": "control.pong" },
+        "event_type": { "enum": ["pong", "control.pong"] },
+        "payload": { "type": "object" }
+      }
+    },
+    {
+      "title": "AudioStart",
+      "type": "object",
+      "required": ["event_type", "payload"],
+      "properties": {
+        "event_type": { "const": "audio_start" },
         "payload": {
           "type": "object",
-          "required": ["t"],
+          "required": ["turn_id", "server_send_ms", "clock_domain"],
           "properties": {
-            "t": { "type": "number", "description": "Client timestamp in ms" }
+            "turn_id": { "type": "string", "format": "uuid" },
+            "server_send_ms": { "type": "number" },
+            "clock_domain": { "const": "server_monotonic_ms" }
           }
         }
       }
@@ -27,10 +38,16 @@
         "event_type": { "const": "control.playback_started" },
         "payload": {
           "type": "object",
-          "required": ["t"],
+          "required": ["turn_id", "client_playback_started_ms", "client_clock_domain"],
           "properties": {
-            "t": { "type": "number", "description": "Speaker playback onset timestamp in ms" },
-            "kind": { "type": "string", "default": "playback_started" }
+            "kind": { "const": "playback_started" },
+            "turn_id": { "type": "string", "format": "uuid" },
+            "client_clock_domain": { "const": "client_performance_ms" },
+            "client_playback_started_ms": { "type": "number", "minimum": 0 },
+            "client_scheduled_playback_ms": { "type": ["number", "null"] },
+            "audio_context_time_sec": { "type": ["number", "null"] },
+            "prebuffer_ms": { "type": ["number", "null"], "minimum": 0 },
+            "underrun": { "type": ["boolean", "null"] }
           }
         }
       }
@@ -40,7 +57,7 @@
       "type": "object",
       "required": ["event_type", "payload"],
       "properties": {
-        "event_type": { "const": "control.barge_in" },
+        "event_type": { "enum": ["barge_in", "control.barge_in"] },
         "payload": {
           "type": "object",
           "required": ["rms"],
@@ -56,13 +73,11 @@
       "type": "object",
       "required": ["event_type", "payload"],
       "properties": {
-        "event_type": { "const": "text.turn" },
+        "event_type": { "enum": ["text.turn", "text_turn", "user_turn"] },
         "payload": {
           "type": "object",
           "required": ["text"],
-          "properties": {
-            "text": { "type": "string" }
-          }
+          "properties": { "text": { "type": "string" } }
         }
       }
     },
@@ -90,9 +105,42 @@
         "event_type": { "const": "metric" },
         "payload": {
           "type": "object",
+          "required": [
+            "kind",
+            "schema_version",
+            "session_id",
+            "turn_id",
+            "clock_domain",
+            "measurement_quality",
+            "timestamps_ms",
+            "durations_ms",
+            "missing_reasons"
+          ],
           "properties": {
-            "event": { "type": "string" },
-            "waterfall": { "type": "object" }
+            "kind": { "const": "latency" },
+            "schema_version": { "const": "1.0" },
+            "session_id": { "type": "string", "format": "uuid" },
+            "turn_id": { "type": "string", "format": "uuid" },
+            "clock_domain": { "const": "server_monotonic_ms" },
+            "client_clock_domain": { "const": "client_performance_ms" },
+            "measurement_quality": {
+              "enum": [
+                "incomplete",
+                "playback_ack_only",
+                "server_ack_upper_bound",
+                "excluded"
+              ]
+            },
+            "timestamps_ms": { "type": "object" },
+            "durations_ms": { "type": "object" },
+            "queue": { "type": "object" },
+            "population": { "type": "object" },
+            "missing_reasons": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "excluded_reason": { "type": ["string", "null"] },
+            "slo": { "type": "object" }
           }
         }
       }
@@ -104,7 +152,7 @@
       "properties": {
         "event_type": {
           "type": "string",
-          "enum": ["session_ready", "audio_start", "audio_stop", "info", "error"]
+          "enum": ["session_ready", "audio_stop", "info", "error", "ping"]
         },
         "payload": { "type": "object" }
       }

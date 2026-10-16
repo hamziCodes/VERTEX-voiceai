@@ -1275,6 +1275,9 @@
     let isMuted = false;
     let activeSources = [];
     let nextPlayTime = 0;
+    let pendingPlaybackTurnId = null;
+    const acknowledgedPlaybackTurns = new Set();
+    const playbackAckTimers = new Map();
     let isAgentSpeaking = false;
     let agentSpeakingTimer = null;
     let clientBargeFrames = 0;
@@ -1518,6 +1521,9 @@
         } else if (p.kind === 'latency') {
           updateLatencyWaterfall(p);
         }
+      } else if (type === 'audio_start') {
+        const p = msg.payload || {};
+        pendingPlaybackTurnId = p.turn_id || null;
       }
     }
 
@@ -1537,27 +1543,23 @@
     }
 
     function updateLatencyWaterfall(lat) {
-      if (lat.stt_final_ms && document.getElementById('latencyStt')) {
-        document.getElementById('latencyStt').textContent = Math.round(lat.stt_final_ms) + ' ms';
+      const durations = lat.durations_ms || {};
+      if (durations.stt_after_acoustic_end != null && document.getElementById('latencyStt')) {
+        document.getElementById('latencyStt').textContent = Math.round(durations.stt_after_acoustic_end) + ' ms';
       }
-      if (lat.llm_ttft_ms && document.getElementById('latencyLlm')) {
-        document.getElementById('latencyLlm').textContent = Math.round(lat.llm_ttft_ms) + ' ms';
+      if (durations.llm_ttft != null && document.getElementById('latencyLlm')) {
+        document.getElementById('latencyLlm').textContent = Math.round(durations.llm_ttft) + ' ms';
       }
-      if (lat.tts_ttfb_ms && document.getElementById('latencyTts')) {
-        document.getElementById('latencyTts').textContent = Math.round(lat.tts_ttfb_ms) + ' ms';
+      if (durations.tts_ttfb != null && document.getElementById('latencyTts')) {
+        document.getElementById('latencyTts').textContent = Math.round(durations.tts_ttfb) + ' ms';
       }
-      if (lat.e2e_playback_ms && document.getElementById('latencyE2e')) {
-        const e2e = Math.round(lat.e2e_playback_ms);
+      if (durations.user_perceived_e2e != null && document.getElementById('latencyE2e')) {
+        const e2e = Math.round(durations.user_perceived_e2e);
         document.getElementById('latencyE2e').textContent = e2e + ' ms';
         const badge = document.getElementById('sloBadge');
         if (badge) {
-          if (e2e <= 450) {
-            badge.textContent = `TARGET MET (${e2e}ms)`;
-            badge.className = 'slo-badge';
-          } else {
-            badge.textContent = `BREACH (${e2e}ms)`;
-            badge.className = 'slo-badge warn';
-          }
+          badge.textContent = `PROVISIONAL (${lat.measurement_quality})`;
+          badge.className = 'slo-badge';
         }
       }
     }
@@ -1583,12 +1585,39 @@
         source.connect(playCtx.destination);
 
         const now = playCtx.currentTime;
+        const underrun = nextPlayTime < now;
         // Schedule sequentially on timeline with a 50ms smooth jitter buffer
-        if (nextPlayTime < now) {
+        if (underrun) {
           nextPlayTime = now + 0.05;
         }
 
-        source.start(nextPlayTime);
+        const scheduledContextTime = nextPlayTime;
+        const delayMs = Math.max(0, (scheduledContextTime - now) * 1000);
+        const scheduledPerformanceMs = performance.now() + delayMs;
+        source.start(scheduledContextTime);
+        const turnId = pendingPlaybackTurnId;
+        if (turnId && !acknowledgedPlaybackTurns.has(turnId)) {
+          acknowledgedPlaybackTurns.add(turnId);
+          pendingPlaybackTurnId = null;
+          const timerId = setTimeout(() => {
+            playbackAckTimers.delete(turnId);
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({
+              event_type: 'control.playback_started',
+              payload: {
+                kind: 'playback_started',
+                turn_id: turnId,
+                client_clock_domain: 'client_performance_ms',
+                client_playback_started_ms: performance.now(),
+                client_scheduled_playback_ms: scheduledPerformanceMs,
+                audio_context_time_sec: scheduledContextTime,
+                prebuffer_ms: delayMs,
+                underrun: underrun
+              }
+            }));
+          }, delayMs);
+          playbackAckTimers.set(turnId, timerId);
+        }
         nextPlayTime += buffer.duration;
         activeSources.push(source);
         isAgentSpeaking = true;
@@ -1614,6 +1643,9 @@
         try { s.stop(); s.disconnect(); } catch (_) {}
       });
       activeSources = [];
+      playbackAckTimers.forEach(timerId => clearTimeout(timerId));
+      playbackAckTimers.clear();
+      pendingPlaybackTurnId = null;
       if (playCtx) {
         nextPlayTime = playCtx.currentTime;
       } else {
@@ -1625,6 +1657,7 @@
 
     function cleanup() {
       stopPlayback();
+      acknowledgedPlaybackTurns.clear();
       nextPlayTime = 0;
       if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
       if (ws) { try { ws.close(); } catch (_) {} ws = null; }
