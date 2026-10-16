@@ -6,7 +6,7 @@ This is the authoritative progress record. Update it only from evidence: impleme
 |---:|---|---|---|---|---|
 | 00 | COMPLETE | `89912a8` — harness; `8fe6f22` — multilingual fixtures/profiles | 15 Phase 00 tests passed; Ruff/compile/diff checks passed; existing suite 64 passed/3 pre-existing failed; 42-sample artifact | H01/H02 resolved 2026-10-15 | Six local FLEURS clips verified; web and Telnyx profiles separated; no live calls |
 | 01 | READY FOR HUMAN VERIFICATION | `575c571` — canonical turn-correlated latency telemetry across worker, SDKs, schema, and demo | 34 focused passed; full suite 434 passed/1 skipped/2 pre-existing VAD failures; Ruff and plan integrity passed; 42-sample offline artifact | H03 resolved; three-turn local browser check pending | No live calls or paid providers; TS build unavailable because dependencies are not installed |
-| 02 | NOT STARTED | — | — | H04 after A/B | Listening/STT latency |
+| 02 | IN PROGRESS | `be21fb4` — Silero/VAD and runtime mode; `66714cf` — compact tabbed console | 20 focused; 41 listening; full suite 446 passed/1 skipped; Ruff/integrity passed; desktop/mobile Playwright evidence | Local mock microphone rerun pending; H04 remains deferred until endpoint A/B evidence | Failed Phase 01 browser gate repaired; remaining streaming STT and endpoint work stays open |
 | 03 | NOT STARTED | — | — | Provider/listening approval later | First audio/DSP |
 | 04 | NOT STARTED | — | — | Local listening at exit | Interruption/lifecycle |
 | 05 | NOT STARTED | — | — | H05 open | Protocol/SDK |

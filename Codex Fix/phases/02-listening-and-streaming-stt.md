@@ -1,6 +1,6 @@
 # Phase 02 — Listening Path and Streaming STT
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 
 **Goal:** Remove first-utterance STT setup, reduce safe endpoint delay, and make ingress lossless-or-explicit under load across supported languages and packet sizes.
 
@@ -23,6 +23,11 @@ No choice is needed to implement candidates. Stop after A/B results and resolve 
 
 ## Tasks
 
+- [x] Repair the bundled Silero ONNX streaming contract with 64-sample rolling
+  context and regression coverage.
+- [x] Expose VAD transitions and mock/live transcript behavior truthfully to the
+  demo console.
+- [x] Verify speech onset against the local multilingual fixture set.
 - [ ] Add a regression test proving the current first speech triggers STT session initialization.
 - [ ] Start selected streaming STT during admitted-session initialization, before `ready`; bound startup timeout and clean up on every failure.
 - [ ] Buffer pre-ready audio for a small bounded duration or reject readiness until STT is ready; never silently lose it.
