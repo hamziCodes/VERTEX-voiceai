@@ -36,7 +36,8 @@ from core.listening.config import FRAME_MS, ListeningPipelineConfig, SpeakingPip
 from core.listening.speech_capture import SpeechCaptureEngine
 from core.listening.vad_worker import VADWorker
 from core.mcp.filler import ConversationalFillerSynth, FillerConfig
-from core.providers.adapters.gladia_live_stt import GladiaLiveSTTSession
+from core.providers.interfaces.live_stt import BaseLiveSTTSession
+from core.providers.live_stt_factory import build_live_stt_session
 from core.latency.collector import LatencyCollector
 from core.latency.waterfall import LatencyWaterfall
 from core.metering.usage_meter import UsageMeter
@@ -179,11 +180,15 @@ class PipelineOrchestrator:
             if lc.enable_barge_verify
             else None
         )
-        self._vad_worker: VADWorker | None = (
-            VADWorker() if lc.enable_vad_worker else None
-        )
-        self._live_stt: GladiaLiveSTTSession | None = None
+        # All sessions share a bounded executor; never create per-session VAD
+        # threads or enqueue work on asyncio's unrelated default executor.
+        self._vad_worker: VADWorker | None = VADWorker()
+        self._live_stt: BaseLiveSTTSession | None = None
         self._live_stt_task: asyncio.Task[None] | None = None
+        self._live_stt_status = "disabled"
+        self._live_stt_start_lock = asyncio.Lock()
+        self._live_stt_generation = 0
+        self._live_stt_attempts = 0
         self._live_final_text: str = ""
         self._filler: ConversationalFillerSynth | None = None
         # Playback pause gate for barge verification (set => audio flows).
@@ -465,29 +470,84 @@ class PipelineOrchestrator:
         self._capturing_speech = True
         await self._maybe_start_live_stt()
 
-    async def _maybe_start_live_stt(self) -> None:
+    async def prepare_live_stt(self) -> str:
+        """Warm selected streaming STT before readiness with bounded startup."""
         if not self.listening_config.enable_streaming_stt:
-            return
+            self._live_stt_status = "disabled"
+            return self._live_stt_status
         if self._live_stt is not None and self._live_stt.is_live:
-            return
-        cfg = getattr(self._ws_session, "config", None) if self._ws_session else None
-        language = getattr(cfg, "language", "en") if cfg else "en"
-        session = GladiaLiveSTTSession(
-            language=language,
-            endpointing=self.listening_config.gladia_endpointing,
-            receive_partials=self.listening_config.gladia_receive_partials,
-        )
-        started = await session.start()
-        self._live_stt = session
-        if started:
-            self._live_stt_task = asyncio.create_task(self._consume_live_stt())
+            return "ready"
+        if self._live_stt_status == "batch_fallback":
+            return self._live_stt_status
+        async with self._live_stt_start_lock:
+            if self._live_stt is not None and self._live_stt.is_live:
+                return "ready"
+            max_attempts = max(
+                1,
+                self.listening_config.stt_reconnect_max_attempts,
+            )
+            if self._live_stt_attempts >= max_attempts:
+                self._live_stt_status = "failed"
+                return self._live_stt_status
+            cfg = (
+                getattr(self._ws_session, "config", None)
+                if self._ws_session
+                else None
+            )
+            language = getattr(cfg, "language", "en") if cfg else "en"
+            session = build_live_stt_session(
+                self._active_stt_id,
+                language=language,
+                endpointing=self.listening_config.gladia_endpointing,
+                receive_partials=self.listening_config.gladia_receive_partials,
+            )
+            if session is None:
+                self._live_stt_status = "batch_fallback"
+                return self._live_stt_status
+            self._live_stt_attempts += 1
+            timeout = max(
+                0.001,
+                self.listening_config.stt_connect_timeout_ms / 1000.0,
+            )
+            try:
+                started = await asyncio.wait_for(session.start(), timeout=timeout)
+            except TimeoutError:
+                await session.close()
+                self._live_stt = None
+                self._live_stt_status = "timeout"
+                return self._live_stt_status
+            except Exception as exc:
+                await session.close()
+                self._live_stt = None
+                self._live_stt_status = "failed"
+                logger.warning("Live STT warm-up failed", error=str(exc))
+                return self._live_stt_status
+            if not started:
+                await session.close()
+                self._live_stt = None
+                self._live_stt_status = "batch_fallback"
+                return self._live_stt_status
+            self._live_stt = session
+            self._live_stt_status = "ready"
+            self._live_stt_generation += 1
+            generation = self._live_stt_generation
+            self._live_stt_task = asyncio.create_task(
+                self._consume_live_stt(session, generation)
+            )
+            return self._live_stt_status
 
-    async def _consume_live_stt(self) -> None:
-        session = self._live_stt
-        if session is None:
-            return
+    async def _maybe_start_live_stt(self) -> None:
+        await self.prepare_live_stt()
+
+    async def _consume_live_stt(
+        self,
+        session: BaseLiveSTTSession,
+        generation: int,
+    ) -> None:
         try:
             async for transcript in session.transcripts():
+                if session is not self._live_stt or generation != self._live_stt_generation:
+                    return
                 text = (transcript.text or "").strip()
                 if not text:
                     continue
@@ -519,9 +579,10 @@ class PipelineOrchestrator:
         except Exception as exc:
             logger.warning("Live STT consumer ended", error=str(exc))
             # Mark session dead so the next speech_start reconnects.
-            live = self._live_stt
-            if live is not None:
-                live._live = False  # type: ignore[attr-defined]
+            if session is self._live_stt:
+                await session.close()
+                self._live_stt = None
+                self._live_stt_status = "failed"
 
     async def _maybe_speculate_rag(self, partial: str) -> None:
         if not self.listening_config.enable_rag_speculative:

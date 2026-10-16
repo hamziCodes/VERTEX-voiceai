@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -16,6 +18,36 @@ _MODEL_DIR = Path(__file__).resolve().parent / "models"
 _ONNX_NAME = "silero_vad.onnx"
 _MAX_SILERO_BYTES = 512 * 1024
 _SILERO_CONTEXT_SAMPLES_16K = 64
+_SHARED_SESSION_LOCK = threading.Lock()
+_SHARED_ONNX_SESSION: Any | None = None
+_SHARED_LOAD_ATTEMPTED = False
+
+
+def _load_shared_onnx_session(model_path: Path) -> Any | None:
+    """Load the immutable ONNX graph once; recurrent state remains per adapter."""
+    global _SHARED_LOAD_ATTEMPTED, _SHARED_ONNX_SESSION
+    with _SHARED_SESSION_LOCK:
+        if _SHARED_LOAD_ATTEMPTED:
+            return _SHARED_ONNX_SESSION
+        _SHARED_LOAD_ATTEMPTED = True
+        try:
+            import onnxruntime as ort
+
+            _SHARED_ONNX_SESSION = ort.InferenceSession(
+                str(model_path), providers=["CPUExecutionProvider"]
+            )
+            try:
+                import torch
+
+                torch.set_num_threads(1)
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.warning(
+                "Silero ONNX unavailable; using energy fallback: %s", exc
+            )
+            _SHARED_ONNX_SESSION = None
+        return _SHARED_ONNX_SESSION
 
 
 class SileroVADAdapter(BaseVADProvider):
@@ -41,25 +73,9 @@ class SileroVADAdapter(BaseVADProvider):
         self._min_silence_frames = self.config.min_silence_frames
         model_path = _MODEL_DIR / _ONNX_NAME
         if model_path.is_file():
-            try:
-                import onnxruntime as ort
-
-                self._session = ort.InferenceSession(
-                    str(model_path), providers=["CPUExecutionProvider"]
-                )
+            self._session = _load_shared_onnx_session(model_path)
+            if self._session is not None:
                 self._backend = "silero_onnx"
-                try:
-                    import torch
-
-                    torch.set_num_threads(1)
-                except Exception:
-                    pass
-            except Exception as exc:
-                logger.warning(
-                    "Silero ONNX unavailable; using energy fallback: %s", exc
-                )
-                self._session = None
-                self._backend = "energy"
 
     @property
     def is_speaking(self) -> bool:

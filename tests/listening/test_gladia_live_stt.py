@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
 
 from core.providers.adapters.gladia_live_stt import GladiaLiveSTTSession
+from core.providers.interfaces.stt import Transcript
 
 
 @pytest.mark.asyncio
@@ -98,3 +100,23 @@ async def test_connect_factory_injected_without_live_network(
     assert partial is not None
     assert partial.text == "partial hello"
     assert partial.is_final is False
+
+
+@pytest.mark.asyncio
+async def test_transcript_queue_is_bounded_and_never_drops_finals() -> None:
+    session = GladiaLiveSTTSession(api_key="unit-test-key")
+    partial = Transcript(text="partial", is_final=False)
+    for _ in range(session.transcript_queue_capacity):
+        await session._queue_transcript(partial)
+
+    await session._queue_transcript(partial)
+    assert session.dropped_partial_count == 1
+
+    final = Transcript(text="final", is_final=True)
+    pending_final = asyncio.create_task(session._queue_transcript(final))
+    await asyncio.sleep(0)
+    assert pending_final.done() is False
+
+    session._transcript_q.get_nowait()
+    await pending_final
+    assert session.dropped_final_count == 0

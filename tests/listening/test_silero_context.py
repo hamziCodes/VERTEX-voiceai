@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import pytest
 
 from core.providers.interfaces.vad import VADConfig
 from core.types.audio import AudioFrame
@@ -80,3 +81,12 @@ def test_noncanonical_frame_uses_energy_fallback_without_calling_onnx() -> None:
 
     assert session.inputs == []
     assert event.speech_start is True
+
+
+def test_bundled_onnx_session_is_shared_across_adapters() -> None:
+    first = SileroVADAdapter()
+    second = SileroVADAdapter()
+    if first._session is None:
+        pytest.skip("ONNX runtime or bundled model unavailable")
+
+    assert first._session is second._session

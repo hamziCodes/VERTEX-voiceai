@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 
-class OverflowPolicy(str, Enum):
+class OverflowPolicy(StrEnum):
     """Overflow drop policies for bounded queues."""
 
     DROP_OLDEST = "drop_oldest"
@@ -31,7 +31,7 @@ class BufferPolicy:
 
 # Blueprint File 02 §1.1 Standard Queue Policies
 INBOUND_MIC_POLICY = BufferPolicy(
-    name="inbound_mic", maxsize=100, overflow=OverflowPolicy.DROP_OLDEST
+    name="inbound_mic", maxsize=100, overflow=OverflowPolicy.BLOCK
 )
 
 VAD_INTERNAL_POLICY = BufferPolicy(

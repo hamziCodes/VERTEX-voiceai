@@ -105,6 +105,9 @@ class ListeningPipelineConfig:
     gladia_endpointing: float = 0.2
     gladia_receive_partials: bool = True
     stt_mock_text: str = ""
+    stt_connect_timeout_ms: int = 3000
+    stt_reconnect_max_attempts: int = 3
+    ingress_backpressure_warn_ms: int = 100
 
     # Observability (§8.7)
     debug_listening: bool = False
@@ -175,7 +178,7 @@ class ListeningPipelineConfig:
         return int(self.vad_pre_speech_ms * 16 * 2)
 
     @classmethod
-    def from_env(cls) -> "ListeningPipelineConfig":
+    def from_env(cls) -> ListeningPipelineConfig:
         return cls(
             enabled_phases=_parse_phases(os.environ.get("UCVE_PIPELINE_V2")),
             vad_threshold=_env_float("UCVE_VAD_THRESHOLD", 0.5),
@@ -193,6 +196,13 @@ class ListeningPipelineConfig:
             gladia_endpointing=_env_float("UCVE_GLADIA_ENDPOINTING", 0.2),
             gladia_receive_partials=_env_bool("UCVE_GLADIA_RECEIVE_PARTIALS", True),
             stt_mock_text=_env_str("UCVE_STT_MOCK_TEXT", ""),
+            stt_connect_timeout_ms=_env_int("UCVE_STT_CONNECT_TIMEOUT_MS", 3000),
+            stt_reconnect_max_attempts=_env_int(
+                "UCVE_STT_RECONNECT_MAX_ATTEMPTS", 3
+            ),
+            ingress_backpressure_warn_ms=_env_int(
+                "UCVE_INGRESS_BACKPRESSURE_WARN_MS", 100
+            ),
             debug_listening=_env_bool("UCVE_DEBUG_LISTENING", False),
         )
 
@@ -229,7 +239,7 @@ class SpeakingPipelineConfig:
         return self.has_phase("tool_loop")
 
     @classmethod
-    def from_env(cls) -> "SpeakingPipelineConfig":
+    def from_env(cls) -> SpeakingPipelineConfig:
         return cls(
             enabled_phases=_parse_phases(os.environ.get("UCVE_PIPELINE_V2")),
             tts_chunk_size_bytes=_env_int("UCVE_TTS_CHUNK_SIZE_BYTES", 8192),

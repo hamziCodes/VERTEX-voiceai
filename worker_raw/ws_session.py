@@ -57,11 +57,8 @@ class WebSocketSessionRunner:
         )
         self._active_turns: set[asyncio.Task[Any]] = set()
         self._finalized = False
-        self._frame_slicer: FrameSlicer | None = (
-            FrameSlicer()
-            if orchestrator.listening_config.enable_frame_slicing
-            else None
-        )
+        # Canonical framing is a transport invariant, not an optional feature.
+        self._frame_slicer = FrameSlicer()
         self.security_policy = WSSecurityPolicy()
 
     def _track_turn(self, task: asyncio.Task[Any]) -> None:
@@ -85,14 +82,14 @@ class WebSocketSessionRunner:
         if self.orchestrator.fsm.can_transition(SessionEvent.SESSION_ADMITTED):
             self.orchestrator.fsm.trigger(SessionEvent.SESSION_ADMITTED)
         self.orchestrator.vad_adapter.reset()
-        # Open Gladia Live once for the whole call (legacy pattern).
-        await self.orchestrator._maybe_start_live_stt()
+        streaming_stt_status = await self.orchestrator.prepare_live_stt()
         runtime_status = provider_runtime_status()
         await self.transport.send_control_event(
             ControlEventType.METRIC,
             {
                 "kind": "session_ready",
                 "session_id": self.config.session_id,
+                "streaming_stt": streaming_stt_status,
                 **runtime_status,
             },
         )
@@ -121,10 +118,7 @@ class WebSocketSessionRunner:
 
     async def _enqueue_pcm(self, pcm_data: bytes) -> None:
         """Slice (optional) and enqueue canonical PCM frames for ingress."""
-        if self._frame_slicer is not None:
-            frames = self._frame_slicer.push(pcm_data)
-        else:
-            frames = [pcm_data] if pcm_data else []
+        frames = self._frame_slicer.push(pcm_data)
         for pcm in frames:
             self._ingress_seq += 1
             frame = AudioFrame(
@@ -134,7 +128,20 @@ class WebSocketSessionRunner:
                 sequence=self._ingress_seq,
                 timestamp_ms=time.time() * 1000.0,
             )
+            wait_started = time.monotonic()
             await self._ingress_queue.put(frame)
+            waited_ms = (time.monotonic() - wait_started) * 1000.0
+            warn_ms = self.orchestrator.listening_config.ingress_backpressure_warn_ms
+            if waited_ms >= warn_ms:
+                await self.transport.send_control_event(
+                    ControlEventType.METRIC,
+                    {
+                        "kind": "ingress_backpressure",
+                        "waited_ms": round(waited_ms, 2),
+                        "queue_size": self._ingress_queue.qsize(),
+                        "dropped_frames": self._ingress_queue.drop_count,
+                    },
+                )
 
     async def _receive_loop(self) -> None:
         while not self.stop.is_set():
