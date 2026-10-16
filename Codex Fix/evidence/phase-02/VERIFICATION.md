@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-16
 
-**Status:** automated checks complete; local microphone check pending
+**Status:** repair slice verified; remaining Phase 02 work continues
 
 **Scope:** failed Phase 01 browser gate, Silero streaming input, truthful mock
 mode, and compact demo console
@@ -64,7 +64,15 @@ Some clips do not emit speech-end because they lack the configured trailing
 silence; that behavior belongs to the endpoint-profile A/B work still pending
 in Phase 02.
 
-## Human verification
+## Human verification — passed
+
+Hamzi confirmed on 2026-10-16 that the local microphone test worked. The demo
+showed VAD-driven turns, the fixed offline transcript, mock LLM responses,
+audible mock TTS output, and latency telemetry. The observed beep and repeated
+turn behavior were identified as mock TTS plus speaker-to-microphone feedback
+while Echo guard was disabled; provider-quality testing remains separate.
+
+### Reproduction procedure
 
 Restart both local services so they load this code. For a free deterministic
 mock check, add this only to the current PowerShell worker process:
