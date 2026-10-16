@@ -14,4 +14,6 @@ The C01 quarantine contains 6,633 files and 228,711,901 bytes. It is ignored by 
 
 Ruff recreated its cache during C02 verification. That regenerated ignored cache was moved to `hamza_local/clean_codebase/generated/2026-10-15-c01/.ruff_cache-post-verification/`; no tracked file was involved.
 
+C06 moved 79 generated `__pycache__` directories containing 424 files and 2,127,162 bytes to `hamza_local/clean_codebase/generated/2026-10-16-c06-pycache/` after the final test run.
+
 Secret files and raw key files are excluded from this program and must never appear in this manifest.

@@ -8,11 +8,11 @@
 | C03 | COMPLETE | `STRUCTURE_DECISIONS.md` maps package, service, Docker, test, reference, and local-tool boundaries | Canonical imports passed; targeted layout/deployment set 17 passed/1 existing config-guard failure; UV exposed invalid lock | Compatibility paths must remain under current Phase 00 contract |
 | C04 | COMPLETE - NO CHANGE | Naming analysis found underscore imports and hyphenated distributions/services are correctly separated | Existing layout tests and Docker consumers confirm contract | Broad rename would create breakage; public-path changes still require approval |
 | C05 | COMPLETE - RETAIN | `C05_CLASSIFICATION.md`; reference scans for latency harness, lifecycle, telephony, jobs, managed worker, and reference trees | Phase 17/18 imports and Docker/docs consumers verified | No tracked runtime deletion was safe; incomplete capabilities remain non-production |
-| C06 | NOT STARTED | - | - | Offline regression and final report |
+| C06 | COMPLETE | `FINAL_REPORT.md`; final generated caches quarantined | Full pytest 420 passed/1 skipped/2 existing VAD failures; integrity passed; imports passed | Cleanup closed; proceed to production Phase 01 |
 
 ## Next exact action
 
-Start C06 with the full safe offline pytest suite, plan-integrity check, canonical import check, Git diff/secret-path review, and final tree/quarantine report. Move newly generated caches only after verification, then commit and push the cleanup closure.
+Begin production Phase 01 from `../phases/01-truthful-latency-telemetry.md`. Use acoustic end-of-speech to first audible sample as the primary metric and label SLO thresholds provisional.
 
 ## Pre-existing lint debt found during C02
 

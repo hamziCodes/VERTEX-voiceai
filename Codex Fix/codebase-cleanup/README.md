@@ -22,7 +22,7 @@ This program cleans repository clutter without beginning production remediation 
 | C03 | Validate package boundaries and compatibility paths | COMPLETE |
 | C04 | Align names and hierarchy where tests prove it is safe | COMPLETE - NO RENAME |
 | C05 | Classify stubs, roadmap code, and historical/reference material | COMPLETE - RETAIN |
-| C06 | Full offline regression and final structure report | NOT STARTED |
+| C06 | Full offline regression and final structure report | COMPLETE |
 
 ## Current classification
 
@@ -56,4 +56,4 @@ See `C05_CLASSIFICATION.md` for retained incomplete capabilities. None of the re
 
 ## Resume point
 
-Read `EXECUTION_TRACKER.md`, then perform its `Next exact action`. Do not skip phase gates.
+Cleanup is complete. Read `FINAL_REPORT.md`, then resume the production tracker at Phase 01.
