@@ -2,12 +2,13 @@
 
 **Date:** 2026-10-16
 
-**Status:** repair slice verified; remaining Phase 02 work continues
+**Status:** implementation ready for final QA; H04 remains deferred
 
 **Scope:** failed Phase 01 browser gate, Silero streaming input, truthful mock
 mode, and compact demo console
 
-**Implementation commits:** `be21fb4` (VAD/runtime), `66714cf` (demo console)
+**Implementation commits:** `be21fb4` (VAD/runtime), `66714cf` (demo console),
+`ce7b80a` (warm STT, lossless ingress, shared VAD)
 
 ## Root cause
 
@@ -98,10 +99,45 @@ short phrase followed by about one second of silence. Confirm:
 The displayed words are simulated in this check. Testing actual recognition
 requires explicit live-provider approval because it can incur a charge.
 
-## Remaining Phase 02 work
+## Streaming STT and backpressure checkpoint
 
-- Warm the selected streaming STT before session readiness and make provider
-  selection generic.
-- Measure endpoint candidates and obtain H04 profile selection.
-- Prove packet-size invariance and observable ingress/backpressure behavior.
-- Test disconnect/reconnect and duplicate-final handling.
+The second Phase 02 slice adds:
+
+- a provider-neutral `BaseLiveSTTSession` and selected-provider factory;
+- warm STT startup before `session_ready`, with a three-second default timeout,
+  cleanup, explicit batch fallback, and bounded reconnect attempts;
+- generation checks that reject stale finals from a replaced connection;
+- a bounded transcript queue that may discard partials under saturation but
+  applies lossless backpressure to final transcripts;
+- mandatory 32 ms framing at the WebSocket boundary;
+- blocking inbound audio with an `ingress_backpressure` degradation event and
+  zero silent frame drops;
+- one shared Silero ONNX graph and one process-wide two-thread VAD executor.
+
+| Verification | Result |
+|---|---|
+| Focused Phase 02 contracts | 24 passed |
+| Listening, latency, Phase 02 buffering, and Phase 17 compatibility | 88 passed |
+| Full offline development-demo suite | 462 passed, 1 skipped |
+| Ruff on new/directly changed Phase 02 modules | passed |
+| Ruff fatal-error scan on worker orchestration/session | passed |
+| Plan integrity | `OK: 36 phases, tests, and trackers verified.` |
+
+Artifact: `endpoint-candidate-benchmark.json`.
+
+| Endpoint | Real FLEURS false splits | Synthetic pause false splits | Added endpoint wait |
+|---:|---:|---:|---:|
+| 400 ms | 0/2 | 5/9 | 400 ms |
+| 550 ms | 0/2 | 4/9 | 550 ms |
+| 650 ms | 0/2 | 2/9 | 650 ms |
+| 960 ms | 0/2 | 0/9 | 960 ms |
+
+The six read-speech clips contain only two measurable internal silence runs,
+both below 100 ms, so they cannot choose a conversational default alone. The
+synthetic scenarios expose the expected latency/cutoff tradeoff. Per Hamzi's
+instruction, H04 listening/profile selection is deferred to the final audit and
+QA pass, and the existing production endpoint default remains unchanged.
+
+No live provider was contacted and no charge was incurred. Real Gladia
+handshake/finalization timing remains a final-QA item requiring explicit cost
+approval.

@@ -1,0 +1,143 @@
+{
+  "generated_at": "2026-10-16T13:14:40.894448+00:00",
+  "mode": "offline_local_silero",
+  "dataset": "google/fleurs",
+  "dataset_revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+  "fixture_count": 6,
+  "fixtures": [
+    {
+      "fixture_id": "en_us/validation-62-male.wav",
+      "language": "en_us",
+      "internal_silence_runs_ms": [
+        96
+      ]
+    },
+    {
+      "fixture_id": "en_us/validation-28-female.wav",
+      "language": "en_us",
+      "internal_silence_runs_ms": []
+    },
+    {
+      "fixture_id": "ur_pk/validation-31-female.wav",
+      "language": "ur_pk",
+      "internal_silence_runs_ms": []
+    },
+    {
+      "fixture_id": "ur_pk/validation-91-female.wav",
+      "language": "ur_pk",
+      "internal_silence_runs_ms": []
+    },
+    {
+      "fixture_id": "ar_eg/validation-95-female.wav",
+      "language": "ar_eg",
+      "internal_silence_runs_ms": [
+        64
+      ]
+    },
+    {
+      "fixture_id": "ar_eg/validation-80-female.wav",
+      "language": "ar_eg",
+      "internal_silence_runs_ms": []
+    }
+  ],
+  "fleurs_candidates": [
+    {
+      "endpoint_ms": 400,
+      "pause_count": 2,
+      "false_endpoint_count": 0,
+      "false_endpoint_rate": 0.0,
+      "added_latency_ms": 400
+    },
+    {
+      "endpoint_ms": 550,
+      "pause_count": 2,
+      "false_endpoint_count": 0,
+      "false_endpoint_rate": 0.0,
+      "added_latency_ms": 550
+    },
+    {
+      "endpoint_ms": 650,
+      "pause_count": 2,
+      "false_endpoint_count": 0,
+      "false_endpoint_rate": 0.0,
+      "added_latency_ms": 650
+    },
+    {
+      "endpoint_ms": 960,
+      "pause_count": 2,
+      "false_endpoint_count": 0,
+      "false_endpoint_rate": 0.0,
+      "added_latency_ms": 960
+    }
+  ],
+  "synthetic_pause_scenarios": [
+    {
+      "fixture_id": "short-en",
+      "language": "en",
+      "within_utterance_pauses_ms": [
+        180,
+        420
+      ]
+    },
+    {
+      "fixture_id": "short-ur",
+      "language": "ur",
+      "within_utterance_pauses_ms": [
+        240,
+        610
+      ]
+    },
+    {
+      "fixture_id": "mixed-ur-en",
+      "language": "ur-en",
+      "within_utterance_pauses_ms": [
+        300,
+        720
+      ]
+    },
+    {
+      "fixture_id": "natural-pauses",
+      "language": "multilingual",
+      "within_utterance_pauses_ms": [
+        350,
+        580,
+        880
+      ]
+    }
+  ],
+  "synthetic_candidates": [
+    {
+      "endpoint_ms": 400,
+      "pause_count": 9,
+      "false_endpoint_count": 5,
+      "false_endpoint_rate": 0.5555555555555556,
+      "added_latency_ms": 400
+    },
+    {
+      "endpoint_ms": 550,
+      "pause_count": 9,
+      "false_endpoint_count": 4,
+      "false_endpoint_rate": 0.4444444444444444,
+      "added_latency_ms": 550
+    },
+    {
+      "endpoint_ms": 650,
+      "pause_count": 9,
+      "false_endpoint_count": 2,
+      "false_endpoint_rate": 0.2222222222222222,
+      "added_latency_ms": 650
+    },
+    {
+      "endpoint_ms": 960,
+      "pause_count": 9,
+      "false_endpoint_count": 0,
+      "false_endpoint_rate": 0.0,
+      "added_latency_ms": 960
+    }
+  ],
+  "limitations": [
+    "Read-speech fixtures do not represent conversational turn-taking.",
+    "Metrics cover local Silero gaps, not provider finalization or network time.",
+    "A release default still requires the H04 listening decision."
+  ]
+}

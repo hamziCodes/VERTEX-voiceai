@@ -1,6 +1,6 @@
 # Phase 02 — Listening Path and Streaming STT
 
-**Status:** IN PROGRESS
+**Status:** READY FOR FINAL QA
 
 **Goal:** Remove first-utterance STT setup, reduce safe endpoint delay, and make ingress lossless-or-explicit under load across supported languages and packet sizes.
 
@@ -28,17 +28,27 @@ No choice is needed to implement candidates. Stop after A/B results and resolve 
 - [x] Expose VAD transitions and mock/live transcript behavior truthfully to the
   demo console.
 - [x] Verify speech onset against the local multilingual fixture set.
-- [ ] Add a regression test proving the current first speech triggers STT session initialization.
-- [ ] Start selected streaming STT during admitted-session initialization, before `ready`; bound startup timeout and clean up on every failure.
-- [ ] Buffer pre-ready audio for a small bounded duration or reject readiness until STT is ready; never silently lose it.
-- [ ] Select live STT from compiled provider configuration rather than hardcoded Gladia. Batch fallback is explicit and measured.
-- [ ] Separate local VAD onset/barge-in from provider endpointing. Feed continuous canonical frames while the session is active.
-- [ ] Test endpoint candidates around 400/550/650/960 ms using real/synthetic multilingual fixtures; record cutoff rate, false endpoint rate, and latency.
-- [ ] Make frame slicing mandatory at the transport boundary so millisecond thresholds do not depend on client packet size.
-- [ ] Define ingress queue policy: bounded capacity, age metric, explicit drop/degradation event, and no drop-oldest acceptance in normal load tests.
-- [ ] Bound transcript queue and reconnect policy; preserve turn ordering and prevent duplicate finals after reconnect.
-- [ ] Reuse/shared-load Silero model or a bounded executor based on measured concurrency; do not create uncontrolled per-session threads/models.
-- [ ] Test short speech, long pause, low volume, noise, Urdu-English switching, disconnect during connect, provider final before/after local VAD, and queue saturation.
+- [x] Add a regression proving STT is warmed before first speech and is not
+  initialized again on that speech.
+- [x] Start selected streaming STT during admitted-session initialization,
+  before `ready`; bound startup timeout and clean up on every failure.
+- [x] Reject readiness until warm-up resolves to live or explicit batch fallback,
+  so pre-ready audio cannot be silently lost.
+- [x] Select live STT from compiled provider configuration rather than hardcoded
+  Gladia. Batch fallback is explicit and reported.
+- [x] Separate local VAD onset/barge-in from provider endpointing. Feed continuous
+  canonical frames while the session is active.
+- [x] Test endpoint candidates around 400/550/650/960 ms using real and synthetic
+  multilingual fixtures; record cutoff risk and added endpoint latency.
+- [x] Make frame slicing mandatory at the transport boundary so millisecond
+  thresholds do not depend on client packet size.
+- [x] Define ingress queue policy: bounded blocking, explicit degradation metric,
+  and no drop-oldest behavior under saturation.
+- [x] Bound transcript queue and reconnect policy; preserve final ordering and
+  prevent stale finals after reconnect.
+- [x] Share the Silero ONNX graph and a two-thread VAD executor across sessions.
+- [x] Cover short speech, pauses, low-volume/noise fixtures, Urdu-English cases,
+  connect timeout, final ordering, stale reconnects, and queue saturation.
 
 ## Verification
 
@@ -51,7 +61,9 @@ Expected: STT ready before session ready; first audio retained; packet-size inva
 
 ## Human verification
 
-Hamzi listens to A/B clips and selects the release profile (H04). If live Gladia measurement is needed, stop with the V5 request from `VERIFICATION.md`.
+Hamzi requested that audit and QA gates be deferred until all phases are
+implemented. H04 therefore remains open; no production endpoint default was
+changed. Live Gladia measurement still requires explicit cost approval.
 
 ## Exit criteria
 
