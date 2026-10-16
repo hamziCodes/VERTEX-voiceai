@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     :root {
+      --header-height: 94px;
       --bg-dark: #0a0d12;
       --panel-bg: rgba(18, 24, 38, 0.85);
       --panel-border: rgba(255, 255, 255, 0.08);
@@ -610,6 +611,212 @@
     .pill-warn { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); border: 1px solid rgba(245, 158, 11, 0.3); }
     .pill-error { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); border: 1px solid rgba(244, 63, 94, 0.3); }
     .pill-idle { background: rgba(148, 163, 184, 0.1); color: var(--text-muted); border: 1px solid rgba(148, 163, 184, 0.2); }
+
+    /* Compact voice workspace */
+    #tab-playground.active {
+      height: calc(100vh - var(--header-height));
+      padding: 0.75rem 0;
+      overflow: hidden;
+    }
+
+    .playground-workspace {
+      height: 100%;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(260px, 310px) minmax(390px, 1fr) minmax(310px, 390px);
+      gap: 0.75rem;
+    }
+
+    .workspace-panel {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      background: #111722;
+      border: 1px solid var(--panel-border);
+      border-radius: 0.75rem;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+    }
+
+    .workspace-scroll {
+      height: 100%;
+      overflow-y: auto;
+      padding: 1rem;
+      scrollbar-width: thin;
+    }
+
+    .workspace-heading,
+    .section-heading,
+    .panel-tabs,
+    .conversation-status,
+    .log-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.65rem;
+    }
+
+    .workspace-heading h2 {
+      font-size: 0.95rem;
+      letter-spacing: -0.01em;
+    }
+
+    .workspace-kicker,
+    .section-label {
+      color: var(--text-muted);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .runtime-mode {
+      flex: none;
+      padding: 0.28rem 0.5rem;
+      border-radius: 0.35rem;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      color: var(--text-muted);
+      font: 700 0.65rem/1 var(--font-mono);
+      letter-spacing: 0.04em;
+    }
+
+    .runtime-mode.mock {
+      color: var(--accent-amber);
+      border-color: rgba(245, 158, 11, 0.45);
+      background: rgba(245, 158, 11, 0.1);
+    }
+
+    .runtime-mode.live {
+      color: var(--accent-green);
+      border-color: rgba(16, 185, 129, 0.45);
+      background: rgba(16, 185, 129, 0.1);
+    }
+
+    .mode-notice {
+      margin: 0.75rem 0;
+      padding: 0.65rem 0.75rem;
+      border-left: 2px solid var(--accent-amber);
+      background: rgba(245, 158, 11, 0.07);
+      color: #cbd5e1;
+      font-size: 0.74rem;
+      line-height: 1.45;
+    }
+
+    .session-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+      margin: 0.85rem 0 0.6rem;
+    }
+
+    .session-actions .btn-primary { grid-column: 1 / -1; }
+    .session-actions button { padding: 0.65rem 0.75rem; }
+
+    .compact-toggle {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      padding: 0.6rem;
+      border: 1px solid var(--panel-border);
+      border-radius: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .setup-disclosure {
+      margin-top: 0.8rem;
+      border-top: 1px solid var(--panel-border);
+      padding-top: 0.8rem;
+    }
+
+    .setup-disclosure summary {
+      cursor: pointer;
+      color: var(--text-main);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .setup-content { padding-top: 0.75rem; }
+    .setup-content .provider-grid { grid-template-columns: 1fr; }
+    .setup-content .system-prompt-box { margin-top: 0.65rem; min-height: 74px; }
+
+    .conversation-panel {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      gap: 0.75rem;
+      padding: 1rem;
+    }
+
+    .conversation-panel .visualizer-container { padding: 0.65rem 0.75rem; }
+    .conversation-panel canvas { height: 42px; }
+    .conversation-panel .transcript-box { height: auto; min-height: 0; }
+    .conversation-panel .input-bar { margin: 0; }
+
+    .voice-state {
+      color: var(--text-muted);
+      font: 700 0.68rem/1 var(--font-mono);
+    }
+
+    .voice-state.speaking { color: var(--accent-green); }
+
+    .inspector-panel {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .panel-tabs {
+      justify-content: flex-start;
+      padding: 0.7rem;
+      border-bottom: 1px solid var(--panel-border);
+      overflow-x: auto;
+    }
+
+    .panel-tab {
+      flex: 1;
+      min-width: max-content;
+      padding: 0.48rem 0.65rem;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.72rem;
+    }
+
+    .panel-tab.active {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.06);
+      border-color: var(--panel-border);
+    }
+
+    .inspector-content { min-height: 0; }
+    .inspector-view { display: none; height: 100%; overflow-y: auto; padding: 1rem; }
+    .inspector-view.active { display: block; }
+    .inspector-view .latency-grid { grid-template-columns: repeat(2, 1fr); }
+    .inspector-view .console-logs { height: calc(100% - 42px); min-height: 260px; }
+    .inspector-view .metrics-grid { margin-top: 0.75rem; }
+
+    @media (min-width: 1181px) {
+      body:has(#tab-playground.active) { overflow: hidden; }
+    }
+
+    @media (max-width: 1180px) {
+      header { padding-inline: 1rem; }
+      .brand-title p { display: none; }
+      .tab-nav { max-width: 62vw; overflow-x: auto; }
+      .tab-btn { white-space: nowrap; padding-inline: 0.7rem; }
+      .playground-workspace { grid-template-columns: 270px minmax(360px, 1fr); }
+      .inspector-panel { grid-column: 1 / -1; min-height: 360px; }
+      #tab-playground.active { height: auto; overflow: visible; }
+    }
+
+    @media (max-width: 760px) {
+      :root { --header-height: 116px; }
+      header { align-items: flex-start; flex-wrap: wrap; gap: 0.6rem; }
+      .tab-nav { order: 3; max-width: 100%; width: 100%; }
+      main { padding: 0 0.65rem; }
+      .playground-workspace { display: flex; flex-direction: column; }
+      .workspace-panel { min-height: 420px; }
+      .conversation-panel { min-height: 620px; }
+      .provider-grid, .latency-grid, .grid-2col, .grid-3col { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -644,182 +851,186 @@
     <!-- TAB 1: VOICE PLAYGROUND -->
     <!-- ========================================================================= -->
     <section id="tab-playground" class="tab-content active">
-      <div class="playground-grid">
-        <!-- Controls & Visualizers -->
-        <div class="card">
-          <div class="card-title">
-            <span>Session Controls</span>
-          </div>
+      <div class="playground-workspace">
+        <aside class="workspace-panel control-panel">
+          <div class="workspace-scroll">
+            <div class="workspace-heading">
+              <div>
+                <div class="workspace-kicker">Voice session</div>
+                <h2>Control room</h2>
+              </div>
+              <span id="runtimeModeBadge" class="runtime-mode">MODE UNKNOWN</span>
+            </div>
 
-          <div class="btn-group">
-            <button id="startBtn" class="btn-primary">
-              <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 1A5 5 0 1 1 8 3a5 5 0 0 1 0 10z"/></svg>
-              Start Voice Session
-            </button>
-            <button id="muteBtn" class="btn-secondary" disabled>
-              <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/></svg>
-              <span id="muteText">Mute Mic</span>
-            </button>
-            <button id="stopBtn" class="btn-danger" disabled>
-              <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
-              End Session
-            </button>
-            <button id="speakerTestBtn" class="btn-secondary" type="button">
-              Test Speakers
-            </button>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; padding: 0.45rem 0.65rem; background: rgba(0, 242, 254, 0.06); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 0.5rem; font-size: 0.78rem;">
-            <input type="checkbox" id="echoGuardCheck" style="accent-color: var(--accent-cyan); width: 1rem; height: 1rem; cursor: pointer;" />
-            <label for="echoGuardCheck" style="cursor: pointer; user-select: none; color: #f1f5f9;">
-              <strong>Echo Guard</strong> (Auto-mutes mic while Agent speaks — prevents speaker loops)
+            <div id="sttModeNotice" class="mode-notice">
+              Connect to inspect provider and transcript mode.
+            </div>
+
+            <div class="session-actions">
+              <button id="startBtn" class="btn-primary">
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 1A5 5 0 1 1 8 3a5 5 0 0 1 0 10z"/></svg>
+                Start session
+              </button>
+              <button id="muteBtn" class="btn-secondary" disabled>
+                <span id="muteText">Mute mic</span>
+              </button>
+              <button id="stopBtn" class="btn-danger" disabled>End session</button>
+            </div>
+
+            <label class="compact-toggle" for="echoGuardCheck">
+              <input type="checkbox" id="echoGuardCheck" />
+              <span><strong>Echo guard</strong><br />Pause microphone input while agent audio plays.</span>
             </label>
-          </div>
-          <audio id="speakerAudio" autoplay playsinline style="display:none"></audio>
-          <p class="provider-hint" id="speakerHint">Use Chrome/Edge. If the startup test chime is silent, check output device.</p>
 
-          <div class="card-title" style="margin-top: 0.5rem;">
-            <span>Voice Pipeline Providers</span>
+            <button id="speakerTestBtn" class="btn-secondary" type="button" style="width:100%; margin-top:0.6rem;">
+              Test speakers
+            </button>
+            <audio id="speakerAudio" autoplay playsinline style="display:none"></audio>
+            <p class="provider-hint" id="speakerHint">Chrome or Edge recommended.</p>
+
+            <details class="setup-disclosure" open>
+              <summary>Pipeline setup</summary>
+              <div class="setup-content">
+                <div class="provider-grid">
+                  <div class="provider-field">
+                    <label for="sttProviderSelect">Speech to text</label>
+                    <select id="sttProviderSelect">
+                      <option value="gladia" selected>Gladia</option>
+                      <option value="deepgram">Deepgram Nova-3</option>
+                    </select>
+                  </div>
+                  <div class="provider-field">
+                    <label for="llmProviderSelect">Language model</label>
+                    <select id="llmProviderSelect">
+                      <option value="groq" selected>Groq</option>
+                      <option value="gemini">Google Gemini</option>
+                      <option value="openai">OpenAI</option>
+                    </select>
+                  </div>
+                  <div class="provider-field">
+                    <label for="llmModelSelect">Model</label>
+                    <select id="llmModelSelect">
+                      <option value="openai/gpt-oss-120b" selected>GPT-OSS 120B</option>
+                      <option value="qwen/qwen3.8-27b">Qwen 3.8 27B</option>
+                      <option value="openai/gpt-oss-20b">GPT-OSS 20B</option>
+                    </select>
+                  </div>
+                  <div class="provider-field">
+                    <label for="ttsProviderSelect">Text to speech</label>
+                    <select id="ttsProviderSelect">
+                      <option value="cartesia" selected>Cartesia Sonic</option>
+                      <option value="uplift">Uplift Orator</option>
+                      <option value="elevenlabs">ElevenLabs Turbo 2.5</option>
+                    </select>
+                  </div>
+                </div>
+                <label class="section-label" for="systemPromptInput" style="display:block; margin-top:0.75rem;">Agent instruction</label>
+                <textarea id="systemPromptInput" class="system-prompt-box" rows="3" placeholder="Enter system prompt">You are Wavia Voice AI, a helpful, natural, concise voice assistant. Respond directly and concisely in 1-2 short conversational sentences.</textarea>
+              </div>
+            </details>
           </div>
-          <div class="provider-grid">
-            <div class="provider-field">
-              <label for="sttProviderSelect">STT Provider</label>
-              <select id="sttProviderSelect">
-                <option value="gladia" selected>Gladia (Live STT)</option>
-                <option value="deepgram">Deepgram (Nova-3 STT)</option>
-              </select>
+        </aside>
+
+        <section class="workspace-panel conversation-panel" aria-label="Live conversation">
+          <div class="workspace-heading">
+            <div>
+              <div class="workspace-kicker">Conversation</div>
+              <h2>Live transcript</h2>
             </div>
-            <div class="provider-field">
-              <label for="ttsProviderSelect">TTS Provider</label>
-              <select id="ttsProviderSelect">
-                <option value="cartesia" selected>Cartesia (Sonic / EN)</option>
-                <option value="uplift">Uplift (Orator / UR+EN)</option>
-                <option value="elevenlabs">ElevenLabs (Turbo 2.5)</option>
-              </select>
-            </div>
-            <div class="provider-field">
-              <label for="llmProviderSelect">LLM Provider</label>
-              <select id="llmProviderSelect">
-                <option value="groq" selected>Groq (Ultra-Fast LPUs)</option>
-                <option value="gemini">Google Gemini (Google AI)</option>
-                <option value="openai">OpenAI (GPT-4o)</option>
-              </select>
-            </div>
-            <div class="provider-field">
-              <label for="llmModelSelect">LLM Model</label>
-              <select id="llmModelSelect">
-                <option value="openai/gpt-oss-120b" selected>GPT-OSS 120B (Groq Fast)</option>
-                <option value="qwen/qwen3.8-27b">Qwen 3.8 27B (Groq Low-Latency)</option>
-                <option value="openai/gpt-oss-20b">GPT-OSS 20B (Groq Ultra-Fast)</option>
-              </select>
-            </div>
+            <span id="voiceState" class="voice-state">WAITING</span>
           </div>
 
-          <div class="card-title" style="margin-top: 0.5rem;">
-            <span>System Prompt (AI Agent Persona)</span>
-          </div>
-          <textarea id="systemPromptInput" class="system-prompt-box" rows="2" placeholder="Enter System Prompt...">You are Wavia Voice AI, a helpful, natural, concise voice assistant. Respond directly and concisely in 1-2 short conversational sentences.</textarea>
-
-          <div class="card-title">
-            <span>Live Vocal Visualizer</span>
-          </div>
           <div class="visualizer-container">
             <canvas id="waveformCanvas"></canvas>
             <div class="meter-label">
-              <span>Mic Volume Level</span>
+              <span>Microphone level</span>
               <span id="meterPercent">0%</span>
             </div>
-            <div class="meter-bar">
-              <div id="meterFill" class="meter-fill"></div>
-            </div>
+            <div class="meter-bar"><div id="meterFill" class="meter-fill"></div></div>
           </div>
 
-          <div class="card-title">
-            <span>Session Metrics</span>
-          </div>
-          <div class="metrics-grid">
-            <div class="metric-card">
-              <div class="metric-title">PCM Frames</div>
-              <div id="metricFrames" class="metric-value">0</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-title">Audio Out (KB)</div>
-              <div id="metricBytes" class="metric-value">0</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-title">RTT Ping</div>
-              <div id="metricRtt" class="metric-value">-- ms</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-title">VAD Status</div>
-              <div id="metricVad" class="metric-value" style="font-size:0.9rem;">SILENCE</div>
-            </div>
-          </div>
-
-          <div class="card-title" style="margin-top: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
-            <span>⚡ Latency Waterfall (Real-Time)</span>
-            <span id="sloBadge" class="slo-badge">TARGET &lt; 450ms</span>
-          </div>
-          <div class="latency-grid">
-            <div class="latency-card">
-              <div class="latency-stage">STT</div>
-              <div id="latencyStt" class="latency-val">-- ms</div>
-              <div class="latency-sub">Speech → Final</div>
-            </div>
-            <div class="latency-card">
-              <div class="latency-stage">LLM (TTFT)</div>
-              <div id="latencyLlm" class="latency-val">-- ms</div>
-              <div class="latency-sub">1st Token</div>
-            </div>
-            <div class="latency-card">
-              <div class="latency-stage">TTS (TTFB)</div>
-              <div id="latencyTts" class="latency-val">-- ms</div>
-              <div class="latency-sub">1st Audio</div>
-            </div>
-            <div class="latency-card highlight">
-              <div class="latency-stage">TOTAL E2E</div>
-              <div id="latencyE2e" class="latency-val">-- ms</div>
-              <div id="latencyE2eSub" class="latency-sub">End to End</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Right Side: Transcriptions & Event Stream -->
-        <div class="card">
-          <div class="card-title">
-            <span>Live Real-Time Transcriptions</span>
-          </div>
-          <div id="transcriptBox" class="transcript-box">
+          <div id="transcriptBox" class="transcript-box" aria-live="polite">
             <div class="transcript-entry">
-              <span class="transcript-badge badge-agent">AGENT</span>
-              <span class="transcript-text">Voice session ready. Click "Start Voice Session" to talk, or send simulated turns below.</span>
-            </div>
-          </div>
-
-          <div class="card-title" style="margin-top: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
-            <span>Developer Event Stream</span>
-            <div style="display: flex; gap: 0.5rem;">
-              <button id="copyLogBtn" class="btn-secondary btn-sm">Copy Logs</button>
-              <button id="clearLogBtn" class="btn-secondary btn-sm">Clear</button>
-            </div>
-          </div>
-
-          <div id="consoleLogs" class="console-logs">
-            <div class="log-entry">
-              <span class="log-time">00:00:00</span>
-              <span class="log-tag tag-ws">SYSTEM</span>
-              <span class="log-msg">Wavia Developer Console initialized.</span>
+              <span class="transcript-badge badge-agent">SYSTEM</span>
+              <span class="transcript-text">Start a session to inspect microphone, VAD, transcript, and response timing.</span>
             </div>
           </div>
 
           <div class="input-bar">
-            <input id="textTurnInput" type="text" placeholder="Simulate text turn (e.g. Hello Wavia, what is the latency?)..." disabled />
-            <button id="sendTurnBtn" class="btn-secondary" disabled>Send Turn</button>
+            <input id="textTurnInput" type="text" placeholder="Send a text turn for pipeline testing" disabled />
+            <button id="sendTurnBtn" class="btn-secondary" disabled>Send</button>
           </div>
-        </div>
+        </section>
+
+        <aside class="workspace-panel inspector-panel">
+          <div class="panel-tabs" role="tablist" aria-label="Session inspector">
+            <button class="panel-tab active" data-panel="latency" role="tab" aria-selected="true">Latency</button>
+            <button class="panel-tab" data-panel="metrics" role="tab" aria-selected="false">Metrics</button>
+            <button class="panel-tab" data-panel="events" role="tab" aria-selected="false">Events</button>
+          </div>
+
+          <div class="inspector-content">
+            <section id="panel-latency" class="inspector-view active" role="tabpanel">
+              <div class="section-heading">
+                <span class="section-label">Turn waterfall</span>
+                <span id="sloBadge" class="slo-badge">AWAITING TURN</span>
+              </div>
+              <div class="latency-grid">
+                <div class="latency-card">
+                  <div class="latency-stage">STT</div>
+                  <div id="latencyStt" class="latency-val">-- ms</div>
+                  <div class="latency-sub">Speech to final</div>
+                </div>
+                <div class="latency-card">
+                  <div class="latency-stage">LLM TTFT</div>
+                  <div id="latencyLlm" class="latency-val">-- ms</div>
+                  <div class="latency-sub">First token</div>
+                </div>
+                <div class="latency-card">
+                  <div class="latency-stage">TTS TTFB</div>
+                  <div id="latencyTts" class="latency-val">-- ms</div>
+                  <div class="latency-sub">First audio</div>
+                </div>
+                <div class="latency-card highlight">
+                  <div class="latency-stage">Audible E2E</div>
+                  <div id="latencyE2e" class="latency-val">-- ms</div>
+                  <div id="latencyE2eSub" class="latency-sub">Acoustic end to playback ack</div>
+                </div>
+              </div>
+              <p class="provider-hint" style="margin-top:0.8rem;">Measurements remain provisional until live production samples establish release targets.</p>
+            </section>
+
+            <section id="panel-metrics" class="inspector-view" role="tabpanel">
+              <div class="section-heading"><span class="section-label">Session health</span></div>
+              <div class="metrics-grid">
+                <div class="metric-card"><div class="metric-title">Mic frames</div><div id="metricFrames" class="metric-value">0</div></div>
+                <div class="metric-card"><div class="metric-title">Mic data</div><div id="metricBytes" class="metric-value">0 KB</div></div>
+                <div class="metric-card"><div class="metric-title">Round trip</div><div id="metricRtt" class="metric-value">-- ms</div></div>
+                <div class="metric-card"><div class="metric-title">Server VAD</div><div id="metricVad" class="metric-value" style="font-size:0.9rem;">WAITING</div></div>
+              </div>
+            </section>
+
+            <section id="panel-events" class="inspector-view" role="tabpanel">
+              <div class="log-actions">
+                <span class="section-label">Developer events</span>
+                <div class="log-actions">
+                  <button id="copyLogBtn" class="btn-secondary btn-sm">Copy</button>
+                  <button id="clearLogBtn" class="btn-secondary btn-sm">Clear</button>
+                </div>
+              </div>
+              <div id="consoleLogs" class="console-logs">
+                <div class="log-entry">
+                  <span class="log-time">00:00:00</span>
+                  <span class="log-tag tag-ws">SYSTEM</span>
+                  <span class="log-msg">Wavia developer console initialized.</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </aside>
       </div>
     </section>
 
-    <!-- ========================================================================= -->
     <!-- TAB 2: ONBOARDING & QUICKSTART GUIDE -->
     <!-- ========================================================================= -->
     <section id="tab-onboarding" class="tab-content">
@@ -1193,6 +1404,22 @@
       });
     });
 
+    const panelTabs = document.querySelectorAll('.panel-tab');
+    const inspectorViews = document.querySelectorAll('.inspector-view');
+    panelTabs.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.getAttribute('data-panel');
+        panelTabs.forEach(item => {
+          item.classList.remove('active');
+          item.setAttribute('aria-selected', 'false');
+        });
+        inspectorViews.forEach(view => view.classList.remove('active'));
+        btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+        document.getElementById('panel-' + target)?.classList.add('active');
+      });
+    });
+
     // Elements & State
     const statusBadge = document.getElementById('statusBadge');
     const statusText = document.getElementById('statusText');
@@ -1214,6 +1441,9 @@
     const llmModelSelect = document.getElementById('llmModelSelect');
     const ttsProviderSelect = document.getElementById('ttsProviderSelect');
     const systemPromptInput = document.getElementById('systemPromptInput');
+    const runtimeModeBadge = document.getElementById('runtimeModeBadge');
+    const sttModeNotice = document.getElementById('sttModeNotice');
+    const voiceState = document.getElementById('voiceState');
 
     const LLM_MODELS = {
       groq: [
@@ -1413,6 +1643,7 @@
           textTurnInput.disabled = false;
           sendTurnBtn.disabled = false;
           addLog('WS', 'WebSocket connected to Worker Raw node.', 'tag-ws');
+          if (voiceState) voiceState.textContent = 'MIC STARTING';
 
           // Keep-alive / RTT ping loop
           if (pingInterval) clearInterval(pingInterval);
@@ -1516,8 +1747,32 @@
         appendTranscript(p.role || p.speaker || 'agent', p.text || msg.text || '');
       } else if (type === 'metric') {
         const p = msg.payload || {};
-        if (p.kind === 'vad') {
+        if (p.kind === 'session_ready') {
+          const isMock = p.provider_mode === 'mock';
+          if (runtimeModeBadge) {
+            runtimeModeBadge.textContent = isMock ? 'OFFLINE MOCK' : 'LIVE PROVIDERS';
+            runtimeModeBadge.className = 'runtime-mode ' + (isMock ? 'mock' : 'live');
+          }
+          if (sttModeNotice) {
+            if (p.stt_transcript_mode === 'fixed_mock') {
+              sttModeNotice.textContent = 'Speech detection is real. Transcript text is a fixed offline test value.';
+            } else if (p.stt_transcript_mode === 'disabled') {
+              sttModeNotice.textContent = 'Mock STT does not transcribe words. Set UCVE_STT_MOCK_TEXT for deterministic offline turns.';
+            } else {
+              sttModeNotice.textContent = 'Live STT is enabled. Provider usage may incur charges.';
+            }
+          }
+          if (voiceState) voiceState.textContent = 'LISTENING';
+          addLog('MODE', `${p.provider_mode || 'unknown'} providers / ${p.stt_transcript_mode || 'unknown'} STT`, 'tag-stt');
+        } else if (p.kind === 'vad' || p.kind === 'vad_state') {
           if (metricVad) metricVad.textContent = p.speech ? 'SPEECH' : 'SILENCE';
+          if (voiceState) {
+            voiceState.textContent = p.speech ? 'SPEECH DETECTED' : 'LISTENING';
+            voiceState.className = 'voice-state' + (p.speech ? ' speaking' : '');
+          }
+        } else if (p.kind === 'vad_debug') {
+          const speaking = Boolean(p.speech_start) || Number(p.prob || 0) >= 0.5;
+          if (metricVad) metricVad.textContent = speaking ? 'SPEECH' : (p.gated ? 'GATED' : 'SILENCE');
         } else if (p.kind === 'latency') {
           updateLatencyWaterfall(p);
         }
@@ -1675,6 +1930,17 @@
       if (meterFill) meterFill.style.width = '0%';
       if (meterPercent) meterPercent.textContent = '0%';
       if (metricVad) metricVad.textContent = 'IDLE';
+      if (runtimeModeBadge) {
+        runtimeModeBadge.textContent = 'MODE UNKNOWN';
+        runtimeModeBadge.className = 'runtime-mode';
+      }
+      if (sttModeNotice) {
+        sttModeNotice.textContent = 'Connect to inspect provider and transcript mode.';
+      }
+      if (voiceState) {
+        voiceState.textContent = 'WAITING';
+        voiceState.className = 'voice-state';
+      }
     }
 
     if (startBtn) startBtn.onclick = startSession;
