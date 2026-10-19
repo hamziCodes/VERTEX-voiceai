@@ -1505,6 +1505,13 @@
     let isMuted = false;
     let activeSources = [];
     let nextPlayTime = 0;
+    const prebufferQueryValue = new URLSearchParams(window.location.search).get('prebuffer_ms');
+    const requestedPrebufferMs = Number(prebufferQueryValue);
+    const prebufferConfiguredByQuery = prebufferQueryValue !== null && Number.isFinite(requestedPrebufferMs);
+    let clientPrebufferMs = prebufferConfiguredByQuery
+      ? Math.min(250, Math.max(0, requestedPrebufferMs))
+      : 50;
+    let playbackUnderrunCount = 0;
     let pendingPlaybackTurnId = null;
     const acknowledgedPlaybackTurns = new Set();
     const playbackAckTimers = new Map();
@@ -1779,6 +1786,9 @@
       } else if (type === 'audio_start') {
         const p = msg.payload || {};
         pendingPlaybackTurnId = p.turn_id || null;
+        if (!prebufferConfiguredByQuery && Number.isFinite(Number(p.recommended_prebuffer_ms))) {
+          clientPrebufferMs = Math.min(250, Math.max(0, Number(p.recommended_prebuffer_ms)));
+        }
       }
     }
 
@@ -1841,9 +1851,10 @@
 
         const now = playCtx.currentTime;
         const underrun = nextPlayTime < now;
-        // Schedule sequentially on timeline with a 50ms smooth jitter buffer
+        // Schedule sequentially on a bounded, configurable jitter buffer.
         if (underrun) {
-          nextPlayTime = now + 0.05;
+          playbackUnderrunCount += 1;
+          nextPlayTime = now + (clientPrebufferMs / 1000);
         }
 
         const scheduledContextTime = nextPlayTime;
@@ -1867,7 +1878,8 @@
                 client_scheduled_playback_ms: scheduledPerformanceMs,
                 audio_context_time_sec: scheduledContextTime,
                 prebuffer_ms: delayMs,
-                underrun: underrun
+                underrun: underrun,
+                underrun_count: playbackUnderrunCount
               }
             }));
           }, delayMs);

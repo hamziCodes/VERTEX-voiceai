@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import time
-from collections.abc import AsyncIterator
-from datetime import datetime, timezone
-from typing import Any, Callable
+from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
+from typing import Any
 from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from core.buffers.cancellation import AsyncioCancellationToken
-from core.buffers.policy import OUTBOUND_TTS_POLICY
+from core.buffers.policy import OUTBOUND_TTS_POLICY, SENTENCE_BRIDGE_POLICY
 from core.buffers.typed_queue import TypedAsyncQueue
 from core.compliance.audit.writer import AuditWriter
 from core.compliance.redaction import RedactionService
@@ -28,18 +27,20 @@ from core.fsm.cancel_contract import ThreePointCancel
 from core.fsm.events import SessionEvent
 from core.fsm.session_fsm import SessionFSM
 from core.fsm.states import SessionState
-from core.language.chunker import SentenceChunker
 from core.language.normalizer import TextNormalizer
 from core.language.router import LanguageRouter
+from core.language.streaming_chunker import StreamingSpeechChunker
+from core.latency.collector import LatencyCollector
+from core.latency.waterfall import LatencyWaterfall
 from core.listening.barge_verify import BargeVerifyEngine
-from core.listening.config import FRAME_MS, ListeningPipelineConfig, SpeakingPipelineConfig
+from core.listening.config import (
+    FRAME_MS,
+    ListeningPipelineConfig,
+    SpeakingPipelineConfig,
+)
 from core.listening.speech_capture import SpeechCaptureEngine
 from core.listening.vad_worker import VADWorker
 from core.mcp.filler import ConversationalFillerSynth, FillerConfig
-from core.providers.interfaces.live_stt import BaseLiveSTTSession
-from core.providers.live_stt_factory import build_live_stt_session
-from core.latency.collector import LatencyCollector
-from core.latency.waterfall import LatencyWaterfall
 from core.metering.usage_meter import UsageMeter
 from core.observability.logging import get_logger
 from core.providers.adapters.cartesia_tts import CartesiaTTSProvider
@@ -62,14 +63,20 @@ from core.providers.factory import (
     normalize_tts_provider,
 )
 from core.providers.failover import FailoverRouter
+from core.providers.interfaces.live_stt import BaseLiveSTTSession
 from core.providers.interfaces.llm import LLMConfig
 from core.providers.interfaces.stt import STTConfig
-from core.providers.interfaces.tts import TTSConfig
+from core.providers.interfaces.tts import (
+    TTSConfig,
+    TTSStreamTimeouts,
+    iterate_tts_stream,
+)
+from core.providers.live_stt_factory import build_live_stt_session
 from core.providers.registry import ProviderRegistry
 from core.rag.retriever import PgVectorRetriever
 from core.rag.speculative import SpeculativeRetrieval
 from core.session.redis_store import RedisSessionStore
-from core.transport.resample_egress import EgressResampler
+from core.transport.resample_egress import StreamingEgressResampler
 from core.types.audio import AudioFrame
 from core.types.events import ControlEventType
 from core.vad.silero_adapter import SileroVADAdapter
@@ -142,7 +149,6 @@ class PipelineOrchestrator:
         self.failover_router = FailoverRouter(priority=["primary", "secondary"])
         self.language_router = LanguageRouter()
         self.normalizer = TextNormalizer()
-        self.chunker = SentenceChunker()
         self.redis_store = RedisSessionStore()
         self.barge_in_controller = BargeInController()
         self.three_point_cancel = ThreePointCancel()
@@ -336,6 +342,9 @@ class PipelineOrchestrator:
                                 "turn_id": str(waterfall.turn_id),
                                 "server_send_ms": waterfall.server_send_ms,
                                 "clock_domain": waterfall.clock_domain,
+                                "recommended_prebuffer_ms": (
+                                    self.speaking_config.egress_prebuffer_ms
+                                ),
                             },
                         )
                     except Exception as exc:
@@ -343,7 +352,16 @@ class PipelineOrchestrator:
             if self.fsm.can_transition(SessionEvent.TTS_FIRST_BYTE):
                 self.fsm.trigger(SessionEvent.TTS_FIRST_BYTE)
         await self._ensure_egress_sender()
+        queue_wait_started = time.monotonic()
         await self._egress_queue.put(pcm)
+        queue_wait_ms = (time.monotonic() - queue_wait_started) * 1000
+        if queue_wait_ms >= 5:
+            logger.warning(
+                "TTS egress backpressure",
+                wait_ms=round(queue_wait_ms, 2),
+                queue_size=self._egress_queue.qsize(),
+                queue_high_water=self._egress_queue.high_watermark,
+            )
 
     async def _notify_client_barge_in(self, reason: str = "barge_in_committed") -> None:
         session = self._ws_session
@@ -784,31 +802,65 @@ class PipelineOrchestrator:
             self.fsm.trigger(SessionEvent.TTS_DRAINED)
 
     async def _synthesize_streaming(
-        self, sentences: list[str], session_config: PipelineSessionConfig, waterfall: Any
+        self,
+        sentences: list[str],
+        session_config: PipelineSessionConfig,
+        waterfall: Any,
     ) -> None:
         voice = session_config.tts_voice_id or "default"
         ttfb_recorded = False
+        audio_committed = False
+        deadlines = TTSStreamTimeouts(
+            first_chunk_seconds=max(
+                0.001, self.speaking_config.tts_first_chunk_timeout_ms / 1000
+            ),
+            idle_seconds=max(
+                0.001, self.speaking_config.tts_inter_chunk_timeout_ms / 1000
+            ),
+            overall_seconds=max(
+                0.001, self.speaking_config.tts_overall_timeout_ms / 1000
+            ),
+        )
         for sentence in sentences:
             if self._tts_cancel.is_cancelled or self.three_point_cancel.cancelled:
                 break
             cfg = TTSConfig(voice_id=voice, sample_rate=16000)
+            invoke_count = 0
 
-            async def _invoke(_pid: str) -> bool:
-                async for chunk in self.tts_provider.synthesize_stream(
+            async def _invoke(
+                _pid: str,
+                sentence: str = sentence,
+                cfg: TTSConfig = cfg,
+            ) -> bool:
+                nonlocal audio_committed, invoke_count, ttfb_recorded
+                if invoke_count > 0 and audio_committed:
+                    raise RuntimeError("TTS failover blocked after audio commit.")
+                invoke_count += 1
+                source_rate: int | None = None
+                resampler: StreamingEgressResampler | None = None
+                provider_stream = self.tts_provider.synthesize_stream(
                     sentence, cfg, cancellation_token=self._tts_cancel
-                ):
+                )
+                async for chunk in iterate_tts_stream(provider_stream, deadlines):
                     if self._tts_cancel.is_cancelled:
                         break
                     if chunk.pcm_data:
-                        nonlocal ttfb_recorded
                         if not ttfb_recorded:
                             waterfall.tts_ttfb_ms = self.latency_hooks.now_ms()
                             ttfb_recorded = True
-                        pcm = chunk.pcm_data
-                        native = int(getattr(chunk, "native_sample_rate", 16000) or 16000)
-                        if native != 16000:
-                            pcm = EgressResampler.resample_to_16k(pcm, native)
-                        # Amplitude probe: separates silent vendor PCM from client playback bugs.
+                        native = int(
+                            getattr(chunk, "native_sample_rate", 16000) or 16000
+                        )
+                        if source_rate is None:
+                            source_rate = native
+                            resampler = StreamingEgressResampler(native, 16000)
+                        elif native != source_rate:
+                            raise ValueError(
+                                "TTS sample rate changed inside one speech chunk."
+                            )
+                        assert resampler is not None
+                        pcm = resampler.process(chunk.pcm_data)
+                        # Separates silent vendor PCM from client playback bugs.
                         if getattr(self, "_tts_pcm_logged", 0) < 3 and len(pcm) >= 4:
                             import struct
 
@@ -821,25 +873,64 @@ class PipelineOrchestrator:
                                 native_hz=native,
                                 peak_abs=peak,
                             )
-                            self._tts_pcm_logged = getattr(self, "_tts_pcm_logged", 0) + 1
-                        await self._emit_audio(pcm, waterfall)
+                            self._tts_pcm_logged = (
+                                getattr(self, "_tts_pcm_logged", 0) + 1
+                            )
+                        if pcm:
+                            await self._emit_audio(pcm, waterfall)
+                            audio_committed = True
+                if resampler is None and not self._tts_cancel.is_cancelled:
+                    raise ValueError("TTS provider completed without audio.")
+                if resampler is not None and not self._tts_cancel.is_cancelled:
+                    tail = resampler.flush()
+                    if tail:
+                        await self._emit_audio(tail, waterfall)
+                        audio_committed = True
                 return True
 
             try:
                 await self.failover_router.call_with_failover(
-                    "tts", session_config.language, _invoke, first_chunk_timeout=15.0
+                    "tts",
+                    session_config.language,
+                    _invoke,
+                    first_chunk_timeout=deadlines.overall_seconds + 0.1,
                 )
-            except Exception:
-                null = NullTTSProvider()
-                async for chunk in null.synthesize_stream(sentence, cfg):
-                    if chunk.pcm_data:
-                        await self._emit_audio(chunk.pcm_data, waterfall)
+            except Exception as exc:
+                logger.error(
+                    "TTS stream failed",
+                    error_type=type(exc).__name__,
+                    audio_committed=audio_committed,
+                )
+                if audio_committed:
+                    await self._emit_tts_interruption("provider_stream_failed")
+                    return
+                await self._emit_tts_interruption("tts_unavailable")
+                return
+
+    async def _emit_tts_interruption(self, reason: str) -> None:
+        """Tell capable clients that committed speech ended unexpectedly."""
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is None:
+            return
+        try:
+            await transport.send_control_event(
+                ControlEventType.DEGRADED_MODE,
+                {
+                    "kind": "tts_interrupted",
+                    "recoverable": True,
+                    "reason": reason[:160],
+                },
+            )
+        except Exception as exc:
+            logger.debug("Client TTS interruption notify failed", error=str(exc))
 
     async def run_turn(self, session_config: PipelineSessionConfig, user_text: str) -> str:
         """Execute one STT→RAG→LLM/Tool→norm→TTS turn with latency tracing."""
         turn_start = time.monotonic()
         self._turn_starts.append(turn_start)
         self._playback_started = False
+        self._egress_queue.reset_metrics()
         self._tts_pcm_logged = 0
         self._tts_cancel = AsyncioCancellationToken()
         self._llm_cancel = AsyncioCancellationToken()
@@ -981,78 +1072,60 @@ class PipelineOrchestrator:
             reply_parts: list[str] = []
             ttft_recorded = False
             chunker_recorded = False
-            stream_buffer = ""
             pending_tool_calls: list[dict[str, Any]] = []
-            # Queue-based TTS: stream sentence-level audio continuously
-            tts_q: asyncio.Queue[str | None] = asyncio.Queue()
-            spoken_chars = 0
-            first_phrase_emitted = False
+            speech_chunker = StreamingSpeechChunker.for_language(
+                session_config.language,
+                first_chunk_words_override=sc.chunker_first_words,
+                min_chunk_words=sc.chunker_min_words,
+            )
+            tts_q: asyncio.Queue[tuple[str, float] | None] = asyncio.Queue(
+                maxsize=SENTENCE_BRIDGE_POLICY.maxsize
+            )
+            tts_queue_high_water = 0
+            tts_queue_max_age_ms = 0.0
 
             async def _consume_tts_queue() -> None:
+                nonlocal tts_queue_max_age_ms
                 while True:
                     item = await tts_q.get()
                     if item is None:
                         return
-                    await self._synthesize_streaming(
-                        [item], session_config, waterfall
+                    text, enqueued_at = item
+                    tts_queue_max_age_ms = max(
+                        tts_queue_max_age_ms,
+                        (time.monotonic() - enqueued_at) * 1000,
                     )
+                    await self._synthesize_streaming([text], session_config, waterfall)
 
-            def _clean_speech_piece(p: str) -> str:
-                # Strip orphan leading/trailing punctuation scraps like ", ", "- ", "; ", "— "
-                return re.sub(r"^[\s,;:—\-\.\!\?]+|[\s,;:—\-]+$", "", p).strip()
-
-            def _enqueue_stable_speech(*, final: bool = False) -> None:
-                nonlocal spoken_chars, chunker_recorded, stream_buffer, first_phrase_emitted
-                pending = stream_buffer[spoken_chars:]
-                if not pending.strip():
-                    return
-                pieces: list[str] = []
-
-                if final:
-                    tail = _clean_speech_piece(pending)
-                    if tail:
-                        pieces.append(tail)
-                else:
-                    # Look for complete sentences first (. ! ?)
-                    while True:
-                        sent_match = re.search(r"^(.*?[\.\!\?]+)(?:\s+|$)", pending, flags=re.S)
-                        if sent_match:
-                            candidate = sent_match.group(1)
-                            clean = _clean_speech_piece(candidate)
-                            if clean:
-                                pieces.append(clean)
-                                first_phrase_emitted = True
-                            # Advance pending past this sentence
-                            pending = pending[sent_match.end():]
-                        else:
-                            break
-
-                    # If no sentence boundary yet, but first phrase is long (>9 words) with a natural pause
-                    if not first_phrase_emitted and not pieces:
-                        words = pending.split()
-                        if len(words) >= 9:
-                            clause_match = re.search(r"^(.*?[\,\;\—\:])(?:\s+|$)", pending, flags=re.S)
-                            if clause_match and len(clause_match.group(1).split()) >= 5:
-                                clean = _clean_speech_piece(clause_match.group(1))
-                                if clean:
-                                    pieces.append(clean)
-                                    first_phrase_emitted = True
-
-                for piece in pieces:
+            async def _enqueue_speech_chunks(chunks: list[Any]) -> None:
+                nonlocal chunker_recorded, tts_queue_high_water
+                for speech_chunk in chunks:
+                    normalized_chunk = self.normalizer.normalize(
+                        speech_chunk.text, language=session_config.language
+                    )
+                    piece = getattr(normalized_chunk, "text", "").strip()
                     if not piece:
                         continue
-                    idx = stream_buffer.find(piece, spoken_chars)
-                    if idx < 0:
-                        spoken_chars = len(stream_buffer)
-                    else:
-                        spoken_chars = idx + len(piece)
                     if not chunker_recorded:
                         waterfall.chunker_ms = self.latency_hooks.now_ms()
                         chunker_recorded = True
-                    tts_q.put_nowait(piece)
+                    while True:
+                        if tts_consumer.done():
+                            await tts_consumer
+                        try:
+                            await asyncio.wait_for(
+                                tts_q.put((piece, time.monotonic())), timeout=0.1
+                            )
+                            break
+                        except TimeoutError:
+                            if self._llm_cancel.is_cancelled:
+                                raise asyncio.CancelledError() from None
+                    tts_queue_high_water = max(
+                        tts_queue_high_water, tts_q.qsize()
+                    )
 
             async def _stream_llm(_pid: str) -> bool:
-                nonlocal ttft_recorded, stream_buffer, pending_tool_calls
+                nonlocal ttft_recorded, pending_tool_calls
                 async for chunk in self.llm_provider.generate_stream(
                     messages, llm_cfg, cancellation_token=self._llm_cancel
                 ):
@@ -1067,8 +1140,7 @@ class PipelineOrchestrator:
                         pending_tool_calls.extend(chunk.tool_calls)
                     if chunk.text:
                         reply_parts.append(chunk.text)
-                        stream_buffer += chunk.text
-                        _enqueue_stable_speech(final=False)
+                        await _enqueue_speech_chunks(speech_chunker.push(chunk.text))
                 return True
 
             tts_consumer = asyncio.create_task(_consume_tts_queue())
@@ -1086,8 +1158,9 @@ class PipelineOrchestrator:
                     "",
                 )
                 fallback = f"I heard you say: {user}. How can I help you today?"
-                reply_parts.append(fallback)
-                stream_buffer = fallback
+                fallback_delta = (" " if reply_parts else "") + fallback
+                reply_parts.append(fallback_delta)
+                await _enqueue_speech_chunks(speech_chunker.push(fallback_delta))
 
             if pending_tool_calls and sc.enable_tool_loop:
                 for tc in pending_tool_calls:
@@ -1102,15 +1175,22 @@ class PipelineOrchestrator:
                         arguments = dict(raw_args) if raw_args else {}
                     if name:
                         tool_text = await _run_tool_with_filler(name, arguments)
-                        reply_parts.append(tool_text)
-                        stream_buffer += (" " + tool_text)
+                        tool_delta = " " + tool_text
+                        reply_parts.append(tool_delta)
+                        await _enqueue_speech_chunks(speech_chunker.push(tool_delta))
 
-            _enqueue_stable_speech(final=True)
+            await _enqueue_speech_chunks(speech_chunker.flush())
             await tts_q.put(None)
             try:
                 await tts_consumer
             except asyncio.CancelledError:
                 raise
+            logger.info(
+                "TTS text queue drained",
+                high_water=tts_queue_high_water,
+                max_age_ms=round(tts_queue_max_age_ms, 2),
+                egress_high_water=self._egress_queue.high_watermark,
+            )
 
             normalized = "".join(reply_parts) or "OK"
             norm_result = self.normalizer.normalize(normalized, language=session_config.language)
@@ -1212,7 +1292,7 @@ class PipelineOrchestrator:
 
         try:
             diarized = self._build_diarized_turns(redacted_turns)
-            now_utc = datetime.now(timezone.utc)
+            now_utc = datetime.now(UTC)
             from post_call.models.recording import CallRecording
 
             record = CallRecord(

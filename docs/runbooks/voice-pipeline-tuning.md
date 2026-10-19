@@ -75,12 +75,17 @@ lossless blocking ingress apply regardless of the feature-flag set.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `UCVE_TTS_CHUNK_SIZE_BYTES` | `8192` | Uplift batch size |
-| `UCVE_TTS_POP_SKIP_BYTES` | `2048` | Skip initial pop artifact |
-| `UCVE_EGRESS_PREBUFFER_MS` | `35` | Server-side egress prebuffer |
-| `UCVE_CLIENT_PREBUFFER_CHUNKS` | `3` | Web client jitter buffer |
+| `UCVE_TTS_CHUNK_SIZE_BYTES` | `8192` | Batch size after the first audio bytes; the first provider chunk is emitted immediately |
+| `UCVE_EGRESS_PREBUFFER_MS` | `35` | Recommended browser jitter-buffer delay sent with `audio_start` |
+| `UCVE_TTS_FIRST_CHUNK_TIMEOUT_MS` | `3000` | Connect and first-audio deadline |
+| `UCVE_TTS_INTER_CHUNK_TIMEOUT_MS` | `3000` | Maximum silence between provider audio chunks |
+| `UCVE_TTS_OVERALL_TIMEOUT_MS` | `30000` | Overall synthesis deadline for one speech chunk |
 
 Requires `speaking_hardening` or `production`.
+
+The engine parses RIFF/WAVE framing instead of discarding a fixed number of
+bytes. Do not restore `UCVE_TTS_POP_SKIP_BYTES`; fixed byte removal clips valid
+speech and only hides the actual container or audio-format problem.
 
 ### LLM chunking & tools
 

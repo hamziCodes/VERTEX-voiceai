@@ -215,9 +215,10 @@ class SpeakingPipelineConfig:
 
     # TTS / egress (§8.5)
     tts_chunk_size_bytes: int = 8192
-    tts_pop_skip_bytes: int = 2048
     egress_prebuffer_ms: int = 35
-    client_prebuffer_chunks: int = 3
+    tts_first_chunk_timeout_ms: int = 3000
+    tts_inter_chunk_timeout_ms: int = 3000
+    tts_overall_timeout_ms: int = 30000
 
     # LLM / chunking (§8.6)
     chunker_first_words: int = 2
@@ -243,9 +244,14 @@ class SpeakingPipelineConfig:
         return cls(
             enabled_phases=_parse_phases(os.environ.get("UCVE_PIPELINE_V2")),
             tts_chunk_size_bytes=_env_int("UCVE_TTS_CHUNK_SIZE_BYTES", 8192),
-            tts_pop_skip_bytes=_env_int("UCVE_TTS_POP_SKIP_BYTES", 2048),
             egress_prebuffer_ms=_env_int("UCVE_EGRESS_PREBUFFER_MS", 35),
-            client_prebuffer_chunks=_env_int("UCVE_CLIENT_PREBUFFER_CHUNKS", 3),
+            tts_first_chunk_timeout_ms=_env_int(
+                "UCVE_TTS_FIRST_CHUNK_TIMEOUT_MS", 3000
+            ),
+            tts_inter_chunk_timeout_ms=_env_int(
+                "UCVE_TTS_INTER_CHUNK_TIMEOUT_MS", 3000
+            ),
+            tts_overall_timeout_ms=_env_int("UCVE_TTS_OVERALL_TIMEOUT_MS", 30000),
             chunker_first_words=_env_int("UCVE_CHUNKER_FIRST_WORDS", 2),
             chunker_min_words=_env_int("UCVE_CHUNKER_MIN_WORDS", 3),
             tool_filler_delay_ms=_env_int("UCVE_TOOL_FILLER_DELAY_MS", 400),

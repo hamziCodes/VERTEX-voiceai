@@ -132,7 +132,6 @@ class CartesiaTTSProvider(BaseTTSProvider):
             model_id=self._model,
             sample_rate=sample_rate,
             language=language,
-            preview=cleaned[:80],
         )
         client = self._get_client()
         try:
@@ -147,21 +146,31 @@ class CartesiaTTSProvider(BaseTTSProvider):
                 json=payload,
             ) as resp:
                 if resp.status_code != 200:
-                    body = await resp.aread()
+                    await resp.aread()
                     logger.error(
                         "Cartesia TTS API call failed",
                         status_code=resp.status_code,
-                        error=body[:300].decode("utf-8", errors="replace"),
                     )
                     resp.raise_for_status()
 
                 buf = bytearray()
+                emitted_first_audio = False
                 async for raw in resp.aiter_bytes():
                     if cancellation_token and cancellation_token.is_cancelled:
                         return
                     if not raw:
                         continue
                     buf.extend(raw)
+                    if not emitted_first_audio and len(buf) >= 2:
+                        take = len(buf) - (len(buf) % 2)
+                        part = bytes(buf[:take])
+                        del buf[:take]
+                        emitted_first_audio = True
+                        yield TTSChunk(
+                            pcm_data=part,
+                            native_sample_rate=sample_rate,
+                            is_final=False,
+                        )
                     while len(buf) >= self.chunk_size_bytes:
                         take = self.chunk_size_bytes - (self.chunk_size_bytes % 2)
                         part = bytes(buf[:take])
@@ -187,6 +196,6 @@ class CartesiaTTSProvider(BaseTTSProvider):
                         is_final=True,
                     )
         except Exception as exc:
-            logger.error("Cartesia TTS Exception: {0}".format(exc), error=str(exc))
+            logger.error(f"Cartesia TTS Exception: {exc}", error=str(exc))
             await self.aclose()
             raise

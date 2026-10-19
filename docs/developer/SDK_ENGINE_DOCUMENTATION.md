@@ -92,13 +92,14 @@ Default speaking values:
 | Setting | Default | Env var | Source |
 | --- | ---: | --- | --- |
 | TTS chunk size | `8192` bytes | `UCVE_TTS_CHUNK_SIZE_BYTES` | `core/listening/config.py:200` |
-| TTS pop skip | `2048` bytes | `UCVE_TTS_POP_SKIP_BYTES` | `core/listening/config.py:201` |
-| Egress prebuffer | `35` ms | `UCVE_EGRESS_PREBUFFER_MS` | `core/listening/config.py:202` |
-| Client prebuffer chunks | `3` | `UCVE_CLIENT_PREBUFFER_CHUNKS` | `core/listening/config.py:203` |
-| First chunk words | `2` | `UCVE_CHUNKER_FIRST_WORDS` | `core/listening/config.py:204` |
-| Min chunk words | `3` | `UCVE_CHUNKER_MIN_WORDS` | `core/listening/config.py:205` |
-| Tool filler delay | `400` ms | `UCVE_TOOL_FILLER_DELAY_MS` | `core/listening/config.py:206` |
-| Debug latency | `false` | `UCVE_DEBUG_LATENCY` | `core/listening/config.py:207` |
+| Egress prebuffer | `35` ms | `UCVE_EGRESS_PREBUFFER_MS` | `core/listening/config.py` |
+| First-audio timeout | `3000` ms | `UCVE_TTS_FIRST_CHUNK_TIMEOUT_MS` | `core/listening/config.py` |
+| Inter-chunk timeout | `3000` ms | `UCVE_TTS_INTER_CHUNK_TIMEOUT_MS` | `core/listening/config.py` |
+| Overall TTS timeout | `30000` ms | `UCVE_TTS_OVERALL_TIMEOUT_MS` | `core/listening/config.py` |
+| First chunk words | `2` | `UCVE_CHUNKER_FIRST_WORDS` | `core/listening/config.py` |
+| Min chunk words | `3` | `UCVE_CHUNKER_MIN_WORDS` | `core/listening/config.py` |
+| Tool filler delay | `400` ms | `UCVE_TOOL_FILLER_DELAY_MS` | `core/listening/config.py` |
+| Debug latency | `false` | `UCVE_DEBUG_LATENCY` | `core/listening/config.py` |
 
 ### FSM States and Transitions
 
@@ -198,7 +199,7 @@ Sources: `core/providers/interfaces/vad.py:11`, `core/providers/interfaces/stt.p
 
 ### TTS: Uplift
 
-`UpliftTTSProvider` uses `PLATFORM_UPLIFT_API_KEY` or `UPLIFT_API_KEY`, default base `https://api.upliftai.org`, default path `/v1/synthesis/text-to-speech`, and default output format `PCM_16000_16` (`core/providers/adapters/uplift_tts.py:36`). Voice resolution uses config voice ID, `UPLIFT_VOICE_ID`, `PLATFORM_UPLIFT_VOICE_ID`, then `v_meklc281` (`core/providers/adapters/uplift_tts.py:101`). Live synthesis strips a WAV RIFF header when present and can skip initial bytes with `UCVE_TTS_POP_SKIP_BYTES` (`core/providers/adapters/uplift_tts.py:117`).
+`UpliftTTSProvider` uses `PLATFORM_UPLIFT_API_KEY` or `UPLIFT_API_KEY`, default base `https://api.upliftai.org`, default path `/v1/synthesis/text-to-speech`, and default output format `PCM_16000_16`. Voice resolution uses config voice ID, `UPLIFT_VOICE_ID`, `PLATFORM_UPLIFT_VOICE_ID`, then `v_meklc281`. Live synthesis reads the HTTP body incrementally, emits the first audio bytes immediately, and parses variable RIFF/WAVE chunks without discarding valid PCM (`core/providers/adapters/uplift_tts.py`).
 
 ### TTS: ElevenLabs
 
@@ -700,7 +701,7 @@ The example environment file documents these public configuration names. Values 
 | Observability | `OTEL_EXPORTER_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `SENTRY_DSN` | `.env.example:142` |
 | Pipeline phases | `UCVE_PIPELINE_V2` | `.env.example:147` |
 | Listening | `UCVE_VAD_THRESHOLD`, `UCVE_VAD_MIN_SPEECH_MS`, `UCVE_VAD_MIN_SILENCE_MS`, `UCVE_VAD_PRE_SPEECH_MS`, `UCVE_NOISE_GATE_K`, `UCVE_NOISE_GATE_WINDOW`, `UCVE_NOISE_GATE_DEFAULT_FLOOR`, `UCVE_BARGE_VERIFY_WINDOW_MS`, `UCVE_BARGE_MIN_SUSTAINED_SPEECH_MS`, `UCVE_BARGE_TEXT_BACKUP_WORDS`, `UCVE_GLADIA_ENDPOINTING`, `UCVE_GLADIA_RECEIVE_PARTIALS`, `UCVE_STT_MOCK_TEXT` | `.env.example:155` |
-| Speaking | `UCVE_TTS_CHUNK_SIZE_BYTES`, `UCVE_TTS_POP_SKIP_BYTES`, `UCVE_EGRESS_PREBUFFER_MS`, `UCVE_CLIENT_PREBUFFER_CHUNKS`, `UCVE_CHUNKER_FIRST_WORDS`, `UCVE_CHUNKER_MIN_WORDS`, `UCVE_TOOL_FILLER_DELAY_MS`, `UCVE_DEBUG_LISTENING`, `UCVE_DEBUG_LATENCY`, `UCVE_INITIAL_GREETING` | `.env.example:175` |
+| Speaking | `UCVE_TTS_CHUNK_SIZE_BYTES`, `UCVE_EGRESS_PREBUFFER_MS`, `UCVE_TTS_FIRST_CHUNK_TIMEOUT_MS`, `UCVE_TTS_INTER_CHUNK_TIMEOUT_MS`, `UCVE_TTS_OVERALL_TIMEOUT_MS`, `UCVE_CHUNKER_FIRST_WORDS`, `UCVE_CHUNKER_MIN_WORDS`, `UCVE_TOOL_FILLER_DELAY_MS`, `UCVE_DEBUG_LISTENING`, `UCVE_DEBUG_LATENCY`, `UCVE_INITIAL_GREETING` | `.env.example` |
 
 ### Known Integration Caveats
 

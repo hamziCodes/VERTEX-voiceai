@@ -24,6 +24,10 @@ class TypedAsyncQueue(Generic[T]):
         self._queue: asyncio.Queue[T] = asyncio.Queue(maxsize=policy.maxsize)
         self.drop_count: int = 0
         self.overflow_count: int = 0
+        self.high_watermark: int = 0
+
+    def _record_high_watermark(self) -> None:
+        self.high_watermark = max(self.high_watermark, self._queue.qsize())
 
     async def put(self, item: T) -> None:
         """Put item into queue with policy-enforced overflow handling."""
@@ -32,6 +36,7 @@ class TypedAsyncQueue(Generic[T]):
 
         if self.policy.overflow == OverflowPolicy.BLOCK:
             await self._queue.put(item)
+            self._record_high_watermark()
             return
 
         if self._queue.full() and self.policy.maxsize > 0:
@@ -43,11 +48,13 @@ class TypedAsyncQueue(Generic[T]):
                 except asyncio.QueueEmpty:
                     pass
                 self._queue.put_nowait(item)
+                self._record_high_watermark()
             elif self.policy.overflow == OverflowPolicy.DROP_NEWEST:
                 # Drop incoming item
                 return
         else:
             await self._queue.put(item)
+            self._record_high_watermark()
 
     def put_nowait(self, item: T) -> None:
         """Non-blocking put enforcing overflow policy."""
@@ -65,10 +72,12 @@ class TypedAsyncQueue(Generic[T]):
                 except asyncio.QueueEmpty:
                     pass
                 self._queue.put_nowait(item)
+                self._record_high_watermark()
             elif self.policy.overflow == OverflowPolicy.DROP_NEWEST:
                 return
         else:
             self._queue.put_nowait(item)
+            self._record_high_watermark()
 
     async def get(self) -> T:
         """Get item from queue."""
@@ -93,6 +102,12 @@ class TypedAsyncQueue(Generic[T]):
     def qsize(self) -> int:
         """Return current size of queue."""
         return self._queue.qsize()
+
+    def reset_metrics(self) -> None:
+        """Reset counters at a turn or measurement boundary."""
+        self.drop_count = 0
+        self.overflow_count = 0
+        self.high_watermark = self._queue.qsize()
 
     def clear(self) -> None:
         """Drain all pending items from queue."""

@@ -1,6 +1,6 @@
 # Phase 03 — LLM-to-TTS First Audio and DSP
 
-**Status:** NOT STARTED
+**Status:** READY FOR FINAL QA
 
 **Goal:** Make the first safe text and real audio bytes flow immediately, with stream-aware deadlines and continuous high-quality resampling/playout.
 
@@ -22,16 +22,16 @@ Offline work needs none. Stop before any real provider comparison; request appro
 
 ## Tasks
 
-- [ ] Port the legacy first-chunk principle through the current LanguageProfile: first safe chunk target two words, then language delimiters/min/max limits; test punctuation-free Urdu/Arabic/English.
-- [ ] Normalize each emitted speech chunk before TTS while retaining a canonical full reply for transcript/context.
-- [ ] Replace current regex branch with the single tested chunker; remove or wire unused chunker settings so configuration affects behavior.
-- [ ] Change Uplift to streamed response reads on one pooled async client; parse RIFF/WAV chunks correctly or request raw PCM. Record real first network byte.
-- [ ] Give every provider three deadlines: connect/first chunk, inter-chunk idle, and overall. Remove whole-stream `wait_for(first_chunk_timeout)` semantics.
-- [ ] Define output-commit rules: failover allowed before any speech; after committed audio, emit typed interruption/repair behavior without replaying spoken text or tools.
-- [ ] Bound text/TTS/audio queues and expose queue age/high-water/underrun metrics. Backpressure must not deadlock LLM cancellation.
-- [ ] Implement stateful band-limited streaming resampling with fractional phase/carry across arbitrary chunks; validate duration, frequency response, clipping, and sample drift.
-- [ ] Align server chunk sizes/client prebuffer with measured jitter; the client acknowledges actual first scheduled/played turn audio.
-- [ ] Test slow first byte, slow middle chunk, partial disconnect, empty audio, WAV variants, cancellation, odd-byte boundaries, 8/16/22.05/24/44.1/48 kHz, and no punctuation.
+- [x] Port the legacy first-chunk principle through the current LanguageProfile: first safe chunk target two words, then language delimiters/min/max limits; test punctuation-free Urdu/Arabic/English.
+- [x] Normalize each emitted speech chunk before TTS while retaining a canonical full reply for transcript/context.
+- [x] Replace current regex branch with the single tested chunker; remove or wire unused chunker settings so configuration affects behavior.
+- [x] Change Uplift to streamed response reads on one pooled async client; parse RIFF/WAV chunks correctly or request raw PCM. Record real first network byte.
+- [x] Give every provider three deadlines: connect/first chunk, inter-chunk idle, and overall. Remove whole-stream `wait_for(first_chunk_timeout)` semantics.
+- [x] Define output-commit rules: failover allowed before any speech; after committed audio, emit typed interruption/repair behavior without replaying spoken text or tools.
+- [x] Bound text/TTS/audio queues and expose queue age/high-water/underrun metrics. Backpressure must not deadlock LLM cancellation.
+- [x] Implement stateful band-limited streaming resampling with fractional phase/carry across arbitrary chunks; validate duration, frequency response, clipping, and sample drift.
+- [x] Align server chunk sizes/client prebuffer with measured jitter; the client acknowledges actual first scheduled/played turn audio.
+- [x] Test slow first byte, slow middle chunk, partial disconnect, empty audio, WAV variants, cancellation, odd-byte boundaries, 8/16/22.05/24/44.1/48 kHz, and no punctuation.
 
 ## Verification
 

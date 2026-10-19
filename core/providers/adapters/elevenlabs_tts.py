@@ -115,7 +115,6 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
             text_len=len(text),
             voice_id=voice,
             output_format=self._output_format,
-            preview=text[:80],
         )
         client = self._get_client()
         try:
@@ -131,11 +130,10 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
                 json=payload,
             ) as resp:
                 if resp.status_code != 200:
-                    body = await resp.aread()
+                    await resp.aread()
                     logger.error(
                         "ElevenLabs TTS API call failed",
                         status_code=resp.status_code,
-                        error=body[:300].decode("utf-8", errors="replace"),
                     )
                     resp.raise_for_status()
 
@@ -147,12 +145,23 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
                 elif "44100" in self._output_format:
                     native_rate = 44100
                 buf = bytearray()
+                emitted_first_audio = False
                 async for raw in resp.aiter_bytes():
                     if cancellation_token and cancellation_token.is_cancelled:
                         return
                     if not raw:
                         continue
                     buf.extend(raw)
+                    if not emitted_first_audio and len(buf) >= 2:
+                        take = len(buf) - (len(buf) % 2)
+                        part = bytes(buf[:take])
+                        del buf[:take]
+                        emitted_first_audio = True
+                        yield TTSChunk(
+                            pcm_data=part,
+                            native_sample_rate=native_rate,
+                            is_final=False,
+                        )
                     while len(buf) >= self.chunk_size_bytes:
                         # Keep even byte alignment for int16 PCM.
                         take = self.chunk_size_bytes - (self.chunk_size_bytes % 2)
@@ -179,6 +188,6 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
                         is_final=True,
                     )
         except Exception as exc:
-            logger.error("ElevenLabs TTS Exception: {0}".format(exc), error=str(exc))
+            logger.error(f"ElevenLabs TTS Exception: {exc}", error=str(exc))
             await self.aclose()
             raise
