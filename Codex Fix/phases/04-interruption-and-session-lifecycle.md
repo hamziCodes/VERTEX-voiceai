@@ -57,3 +57,5 @@ Hamzi performs a local browser interruption script and reports whether speech st
 Offline implementation and automated exit criteria are complete. Evidence is in
 `Codex Fix/evidence/phase-04/VERIFICATION.md`. Local browser listening remains
 deferred to the final cross-phase QA pass at Hamzi's request.
+
+Implementation commit: `b162577`.

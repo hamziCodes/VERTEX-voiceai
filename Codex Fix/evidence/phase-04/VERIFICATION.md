@@ -2,6 +2,7 @@
 
 **Implementation date:** 2026-10-19
 **Branch:** `wavia-fixv1`
+**Implementation commit:** `b162577`
 **Provider mode:** offline fixtures, mock transports, and local test doubles only
 **Status:** READY FOR FINAL QA
 
