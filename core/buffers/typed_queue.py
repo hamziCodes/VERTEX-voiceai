@@ -45,6 +45,7 @@ class TypedAsyncQueue(Generic[T]):
             if self.policy.overflow == OverflowPolicy.DROP_OLDEST:
                 try:
                     self._queue.get_nowait()
+                    self._queue.task_done()
                 except asyncio.QueueEmpty:
                     pass
                 self._queue.put_nowait(item)
@@ -69,6 +70,7 @@ class TypedAsyncQueue(Generic[T]):
             if self.policy.overflow == OverflowPolicy.DROP_OLDEST:
                 try:
                     self._queue.get_nowait()
+                    self._queue.task_done()
                 except asyncio.QueueEmpty:
                     pass
                 self._queue.put_nowait(item)
@@ -109,10 +111,19 @@ class TypedAsyncQueue(Generic[T]):
         self.overflow_count = 0
         self.high_watermark = self._queue.qsize()
 
+    def task_done(self) -> None:
+        """Mark one item returned by get/get_nowait as processed."""
+        self._queue.task_done()
+
+    async def join(self) -> None:
+        """Wait until every queued item has been processed or explicitly cleared."""
+        await self._queue.join()
+
     def clear(self) -> None:
         """Drain all pending items from queue."""
         while not self._queue.empty():
             try:
                 self._queue.get_nowait()
+                self._queue.task_done()
             except asyncio.QueueEmpty:
                 break

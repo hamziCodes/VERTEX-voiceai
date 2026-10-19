@@ -1,6 +1,6 @@
 # Phase 04 — Interruption and Session Lifecycle
 
-**Status:** NOT STARTED
+**Status:** READY FOR FINAL QA
 
 **Goal:** Make interruption and teardown deterministic across provider generation, server queues, client playback, transcript retention, and resource cleanup.
 
@@ -22,16 +22,16 @@ None for offline work. Human listening is recommended at exit. Do not choose a l
 
 ## Tasks
 
-- [ ] Reproduce interruption during STT, RAG, LLM, tool filler, TTS request, server egress, browser prebuffer, and active playback.
-- [ ] Replace split event names with the canonical event defined in Phase 05-compatible schema; accept legacy alias only during an explicit deprecation window.
-- [ ] Cancel the live LLM producer task, TTS producer/consumer, filler/tool work, provider HTTP streams, and egress sender safely; do not only set tokens.
-- [ ] Clear provider/server/client buffers and require client clear acknowledgment. Prevent one dequeued server chunk from escaping after commit.
-- [ ] Commit assistant context by actually played speech boundary; interrupted unsaid text never enters history.
-- [ ] Retain pre-roll, partial and final interrupting user text exactly once as the next turn.
-- [ ] Make verification resolve early when sustained speech/text evidence passes rather than always sleeping the full window; preserve false-alarm resume.
-- [ ] Use a structured task group/resource owner so startup and teardown close live STT, HTTP clients, VAD tasks, verification tasks, queues, Redis state and admission leases.
-- [ ] Ensure FSM returns to LISTENING only after client playout drain/ack, not merely synthesis completion.
-- [ ] Test duplicate/concurrent barge, disconnect during each stage, client without ack, false noise, one-word/two-word policy, and rapid back-to-back turns.
+- [x] Reproduce interruption during STT, RAG, LLM, tool filler, TTS request, server egress, browser prebuffer, and active playback.
+- [x] Replace split event names with the canonical event defined in Phase 05-compatible schema; accept legacy alias only during an explicit deprecation window.
+- [x] Cancel the live LLM producer task, TTS producer/consumer, filler/tool work, provider HTTP streams, and egress sender safely; do not only set tokens.
+- [x] Clear provider/server/client buffers and require client clear acknowledgment. Prevent one dequeued server chunk from escaping after commit.
+- [x] Commit assistant context by actually played speech boundary; interrupted unsaid text never enters history.
+- [x] Retain pre-roll, partial and final interrupting user text exactly once as the next turn.
+- [x] Make verification resolve early when sustained speech/text evidence passes rather than always sleeping the full window; preserve false-alarm resume.
+- [x] Use a structured task group/resource owner so startup and teardown close live STT, HTTP clients, VAD tasks, verification tasks, queues, Redis state and admission leases.
+- [x] Ensure FSM returns to LISTENING only after client playout drain/ack, not merely synthesis completion.
+- [x] Test duplicate/concurrent barge, disconnect during each stage, client without ack, false noise, one-word/two-word policy, and rapid back-to-back turns.
 
 ## Verification
 
@@ -51,3 +51,9 @@ Hamzi performs a local browser interruption script and reports whether speech st
 - All interruption matrix cases pass.
 - Session cleanup passes on normal close and failure at every startup/runtime stage.
 - Playback completion and FSM state agree.
+
+## Execution result
+
+Offline implementation and automated exit criteria are complete. Evidence is in
+`Codex Fix/evidence/phase-04/VERIFICATION.md`. Local browser listening remains
+deferred to the final cross-phase QA pass at Hamzi's request.

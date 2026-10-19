@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from enum import Enum
 import json
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 
 class ControlEventType(str, Enum):
     """Canonical control event types across transports."""
 
-    BARGE_IN = "barge_in"
+    BARGE_IN = "control.barge_in"
+    CLEAR_AUDIO = "control.clear_audio"
+    CLEAR_AUDIO_ACK = "control.clear_audio_ack"
+    PLAYBACK_DRAINED = "control.playback_drained"
+    PLAYED_TEXT_COMMIT = "assistant.played_text_commit"
     FLUSH = "flush"
     HANGUP = "hangup"
     LANGUAGE_CHANGED = "language_changed"
@@ -51,7 +55,8 @@ class ControlEvent:
 
 
 def ControlEventBargeIn(
-    timestamp_ms: float = 0.0, reason: str = "barge_in_committed"
+    timestamp_ms: float = 0.0,
+    reason: str = "barge_in_committed",
 ) -> ControlEvent:
     """Factory helper for creating wire control.barge_in events."""
     return ControlEvent(

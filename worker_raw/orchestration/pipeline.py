@@ -43,6 +43,7 @@ from core.listening.vad_worker import VADWorker
 from core.mcp.filler import ConversationalFillerSynth, FillerConfig
 from core.metering.usage_meter import UsageMeter
 from core.observability.logging import get_logger
+from core.playback.turn_commit import PlayedTextCommit, TurnCommitTracker
 from core.providers.adapters.cartesia_tts import CartesiaTTSProvider
 from core.providers.adapters.deepgram_stt import DeepgramSTTProvider
 from core.providers.adapters.elevenlabs_tts import ElevenLabsTTSProvider
@@ -163,12 +164,16 @@ class PipelineOrchestrator:
         self._turn_starts: list[float] = []
         self._turn_ends: list[float] = []
         self._ws_session: Any | None = None
-        self._egress_queue: TypedAsyncQueue[bytes] = TypedAsyncQueue(OUTBOUND_TTS_POLICY)
+        self._egress_queue: TypedAsyncQueue[tuple[int, bytes]] = TypedAsyncQueue(
+            OUTBOUND_TTS_POLICY
+        )
         self._egress_sender_task: asyncio.Task[None] | None = None
+        self._egress_generation = 0
         self._llm_cancel = AsyncioCancellationToken()
         self._tts_cancel = AsyncioCancellationToken()
         self._playback_started = False
         self._finalized_once = False
+        self._runtime_resources_closed = False
         self._speech_buffer = bytearray()
         self._capturing_speech = False
         self._speech_end_pending = False
@@ -202,8 +207,92 @@ class PipelineOrchestrator:
         self._playback_pause_event.set()
         self._barge_verify_task: asyncio.Task[None] | None = None
         self._active_latency_turn_id: UUID | None = None
+        self._active_playback_turn_id: str | None = None
+        self._turn_commit_tracker = TurnCommitTracker()
+        self._pending_assistant_turns: dict[str, tuple[str, str]] = {}
+        self._control_sequence = 0
+        self._pending_clear_acks: dict[int, tuple[str, asyncio.Event]] = {}
+        self._clear_ack_tasks: set[asyncio.Task[None]] = set()
+        self._barge_lock = asyncio.Lock()
+        self._interrupted_turn_ids: set[str] = set()
         # Always flush egress on three-point cancel (fixes ghost audio after barge).
         self.three_point_cancel.register_flush_callback(self._flush_egress_queue)
+
+    @property
+    def runtime_task_count(self) -> int:
+        """Number of still-running tasks owned directly by this orchestrator."""
+        tasks = {
+            self._llm_task,
+            self._tts_task,
+            self._egress_sender_task,
+            self._live_stt_task,
+            self._barge_verify_task,
+            *self._clear_ack_tasks,
+            *self.three_point_cancel.active_tasks,
+        }
+        return sum(task is not None and not task.done() for task in tasks)
+
+    async def shutdown_runtime_resources(self) -> None:
+        """Idempotently stop tasks, streams, workers, and pooled provider clients."""
+        if self._runtime_resources_closed:
+            return
+        self._llm_cancel.cancel()
+        self._tts_cancel.cancel()
+        if self._filler is not None:
+            self._filler.cancel()
+            self._filler = None
+
+        await self.three_point_cancel.cancel_and_wait()
+        await self._close_live_stt()
+
+        current = asyncio.current_task()
+        tasks = {
+            task
+            for task in (
+                self._llm_task,
+                self._tts_task,
+                self._barge_verify_task,
+                self._egress_sender_task,
+                *self._clear_ack_tasks,
+            )
+            if task is not None and task is not current and not task.done()
+        }
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._llm_task = None
+        self._tts_task = None
+        self._barge_verify_task = None
+        self._egress_sender_task = None
+        self._clear_ack_tasks.clear()
+        self._pending_clear_acks.clear()
+        self._turn_commit_tracker.discard_all()
+        self._pending_assistant_turns.clear()
+        self._active_playback_turn_id = None
+
+        if self._vad_worker is not None:
+            self._vad_worker.shutdown()
+            self._vad_worker = None
+
+        seen: set[int] = set()
+        for provider in (self.llm_provider, self.tts_provider, self.stt_provider):
+            if id(provider) in seen:
+                continue
+            seen.add(id(provider))
+            close_fn = getattr(provider, "aclose", None)
+            if close_fn:
+                try:
+                    result = close_fn()
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception as exc:
+                    logger.warning(
+                        "Provider close failed during teardown",
+                        provider=type(provider).__name__,
+                        error_type=type(exc).__name__,
+                    )
+        self._runtime_resources_closed = True
 
     async def apply_provider_selection(self, session_config: PipelineSessionConfig) -> None:
         """Swap STT/LLM/TTS adapters from session config (call at session start only)."""
@@ -270,6 +359,7 @@ class PipelineOrchestrator:
         while not self._egress_queue.empty():
             try:
                 self._egress_queue.get_nowait()
+                self._egress_queue.task_done()
                 dropped += 1
             except Exception:
                 break
@@ -299,19 +389,26 @@ class PipelineOrchestrator:
     async def _egress_sender_loop(self) -> None:
         while True:
             try:
-                pcm = await self._egress_queue.get()
+                generation, pcm = await self._egress_queue.get()
             except asyncio.CancelledError:
                 break
-            # Block while playback is paused during a barge verification window.
-            if not self._playback_pause_event.is_set():
-                try:
-                    await self._playback_pause_event.wait()
-                except asyncio.CancelledError:
-                    break
-            if self.on_audio_out:
-                maybe = self.on_audio_out(pcm)
-                if asyncio.iscoroutine(maybe):
-                    await maybe
+            try:
+                # Block while playback is paused during a barge verification window.
+                if not self._playback_pause_event.is_set():
+                    try:
+                        await self._playback_pause_event.wait()
+                    except asyncio.CancelledError:
+                        break
+                # A barge-in increments the generation before flushing. This check
+                # also rejects the chunk that a sender may already have dequeued.
+                if generation != self._egress_generation:
+                    continue
+                if self.on_audio_out:
+                    maybe = self.on_audio_out(pcm)
+                    if asyncio.iscoroutine(maybe):
+                        await maybe
+            finally:
+                self._egress_queue.task_done()
 
     def pause_playback(self) -> None:
         """Pause egress to the client (barge verify window)."""
@@ -325,7 +422,16 @@ class PipelineOrchestrator:
         if self._egress_sender_task is None or self._egress_sender_task.done():
             self._egress_sender_task = asyncio.create_task(self._egress_sender_loop())
 
-    async def _emit_audio(self, pcm: bytes, waterfall: Any | None = None) -> None:
+    async def _emit_audio(
+        self,
+        pcm: bytes,
+        waterfall: Any | None = None,
+        *,
+        generation: int | None = None,
+    ) -> None:
+        generation = self._egress_generation if generation is None else generation
+        if generation != self._egress_generation:
+            return
         if not self._playback_started:
             self._playback_started = True
             if waterfall is not None:
@@ -353,7 +459,11 @@ class PipelineOrchestrator:
                 self.fsm.trigger(SessionEvent.TTS_FIRST_BYTE)
         await self._ensure_egress_sender()
         queue_wait_started = time.monotonic()
-        await self._egress_queue.put(pcm)
+        await self._egress_queue.put((generation, pcm))
+        if waterfall is not None:
+            turn_id = str(waterfall.turn_id)
+            if turn_id in self._pending_assistant_turns:
+                self._turn_commit_tracker.add_audio(turn_id, len(pcm))
         queue_wait_ms = (time.monotonic() - queue_wait_started) * 1000
         if queue_wait_ms >= 5:
             logger.warning(
@@ -363,17 +473,203 @@ class PipelineOrchestrator:
                 queue_high_water=self._egress_queue.high_watermark,
             )
 
-    async def _notify_client_barge_in(self, reason: str = "barge_in_committed") -> None:
+    def _next_control_sequence(self) -> int:
+        self._control_sequence += 1
+        return self._control_sequence
+
+    async def _notify_client_barge_in(
+        self, reason: str = "barge_in_committed"
+    ) -> int | None:
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is None:
+            return None
+        turn_id = self._active_playback_turn_id
+        try:
+            barge_sequence = self._next_control_sequence()
+            await transport.send_control_event(
+                ControlEventType.BARGE_IN,
+                {
+                    "reason": reason,
+                    "turn_id": turn_id,
+                    "sequence": barge_sequence,
+                },
+            )
+            clear_sequence = self._next_control_sequence()
+            clear_event = asyncio.Event()
+            self._pending_clear_acks[clear_sequence] = (turn_id or "", clear_event)
+            await transport.send_control_event(
+                ControlEventType.CLEAR_AUDIO,
+                {
+                    "reason": reason,
+                    "turn_id": turn_id,
+                    "sequence": clear_sequence,
+                },
+            )
+            watchdog = asyncio.create_task(
+                self._clear_audio_ack_watchdog(clear_sequence),
+                name=f"clear-audio-ack:{clear_sequence}",
+            )
+            self._clear_ack_tasks.add(watchdog)
+            watchdog.add_done_callback(self._clear_ack_tasks.discard)
+            return clear_sequence
+        except Exception as exc:
+            logger.debug("Client barge_in notify failed", error=str(exc))
+            return None
+
+    async def _clear_audio_ack_watchdog(self, sequence: int) -> None:
+        pending = self._pending_clear_acks.get(sequence)
+        if pending is None:
+            return
+        turn_id, event = pending
+        try:
+            await asyncio.wait_for(event.wait(), timeout=0.5)
+            return
+        except TimeoutError:
+            await self._commit_played_assistant(
+                turn_id,
+                played_audio_ms=0.0,
+                complete=False,
+            )
+            await self._emit_degraded_event(
+                "clear_audio_ack_timeout",
+                {"turn_id": turn_id or None, "sequence": sequence},
+            )
+        finally:
+            self._pending_clear_acks.pop(sequence, None)
+
+    async def handle_clear_audio_ack(
+        self,
+        *,
+        turn_id: str,
+        sequence: int,
+        played_audio_ms: float,
+    ) -> bool:
+        """Resolve one client buffer-clear request and commit only played speech."""
+        pending = self._pending_clear_acks.get(sequence)
+        if pending is None or pending[0] != turn_id:
+            return False
+        await self._commit_played_assistant(
+            turn_id,
+            played_audio_ms=max(0.0, played_audio_ms),
+            complete=False,
+        )
+        pending[1].set()
+        self._pending_clear_acks.pop(sequence, None)
+        return True
+
+    async def _settle_pending_clear_acks(self) -> None:
+        """Bound the ordering wait before the interrupting user turn reads history."""
+        for sequence, (turn_id, event) in list(self._pending_clear_acks.items()):
+            try:
+                await asyncio.wait_for(event.wait(), timeout=0.12)
+            except TimeoutError:
+                await self._commit_played_assistant(
+                    turn_id,
+                    played_audio_ms=0.0,
+                    complete=False,
+                )
+                event.set()
+            finally:
+                self._pending_clear_acks.pop(sequence, None)
+
+    async def handle_playback_drained(
+        self, *, turn_id: str, played_audio_ms: float
+    ) -> bool:
+        """Commit a normally drained turn and release the FSM to listening."""
+        if turn_id not in self._pending_assistant_turns:
+            return False
+        await self._commit_played_assistant(
+            turn_id,
+            played_audio_ms=max(0.0, played_audio_ms),
+            complete=True,
+        )
+        if self.fsm.can_transition(SessionEvent.TTS_DRAINED):
+            self.fsm.trigger(SessionEvent.TTS_DRAINED)
+        return True
+
+    async def _commit_played_assistant(
+        self,
+        turn_id: str,
+        *,
+        played_audio_ms: float,
+        complete: bool,
+    ) -> PlayedTextCommit:
+        result = self._turn_commit_tracker.commit(
+            turn_id,
+            played_audio_ms=played_audio_ms,
+            complete=complete,
+        )
+        metadata = self._pending_assistant_turns.pop(turn_id, None)
+        if self._active_playback_turn_id == turn_id:
+            self._active_playback_turn_id = None
+        if metadata is not None and result.text:
+            session_id, language = metadata
+            if self.on_transcript:
+                maybe = self.on_transcript("agent", result.text)
+                if asyncio.iscoroutine(maybe):
+                    await maybe
+            await self.redis_store.append_turn(
+                session_id,
+                {
+                    "speaker": "assistant",
+                    "text": result.text,
+                    "language": language,
+                    "playback_complete": result.complete,
+                },
+            )
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is not None:
+            try:
+                await transport.send_control_event(
+                    ControlEventType.PLAYED_TEXT_COMMIT,
+                    {
+                        "turn_id": turn_id,
+                        "text": result.text,
+                        "played_audio_ms": result.played_audio_ms,
+                        "complete": result.complete,
+                    },
+                )
+            except Exception as exc:
+                logger.debug("Played-text commit notify failed", error=str(exc))
+        return result
+
+    async def _notify_audio_end(self, turn_id: str) -> None:
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is None:
+            return
+        try:
+            await asyncio.wait_for(self._egress_queue.join(), timeout=2.0)
+        except TimeoutError:
+            await self._emit_degraded_event(
+                "egress_drain_timeout",
+                {"turn_id": turn_id},
+            )
+            return
+        await transport.send_control_event(
+            "audio_end",
+            {
+                "turn_id": turn_id,
+                "generated_audio_ms": self._turn_commit_tracker.generated_audio_ms(turn_id),
+            },
+        )
+
+    async def _emit_degraded_event(
+        self, kind: str, details: dict[str, Any]
+    ) -> None:
         session = self._ws_session
         transport = getattr(session, "transport", None) if session is not None else None
         if transport is None:
             return
         try:
             await transport.send_control_event(
-                ControlEventType.BARGE_IN, {"reason": reason}
+                ControlEventType.DEGRADED_MODE,
+                {"kind": kind, "recoverable": True, **details},
             )
-        except Exception as exc:
-            logger.debug("Client barge_in notify failed", error=str(exc))
+        except Exception:
+            pass
 
     async def _emit_latency_telemetry(self, waterfall: LatencyWaterfall) -> None:
         """Broadcast the canonical versioned latency payload to the client."""
@@ -448,18 +744,9 @@ class PipelineOrchestrator:
             self.resume_playback()
 
         async def _commit() -> None:
-            self.barge_in_controller._commit_barge_in(
+            await self.execute_immediate_barge_in(
                 reason="Barge verify sustained speech"
             )
-            # Unblock egress gate for the *next* turn (queue already flushed).
-            self.resume_playback()
-            await self._notify_client_barge_in()
-            if self._speech_capture is not None:
-                self._speech_capture.begin_capture()
-                self._capturing_speech = True
-            else:
-                self._capturing_speech = True
-            await self._maybe_start_live_stt()
 
         await engine.run(
             pause=_pause,
@@ -469,24 +756,49 @@ class PipelineOrchestrator:
         )
 
     async def execute_immediate_barge_in(self, reason: str = "VAD speech onset") -> None:
-        """Instant sub-100ms barge-in: cancel LLM/TTS, flush queues, notify client, transition FSM."""
-        logger.info("Executing immediate barge-in", reason=reason, state=str(self.fsm.state))
-        if self._active_latency_turn_id is not None:
-            self.latency_collector.cancel_turn(
-                self._active_latency_turn_id,
-                reason="barge_in",
+        """Atomically invalidate audio, clear the client, and stop turn producers."""
+        async with self._barge_lock:
+            turn_id = self._active_playback_turn_id or ""
+            if turn_id and turn_id in self._interrupted_turn_ids:
+                return
+            if turn_id:
+                self._interrupted_turn_ids.add(turn_id)
+
+            logger.info(
+                "Executing immediate barge-in",
+                reason=reason,
+                state=str(self.fsm.state),
+                turn_id=turn_id or None,
             )
-        if self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
-            self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
-        self._llm_cancel.cancel()
-        self._tts_cancel.cancel()
-        self.three_point_cancel.execute_cancel_and_flush()
-        self._flush_egress_queue()
-        self.resume_playback()
-        await self._notify_client_barge_in(reason=reason)
-        self.barge_in_controller._commit_barge_in(reason=reason)
-        self._capturing_speech = True
-        await self._maybe_start_live_stt()
+            if turn_id:
+                self.latency_collector.cancel_turn(
+                    UUID(turn_id),
+                    reason="barge_in",
+                )
+            if self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
+                self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
+
+            # Invalidate before any await so a sender-held chunk cannot escape.
+            self._egress_generation += 1
+            self.pause_playback()
+            self._flush_egress_queue()
+            await self._notify_client_barge_in(reason=reason)
+
+            self._llm_cancel.cancel()
+            self._tts_cancel.cancel()
+            if self._filler is not None:
+                self._filler.cancel()
+                self._filler = None
+            await self.three_point_cancel.cancel_and_wait()
+
+            if self.fsm.can_transition(SessionEvent.BARGE_CONFIRMED):
+                self.fsm.trigger(SessionEvent.BARGE_CONFIRMED)
+            self.barge_in_controller.committed_count += 1
+            self.resume_playback()
+            if self._speech_capture is not None:
+                self._speech_capture.begin_capture()
+            self._capturing_speech = True
+            await self._maybe_start_live_stt()
 
     async def prepare_live_stt(self) -> str:
         """Warm selected streaming STT before readiness with bounded startup."""
@@ -808,6 +1120,8 @@ class PipelineOrchestrator:
         waterfall: Any,
     ) -> None:
         voice = session_config.tts_voice_id or "default"
+        turn_id = str(waterfall.turn_id)
+        generation = self._egress_generation
         ttfb_recorded = False
         audio_committed = False
         deadlines = TTSStreamTimeouts(
@@ -824,6 +1138,8 @@ class PipelineOrchestrator:
         for sentence in sentences:
             if self._tts_cancel.is_cancelled or self.three_point_cancel.cancelled:
                 break
+            if turn_id in self._pending_assistant_turns:
+                self._turn_commit_tracker.start_segment(turn_id, sentence)
             cfg = TTSConfig(voice_id=voice, sample_rate=16000)
             invoke_count = 0
 
@@ -877,14 +1193,22 @@ class PipelineOrchestrator:
                                 getattr(self, "_tts_pcm_logged", 0) + 1
                             )
                         if pcm:
-                            await self._emit_audio(pcm, waterfall)
+                            await self._emit_audio(
+                                pcm,
+                                waterfall,
+                                generation=generation,
+                            )
                             audio_committed = True
                 if resampler is None and not self._tts_cancel.is_cancelled:
                     raise ValueError("TTS provider completed without audio.")
                 if resampler is not None and not self._tts_cancel.is_cancelled:
                     tail = resampler.flush()
                     if tail:
-                        await self._emit_audio(tail, waterfall)
+                        await self._emit_audio(
+                            tail,
+                            waterfall,
+                            generation=generation,
+                        )
                         audio_committed = True
                 return True
 
@@ -927,6 +1251,7 @@ class PipelineOrchestrator:
 
     async def run_turn(self, session_config: PipelineSessionConfig, user_text: str) -> str:
         """Execute one STT→RAG→LLM/Tool→norm→TTS turn with latency tracing."""
+        await self._settle_pending_clear_acks()
         turn_start = time.monotonic()
         self._turn_starts.append(turn_start)
         self._playback_started = False
@@ -936,6 +1261,10 @@ class PipelineOrchestrator:
         self._llm_cancel = AsyncioCancellationToken()
         self.three_point_cancel.reset()
         self.three_point_cancel.register_flush_callback(self._flush_egress_queue)
+        current_turn_task = asyncio.current_task()
+        if current_turn_task is not None:
+            self._llm_task = current_turn_task
+            self.three_point_cancel.register_task(current_turn_task)
 
         interrupted = self.barge_in_controller.next_turn_input()
         if interrupted:
@@ -955,6 +1284,13 @@ class PipelineOrchestrator:
             vad_end_ms=self._last_vad_speech_end_ms or None,
         )
         self._active_latency_turn_id = waterfall.turn_id
+        turn_id = str(waterfall.turn_id)
+        self._active_playback_turn_id = turn_id
+        self._turn_commit_tracker.begin_turn(turn_id)
+        self._pending_assistant_turns[turn_id] = (
+            session_config.session_id,
+            session_config.language,
+        )
         self._last_acoustic_speech_ms = 0.0
         self._last_vad_speech_end_ms = 0.0
         if self._last_stt_final_ms > 0:
@@ -990,7 +1326,7 @@ class PipelineOrchestrator:
         )
         if self.fsm.state == SessionState.CONNECTING:
             self.fsm.trigger(SessionEvent.SESSION_ADMITTED)
-        elif self.fsm.state == SessionState.AGENT_SPEAKING:
+        elif self.fsm.state == SessionState.AGENT_SPEAKING and self._ws_session is None:
             self.fsm.trigger(SessionEvent.TTS_DRAINED)
         elif self.fsm.state == SessionState.BARGE_IN_INTERRUPTED:
             # Interrupted turn already in PROCESSING via VAD_SPEECH_END or stays until STT_FINAL.
@@ -1196,25 +1532,20 @@ class PipelineOrchestrator:
             norm_result = self.normalizer.normalize(normalized, language=session_config.language)
             normalized = getattr(norm_result, "text", None) or str(norm_result)
 
-        if self.on_transcript:
-            maybe = self.on_transcript("agent", normalized)
-            if asyncio.iscoroutine(maybe):
-                await maybe
-
-        await self.redis_store.append_turn(
-            session_config.session_id,
-            {
-                "speaker": "assistant",
-                "text": normalized,
-                "language": session_config.language,
-            },
-        )
+        if self._ws_session is None:
+            await self._commit_played_assistant(
+                turn_id,
+                played_audio_ms=self._turn_commit_tracker.generated_audio_ms(turn_id),
+                complete=True,
+            )
+        else:
+            await self._notify_audio_end(turn_id)
 
         self.latency_collector.record_turn(waterfall)
         await self._emit_latency_telemetry(waterfall)
         if self._active_latency_turn_id == waterfall.turn_id:
             self._active_latency_turn_id = None
-        if self.fsm.can_transition(SessionEvent.TTS_DRAINED):
+        if self._ws_session is None and self.fsm.can_transition(SessionEvent.TTS_DRAINED):
             self.fsm.trigger(SessionEvent.TTS_DRAINED)
         self._turn_ends.append(time.monotonic())
         return normalized
@@ -1256,24 +1587,7 @@ class PipelineOrchestrator:
             return
         self._finalized_once = True
 
-        if self._egress_sender_task and not self._egress_sender_task.done():
-            self._egress_sender_task.cancel()
-            try:
-                await self._egress_sender_task
-            except asyncio.CancelledError:
-                pass
-
-        await self._close_live_stt()
-        if self._vad_worker is not None:
-            self._vad_worker.shutdown()
-            self._vad_worker = None
-
-        for provider in (self.llm_provider, self.tts_provider, self.stt_provider):
-            close_fn = getattr(provider, "aclose", None)
-            if close_fn:
-                maybe = close_fn()
-                if asyncio.iscoroutine(maybe):
-                    await maybe
+        await self.shutdown_runtime_resources()
 
         if self.fsm.can_transition(SessionEvent.DISCONNECT):
             self.fsm.trigger(SessionEvent.DISCONNECT)

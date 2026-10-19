@@ -31,6 +31,9 @@ class UCVEVoiceClient:
         on_transcript: Callable[[str, str], Any] | None = None,
         on_audio: Callable[[bytes], Any] | None = None,
         on_audio_start: Callable[[dict[str, Any]], Any] | None = None,
+        on_barge_in: Callable[[dict[str, Any]], Any] | None = None,
+        on_clear_audio: Callable[[dict[str, Any]], Any] | None = None,
+        on_played_text_commit: Callable[[dict[str, Any]], Any] | None = None,
         on_metric: Callable[[dict[str, Any]], Any] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -56,10 +59,15 @@ class UCVEVoiceClient:
         self.on_transcript = on_transcript
         self.on_audio = on_audio
         self.on_audio_start = on_audio_start
+        self.on_barge_in = on_barge_in
+        self.on_clear_audio = on_clear_audio
+        self.on_played_text_commit = on_played_text_commit
         self.on_metric = on_metric
         self._ws: Any | None = None
         self._running = False
         self._listen_task: asyncio.Task[None] | None = None
+        self._active_turn_id: str | None = None
+        self._control_sequence = 0
         self.version_manifest = SDK_VERSION_MANIFEST
 
     async def connect(self) -> None:
@@ -102,11 +110,37 @@ class UCVEVoiceClient:
                             res = self.on_transcript(speaker, text)
                             if asyncio.iscoroutine(res):
                                 await res
-                        elif event_type == "audio_start" and self.on_audio_start:
+                        elif event_type == "audio_start":
                             payload = data.get("payload") or {}
-                            res = self.on_audio_start(payload)
-                            if asyncio.iscoroutine(res):
-                                await res
+                            turn_id = str(payload.get("turn_id") or "")
+                            self._active_turn_id = turn_id or None
+                            if self.on_audio_start:
+                                res = self.on_audio_start(payload)
+                                if asyncio.iscoroutine(res):
+                                    await res
+                        elif event_type in ("control.barge_in", "barge_in"):
+                            payload = data.get("payload") or {}
+                            if self.on_barge_in:
+                                res = self.on_barge_in(payload)
+                                if asyncio.iscoroutine(res):
+                                    await res
+                        elif event_type == "control.clear_audio":
+                            payload = data.get("payload") or {}
+                            played_audio_ms = 0.0
+                            if self.on_clear_audio:
+                                res = self.on_clear_audio(payload)
+                                if asyncio.iscoroutine(res):
+                                    res = await res
+                                if isinstance(res, (int, float)):
+                                    played_audio_ms = max(0.0, float(res))
+                            await self._ack_clear_audio(payload, played_audio_ms)
+                            self._active_turn_id = None
+                        elif event_type == "assistant.played_text_commit":
+                            payload = data.get("payload") or {}
+                            if self.on_played_text_commit:
+                                res = self.on_played_text_commit(payload)
+                                if asyncio.iscoroutine(res):
+                                    await res
                         elif event_type == "metric" and self.on_metric:
                             payload = data.get("payload") or data
                             res = self.on_metric(payload)
@@ -160,11 +194,55 @@ class UCVEVoiceClient:
         """Trigger instant voice barge-in cancellation."""
         if not self._ws:
             return
+        self._control_sequence += 1
         msg = {
             "event_type": "control.barge_in",
-            "payload": {"rms": rms, "t": time.time() * 1000},
+            "payload": {
+                "rms": rms,
+                "t": time.time() * 1000,
+                "turn_id": self._active_turn_id,
+                "sequence": self._control_sequence,
+            },
         }
         await self._ws.send(json.dumps(msg))
+
+    async def _ack_clear_audio(
+        self, payload: dict[str, Any], played_audio_ms: float
+    ) -> None:
+        if not self._ws:
+            return
+        await self._ws.send(
+            json.dumps(
+                {
+                    "event_type": "control.clear_audio_ack",
+                    "payload": {
+                        "turn_id": payload.get("turn_id"),
+                        "sequence": int(payload.get("sequence") or 0),
+                        "played_audio_ms": played_audio_ms,
+                    },
+                }
+            )
+        )
+
+    async def emit_playback_drained(
+        self, turn_id: str, *, played_audio_ms: float
+    ) -> None:
+        """Confirm that all scheduled audio for a turn reached the speaker."""
+        if not self._ws:
+            return
+        await self._ws.send(
+            json.dumps(
+                {
+                    "event_type": "control.playback_drained",
+                    "payload": {
+                        "turn_id": turn_id,
+                        "played_audio_ms": max(0.0, played_audio_ms),
+                    },
+                }
+            )
+        )
+        if self._active_turn_id == turn_id:
+            self._active_turn_id = None
 
     async def disconnect(self) -> None:
         """Gracefully close the streaming session."""

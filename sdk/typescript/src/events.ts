@@ -28,3 +28,21 @@ export interface LatencyMetricPayload {
   queue: Record<string, unknown>;
   missing_reasons: string[];
 }
+
+export interface ClearAudioPayload {
+  turn_id: string | null;
+  sequence: number;
+  reason: string;
+}
+
+export interface PlaybackDrainedPayload {
+  turn_id: string;
+  played_audio_ms: number;
+}
+
+export interface PlayedTextCommitPayload {
+  turn_id: string;
+  text: string;
+  played_audio_ms: number;
+  complete: boolean;
+}

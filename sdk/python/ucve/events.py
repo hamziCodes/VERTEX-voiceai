@@ -36,3 +36,21 @@ class LatencyMetricPayload(TypedDict):
     durations_ms: dict[str, float | None]
     queue: dict[str, Any]
     missing_reasons: list[str]
+
+
+class ClearAudioPayload(TypedDict):
+    turn_id: str | None
+    sequence: int
+    reason: str
+
+
+class PlaybackDrainedPayload(TypedDict):
+    turn_id: str
+    played_audio_ms: float
+
+
+class PlayedTextCommitPayload(TypedDict):
+    turn_id: str
+    text: str
+    played_audio_ms: float
+    complete: bool

@@ -104,16 +104,20 @@ Emitted after each completed STT turn.
 }
 ```
 
-#### `barge_in`
+#### `control.barge_in` and `control.clear_audio`
 Emitted when the server detects and commits a barge-in (agent TTS cancelled).
 ```json
 {
-  "event_type": "barge_in",
+  "event_type": "control.barge_in",
   "payload": {
-    "reason": "VAD speech during agent TTS"
+    "reason": "VAD speech during agent TTS",
+    "turn_id": "00000000-0000-0000-0000-000000000002",
+    "sequence": 11
   }
 }
 ```
+The next frame is `control.clear_audio` with the same `turn_id` and a larger
+sequence. Stop scheduled audio immediately and acknowledge that clear request.
 
 #### `latency`
 Versioned per-turn telemetry emitted as stages become available and again after a correlated playback acknowledgement.
@@ -198,12 +202,42 @@ Update the system prompt mid-session without reconnecting.
 }
 ```
 
-#### `barge_in` (client-initiated)
+#### `control.barge_in` (client-initiated)
 Client-side barge-in signal (e.g. from a UI stop button).
 ```json
 {
-  "event_type": "barge_in",
-  "payload": {"reason": "user_pressed_stop"}
+  "event_type": "control.barge_in",
+  "payload": {
+    "reason": "user_pressed_stop",
+    "turn_id": "00000000-0000-0000-0000-000000000002",
+    "sequence": 3
+  }
+}
+```
+The server accepts bare `barge_in` only as a compatibility alias until the next
+protocol major and emits a `protocol_deprecation` info event when it is used.
+
+#### `control.clear_audio_ack`
+```json
+{
+  "event_type": "control.clear_audio_ack",
+  "payload": {
+    "turn_id": "00000000-0000-0000-0000-000000000002",
+    "sequence": 12,
+    "played_audio_ms": 384.0
+  }
+}
+```
+
+#### `control.playback_drained`
+Send after `audio_end` and after every scheduled source for that turn finishes.
+```json
+{
+  "event_type": "control.playback_drained",
+  "payload": {
+    "turn_id": "00000000-0000-0000-0000-000000000002",
+    "played_audio_ms": 1248.0
+  }
 }
 ```
 

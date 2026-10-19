@@ -1513,6 +1513,11 @@
       : 50;
     let playbackUnderrunCount = 0;
     let pendingPlaybackTurnId = null;
+    let activePlaybackTurnId = null;
+    let playbackTurnStartTime = null;
+    let playbackScheduledMs = 0;
+    let playbackEndReceived = false;
+    let playbackDrainSent = false;
     const acknowledgedPlaybackTurns = new Set();
     const playbackAckTimers = new Map();
     let isAgentSpeaking = false;
@@ -1739,9 +1744,24 @@
 
     function handleWsControlMessage(msg) {
       const type = msg.event_type || msg.type;
-      if (type === 'barge_in' || type === 'control.barge_in') {
+      if (type === 'barge_in') {
         stopPlayback();
         addLog('VAD', 'Barge-in: Agent speech interrupted.', 'tag-vad');
+      } else if (type === 'control.barge_in') {
+        addLog('VAD', 'Barge-in committed; clearing scheduled speech.', 'tag-vad');
+      } else if (type === 'control.clear_audio') {
+        const p = msg.payload || {};
+        const stopped = stopPlayback();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            event_type: 'control.clear_audio_ack',
+            payload: {
+              turn_id: p.turn_id || stopped.turnId || null,
+              sequence: Number(p.sequence || 0),
+              played_audio_ms: stopped.playedAudioMs
+            }
+          }));
+        }
       } else if (type === 'pong' || type === 'control.pong') {
         const rtt = Math.round(performance.now() - pingStartTime);
         if (metricRtt) metricRtt.textContent = rtt + ' ms';
@@ -1786,8 +1806,19 @@
       } else if (type === 'audio_start') {
         const p = msg.payload || {};
         pendingPlaybackTurnId = p.turn_id || null;
+        activePlaybackTurnId = p.turn_id || null;
+        playbackTurnStartTime = null;
+        playbackScheduledMs = 0;
+        playbackEndReceived = false;
+        playbackDrainSent = false;
         if (!prebufferConfiguredByQuery && Number.isFinite(Number(p.recommended_prebuffer_ms))) {
           clientPrebufferMs = Math.min(250, Math.max(0, Number(p.recommended_prebuffer_ms)));
+        }
+      } else if (type === 'audio_end') {
+        const p = msg.payload || {};
+        if (!activePlaybackTurnId || p.turn_id === activePlaybackTurnId) {
+          playbackEndReceived = true;
+          maybeAcknowledgePlaybackDrained();
         }
       }
     }
@@ -1858,6 +1889,7 @@
         }
 
         const scheduledContextTime = nextPlayTime;
+        if (playbackTurnStartTime === null) playbackTurnStartTime = scheduledContextTime;
         const delayMs = Math.max(0, (scheduledContextTime - now) * 1000);
         const scheduledPerformanceMs = performance.now() + delayMs;
         source.start(scheduledContextTime);
@@ -1886,6 +1918,7 @@
           playbackAckTimers.set(turnId, timerId);
         }
         nextPlayTime += buffer.duration;
+        playbackScheduledMs += buffer.duration * 1000;
         activeSources.push(source);
         isAgentSpeaking = true;
 
@@ -1894,6 +1927,7 @@
           if (idx !== -1) activeSources.splice(idx, 1);
           if (activeSources.length === 0) {
             isAgentSpeaking = false;
+            maybeAcknowledgePlaybackDrained();
           }
         };
 
@@ -1905,7 +1939,31 @@
       } catch (e) {}
     }
 
+    function currentPlayedAudioMs() {
+      if (!playCtx || playbackTurnStartTime === null) return 0;
+      const elapsedMs = Math.max(0, (playCtx.currentTime - playbackTurnStartTime) * 1000);
+      return Math.min(playbackScheduledMs, elapsedMs);
+    }
+
+    function maybeAcknowledgePlaybackDrained() {
+      if (!playbackEndReceived || playbackDrainSent || activeSources.length > 0) return;
+      if (!activePlaybackTurnId || !ws || ws.readyState !== WebSocket.OPEN) return;
+      playbackDrainSent = true;
+      ws.send(JSON.stringify({
+        event_type: 'control.playback_drained',
+        payload: {
+          turn_id: activePlaybackTurnId,
+          played_audio_ms: playbackScheduledMs
+        }
+      }));
+      activePlaybackTurnId = null;
+    }
+
     function stopPlayback() {
+      const result = {
+        turnId: activePlaybackTurnId,
+        playedAudioMs: currentPlayedAudioMs()
+      };
       activeSources.forEach(s => {
         try { s.stop(); s.disconnect(); } catch (_) {}
       });
@@ -1913,6 +1971,11 @@
       playbackAckTimers.forEach(timerId => clearTimeout(timerId));
       playbackAckTimers.clear();
       pendingPlaybackTurnId = null;
+      activePlaybackTurnId = null;
+      playbackTurnStartTime = null;
+      playbackScheduledMs = 0;
+      playbackEndReceived = false;
+      playbackDrainSent = false;
       if (playCtx) {
         nextPlayTime = playCtx.currentTime;
       } else {
@@ -1920,6 +1983,7 @@
       }
       isAgentSpeaking = false;
       if (agentSpeakingTimer) { clearTimeout(agentSpeakingTimer); agentSpeakingTimer = null; }
+      return result;
     }
 
     function cleanup() {

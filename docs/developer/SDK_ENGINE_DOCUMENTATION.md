@@ -279,7 +279,10 @@ Connection behavior:
 - JSON `metric` events are passed to `on_metric`.
 - `send_audio(pcm16_bytes)` sends raw binary audio (`sdk/python/ucve/client.py:109`).
 - `emit_playback_started()` sends `control.playback_started` with timestamp and kind (`sdk/python/ucve/client.py:115`).
-- `send_barge_in(rms=0.08)` sends `control.barge_in` (`sdk/python/ucve/client.py:125`).
+- `send_barge_in(rms=0.08)` sends sequenced `control.barge_in` correlated to the active turn.
+- `on_clear_audio` clears application-owned playout and may return played milliseconds; the SDK automatically sends `control.clear_audio_ack`.
+- `emit_playback_drained()` confirms normal client playout completion.
+- `on_played_text_commit` receives the assistant context boundary accepted by the server.
 - `disconnect()` cancels the listener and closes the socket (`sdk/python/ucve/client.py:135`).
 
 Minimal Python use:
@@ -349,7 +352,10 @@ Connection behavior:
 - JSON `metric` events are sent to `onMetric`.
 - `sendAudioChunk()` sends an `ArrayBuffer` or `Uint8Array` (`sdk/typescript/src/client.ts:101`).
 - `emitPlaybackStarted()` sends `control.playback_started` (`sdk/typescript/src/client.ts:108`).
-- `sendBargeIn(rms=0.08)` sends `control.barge_in` (`sdk/typescript/src/client.ts:118`).
+- `sendBargeIn(rms=0.08)` sends sequenced `control.barge_in` for the active turn.
+- `onClearAudio` clears application-owned playout and returns played milliseconds for the automatic acknowledgment.
+- `emitPlaybackDrained()` confirms normal client playout completion.
+- `onPlayedTextCommit` receives the server-accepted assistant context boundary.
 - `disconnect()` closes the socket (`sdk/typescript/src/client.ts:128`).
 
 Minimal TypeScript use:
@@ -384,7 +390,10 @@ The shared schema defines:
 | --- | --- | --- |
 | `control.pong` | required `t` number | `sdk/shared/event_schema.json:7` |
 | `control.playback_started` | required `t`, optional `kind` | `sdk/shared/event_schema.json:22` |
-| `control.barge_in` | required `rms`, optional `t` | `sdk/shared/event_schema.json:38` |
+| `control.barge_in` | `turn_id`, monotonic `sequence`, optional `rms`/`t` | `sdk/shared/event_schema.json` |
+| `control.clear_audio` / `_ack` | `turn_id`, `sequence`; ack adds `played_audio_ms` | `sdk/shared/event_schema.json` |
+| `control.playback_drained` | `turn_id`, `played_audio_ms` | `sdk/shared/event_schema.json` |
+| `assistant.played_text_commit` | `turn_id`, text, played duration, completeness | `sdk/shared/event_schema.json` |
 | `text.turn` | required `text` | `sdk/shared/event_schema.json:54` |
 | `transcript` | `speaker` enum `user` or `agent`, `text` | `sdk/shared/event_schema.json:70` |
 | `metric` | `event`, `waterfall` object | `sdk/shared/event_schema.json:86` |
@@ -410,7 +419,9 @@ Client -> server:
 | `control.pong` | JSON | Responds to server ping |
 | `control.ping` | JSON | Worker responds with pong |
 | `control.playback_started` | JSON | Client tells server audio playback reached user |
-| `control.barge_in` | JSON | Client requests barge-in with RMS |
+| `control.barge_in` | JSON | Client requests barge-in with active turn and sequence |
+| `control.clear_audio_ack` | JSON | Confirms scheduled audio was stopped and reports played duration |
+| `control.playback_drained` | JSON | Confirms an uninterrupted turn finished rendering |
 | `text_turn` / `user_turn` | JSON | Runtime text turn aliases |
 | `set_prompt` | JSON | Runtime prompt update |
 
@@ -422,7 +433,10 @@ Server -> client:
 | `transcript` | JSON | User or agent transcript |
 | `metric` | JSON | Session-ready, latency waterfall, debug events |
 | `ping` | JSON | Server keepalive |
-| `barge_in` related control | JSON | Worker notification path exists |
+| `control.barge_in` | JSON | Committed interruption with turn and sequence |
+| `control.clear_audio` | JSON | Requires immediate client playout clear and acknowledgment |
+| `audio_end` | JSON | Marks that server egress is drained for the turn |
+| `assistant.played_text_commit` | JSON | Text admitted to conversation history |
 
 The ping loop sends a control ping every 20 seconds and closes with code `1001` on pong timeout (`worker_raw/ws_constants.py:7`, `worker_raw/ws_session.py:282`).
 

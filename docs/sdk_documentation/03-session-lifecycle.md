@@ -56,7 +56,7 @@ TOOL_EXECUTING                                               │          ▼
 | `TOOL_CALL_START` | LLM emits a tool call request |
 | `TOOL_RESULT` | Tool execution returned result |
 | `TTS_FIRST_BYTE` | TTS provider emits first audio chunk |
-| `TTS_DRAINED` | TTS synthesis + egress queue fully drained |
+| `TTS_DRAINED` | Client confirms server egress and scheduled playout are drained |
 | `BARGE_CONFIRMED` | Barge-in verification engine confirms real speech |
 | `BARGE_FALSE_ALARM` | Barge-in verification engine rejects as noise |
 | `BARGE_VERIFY_TIMEOUT` | Barge verification window expired |
@@ -91,7 +91,9 @@ When a client connects to `/ws/audio`:
    c. Sentence chunking → TTS streaming per sentence
    d. PCM audio frames pushed to egress queue
    e. Egress sender loop drains queue → on_audio_out() → WS binary frame
-6. TTS_DRAINED → AGENT_SPEAKING → LISTENING
+6. Server drains egress and emits `audio_end`
+7. Client renders all scheduled sources and emits `control.playback_drained`
+8. `TTS_DRAINED` → `AGENT_SPEAKING` → `LISTENING`
 ```
 
 ---
@@ -113,11 +115,12 @@ VAD speech_start (during AGENT_SPEAKING)
     │       └─ NO → execute_immediate_barge_in() immediately
     │
     execute_immediate_barge_in():
-        cancel LLM task (AsyncioCancellationToken)
-        cancel TTS task
-        flush egress audio queue (drops pending agent audio)
-        resume_playback()
-        notify client: {"event_type": "barge_in", "payload": {...}}
+        increment egress generation and pause the sender
+        cancel and await turn, LLM, TTS, filler, and provider streams
+        flush queued audio; reject a stale chunk already held by the sender
+        notify client with control.barge_in then control.clear_audio
+        client stops scheduled sources and returns control.clear_audio_ack
+        commit only assistant words covered by acknowledged played PCM
         transition → BARGE_IN_INTERRUPTED
         begin new turn capture
 ```
@@ -133,7 +136,9 @@ On WebSocket disconnect or call hangup:
 3. `orchestrator.finalize_session(config)` is called:
    - Emits final latency/usage metrics
    - Submits `CallRecord` to `PostCallPipeline` (async)
-   - Closes Gladia Live STT socket
+   - Cancels verification, LLM, TTS, filler, egress and live-STT tasks
+   - Closes Gladia Live STT and pooled provider clients
+   - Shuts down the shared VAD worker and clears pending playback state
 4. `transport.close(websocket)` sends WS close frame
 
 ---

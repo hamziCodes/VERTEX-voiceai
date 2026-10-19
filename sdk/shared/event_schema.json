@@ -57,13 +57,116 @@
       "type": "object",
       "required": ["event_type", "payload"],
       "properties": {
-        "event_type": { "enum": ["barge_in", "control.barge_in"] },
+        "event_type": { "const": "control.barge_in" },
         "payload": {
           "type": "object",
-          "required": ["rms"],
+          "required": ["turn_id", "sequence"],
           "properties": {
             "rms": { "type": "number" },
+            "t": { "type": "number" },
+            "turn_id": { "type": ["string", "null"] },
+            "sequence": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    {
+      "title": "LegacyBargeIn",
+      "description": "Deprecated until the next protocol major.",
+      "type": "object",
+      "required": ["event_type", "payload"],
+      "properties": {
+        "event_type": { "const": "barge_in" },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "reason": { "type": "string" },
+            "rms": { "type": "number" },
             "t": { "type": "number" }
+          }
+        }
+      }
+    },
+    {
+      "title": "ControlClearAudio",
+      "type": "object",
+      "required": ["event_type", "payload"],
+      "properties": {
+        "event_type": { "const": "control.clear_audio" },
+        "payload": {
+          "type": "object",
+          "required": ["turn_id", "sequence"],
+          "properties": {
+            "turn_id": { "type": ["string", "null"] },
+            "sequence": { "type": "integer", "minimum": 1 },
+            "reason": { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "title": "ControlClearAudioAck",
+      "type": "object",
+      "required": ["event_type", "payload"],
+      "properties": {
+        "event_type": { "const": "control.clear_audio_ack" },
+        "payload": {
+          "type": "object",
+          "required": ["turn_id", "sequence", "played_audio_ms"],
+          "properties": {
+            "turn_id": { "type": ["string", "null"] },
+            "sequence": { "type": "integer", "minimum": 1 },
+            "played_audio_ms": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    },
+    {
+      "title": "ControlPlaybackDrained",
+      "type": "object",
+      "required": ["event_type", "payload"],
+      "properties": {
+        "event_type": { "const": "control.playback_drained" },
+        "payload": {
+          "type": "object",
+          "required": ["turn_id", "played_audio_ms"],
+          "properties": {
+            "turn_id": { "type": "string" },
+            "played_audio_ms": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    },
+    {
+      "title": "AudioEnd",
+      "type": "object",
+      "required": ["event_type", "payload"],
+      "properties": {
+        "event_type": { "const": "audio_end" },
+        "payload": {
+          "type": "object",
+          "required": ["turn_id", "generated_audio_ms"],
+          "properties": {
+            "turn_id": { "type": "string" },
+            "generated_audio_ms": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    },
+    {
+      "title": "PlayedTextCommit",
+      "type": "object",
+      "required": ["event_type", "payload"],
+      "properties": {
+        "event_type": { "const": "assistant.played_text_commit" },
+        "payload": {
+          "type": "object",
+          "required": ["turn_id", "text", "played_audio_ms", "complete"],
+          "properties": {
+            "turn_id": { "type": "string" },
+            "text": { "type": "string" },
+            "played_audio_ms": { "type": "number", "minimum": 0 },
+            "complete": { "type": "boolean" }
           }
         }
       }

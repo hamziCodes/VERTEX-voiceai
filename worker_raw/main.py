@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from control_plane.auth.jwt import verify_session_jwt
 from control_plane.routes.session import get_default_mint_context
 from core.db.repos.tenant_repo import TenantRepository
+from core.runtime.admission import CapacityExceededError, SessionAdmissionController
 from core.runtime.env import require_production_secrets
 from core.transport.native_websocket import NativeWebSocketTransport
 from worker_raw.orchestration.pipeline import PipelineOrchestrator
@@ -27,6 +28,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(title="Wavia Worker Raw", version="0.1.0", lifespan=lifespan)
+session_admission = SessionAdmissionController()
 
 app.add_middleware(
     CORSMiddleware,
@@ -152,7 +154,11 @@ async def ws_audio(websocket: WebSocket) -> None:
         on_audio_out=_on_audio_out,
         on_transcript=_on_transcript,
     )
-    await orchestrator.apply_provider_selection(config)
+    try:
+        await session_admission.acquire(config.session_id)
+    except CapacityExceededError:
+        await transport.close(websocket)
+        return
 
     raw_rate = websocket.query_params.get("sample_rate") or websocket.query_params.get("rate")
     client_rate = 16000
@@ -168,6 +174,7 @@ async def ws_audio(websocket: WebSocket) -> None:
         orchestrator,
         config,
         client_sample_rate=client_rate,
+        release_admission=lambda: session_admission.release(config.session_id),
     )
     try:
         await runner.start()

@@ -5,12 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import UUID
 
 from core.buffers.policy import INBOUND_MIC_POLICY, BufferPolicy, OverflowPolicy
 from core.buffers.typed_queue import TypedAsyncQueue
 from core.fsm.events import SessionEvent
+from core.fsm.states import SessionState
 from core.listening.frame_slicer import FrameSlicer
 from core.providers.mode import provider_runtime_status
 from core.transport.native_websocket import NativeWebSocketTransport
@@ -37,12 +39,14 @@ class WebSocketSessionRunner:
         orchestrator: PipelineOrchestrator,
         config: PipelineSessionConfig,
         client_sample_rate: int = 16000,
+        release_admission: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.websocket = websocket
         self.transport = transport
         self.orchestrator = orchestrator
         self.config = config
         self.client_sample_rate = client_sample_rate
+        self._release_admission = release_admission
         self._ingress_resampler: Resampler | None = (
             Resampler(source_rate=client_sample_rate, target_rate=16000)
             if client_sample_rate != 16000 and client_sample_rate in Resampler.SUPPORTED_RATES
@@ -73,36 +77,39 @@ class WebSocketSessionRunner:
         await self._turn_queue.put((cleaned, None))
 
     async def start(self) -> None:
-        self.orchestrator.attach_ws_session(self)
-        self.orchestrator.barge_in_controller.fsm = self.orchestrator.fsm
-        self.orchestrator.barge_in_controller.cancel_contract = (
-            self.orchestrator.three_point_cancel
-        )
-        self.orchestrator.apply_language_vad_overrides(self.config.language)
-        if self.orchestrator.fsm.can_transition(SessionEvent.SESSION_ADMITTED):
-            self.orchestrator.fsm.trigger(SessionEvent.SESSION_ADMITTED)
-        self.orchestrator.vad_adapter.reset()
-        streaming_stt_status = await self.orchestrator.prepare_live_stt()
-        runtime_status = provider_runtime_status()
-        await self.transport.send_control_event(
-            ControlEventType.METRIC,
-            {
-                "kind": "session_ready",
-                "session_id": self.config.session_id,
-                "streaming_stt": streaming_stt_status,
-                **runtime_status,
-            },
-        )
-        greeting = (self.config.initial_greeting or "").strip()
-        if greeting:
-            # Queue as a synthetic user turn that TTS will speak via run_turn.
-            await self._turn_queue.put((f"__greeting__:{greeting}", None))
-        workers = [
-            asyncio.create_task(self._ingress_worker()),
-            asyncio.create_task(self._turn_worker()),
-            asyncio.create_task(self._ping_loop()),
-        ]
+        workers: list[asyncio.Task[Any]] = []
         try:
+            self.orchestrator.attach_ws_session(self)
+            await self.orchestrator.apply_provider_selection(self.config)
+            self.orchestrator.barge_in_controller.fsm = self.orchestrator.fsm
+            self.orchestrator.barge_in_controller.cancel_contract = (
+                self.orchestrator.three_point_cancel
+            )
+            self.orchestrator.apply_language_vad_overrides(self.config.language)
+            if self.orchestrator.fsm.can_transition(SessionEvent.SESSION_ADMITTED):
+                self.orchestrator.fsm.trigger(SessionEvent.SESSION_ADMITTED)
+            self.orchestrator.vad_adapter.reset()
+            streaming_stt_status = await self.orchestrator.prepare_live_stt()
+            runtime_status = provider_runtime_status()
+            await self.transport.send_control_event(
+                ControlEventType.METRIC,
+                {
+                    "kind": "session_ready",
+                    "session_id": self.config.session_id,
+                    "streaming_stt": streaming_stt_status,
+                    **runtime_status,
+                },
+            )
+            greeting = (self.config.initial_greeting or "").strip()
+            if greeting:
+                await self._turn_queue.put((f"__greeting__:{greeting}", None))
+            workers.extend(
+                (
+                    asyncio.create_task(self._ingress_worker()),
+                    asyncio.create_task(self._turn_worker()),
+                    asyncio.create_task(self._ping_loop()),
+                )
+            )
             await self._receive_loop()
         finally:
             self.stop.set()
@@ -113,8 +120,14 @@ class WebSocketSessionRunner:
                 if not t.done():
                     t.cancel()
             await asyncio.gather(*list(self._active_turns), return_exceptions=True)
-            await self.orchestrator.finalize_session(self.config)
-            await self.transport.close(self.websocket)
+            try:
+                await self.orchestrator.finalize_session(self.config)
+            finally:
+                try:
+                    await self.transport.close(self.websocket)
+                finally:
+                    if self._release_admission is not None:
+                        await self._release_admission()
 
     async def _enqueue_pcm(self, pcm_data: bytes) -> None:
         """Slice (optional) and enqueue canonical PCM frames for ingress."""
@@ -214,11 +227,50 @@ class WebSocketSessionRunner:
                 if new_prompt:
                     self.config.system_prompt = str(new_prompt)
                 if user_text:
+                    if self.orchestrator.fsm.state in (
+                        SessionState.AGENT_SPEAKING,
+                        SessionState.PROCESSING_INFERENCE,
+                        SessionState.BARGE_IN_VERIFY,
+                    ):
+                        await self.orchestrator.execute_immediate_barge_in(
+                            reason="text turn interrupted active agent turn"
+                        )
                     await self._turn_queue.put((user_text, None))
                 continue
-            if event_type == "barge_in":
+            if event_type in ("barge_in", ControlEventType.BARGE_IN.value):
+                if event_type == "barge_in":
+                    await self.transport.send_control_event(
+                        "info",
+                        {
+                            "kind": "protocol_deprecation",
+                            "alias": "barge_in",
+                            "canonical": ControlEventType.BARGE_IN.value,
+                            "removal": "next_protocol_major",
+                        },
+                    )
                 reason = str((data.get("payload") or {}).get("reason") or "client_barge_in")
                 await self.orchestrator.execute_immediate_barge_in(reason=reason)
+                continue
+            if event_type == ControlEventType.CLEAR_AUDIO_ACK.value:
+                payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
+                try:
+                    await self.orchestrator.handle_clear_audio_ack(
+                        turn_id=str(payload.get("turn_id") or ""),
+                        sequence=int(payload.get("sequence") or 0),
+                        played_audio_ms=float(payload.get("played_audio_ms") or 0.0),
+                    )
+                except (TypeError, ValueError):
+                    pass
+                continue
+            if event_type == ControlEventType.PLAYBACK_DRAINED.value:
+                payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
+                try:
+                    await self.orchestrator.handle_playback_drained(
+                        turn_id=str(payload.get("turn_id") or ""),
+                        played_audio_ms=float(payload.get("played_audio_ms") or 0.0),
+                    )
+                except (TypeError, ValueError):
+                    pass
                 continue
             if event_type in (
                 "metric",

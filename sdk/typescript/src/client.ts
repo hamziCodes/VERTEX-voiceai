@@ -2,7 +2,7 @@
  * Official UCVE Sovereign Voice Client (TypeScript / Browser).
  */
 
-import type { AudioStartPayload } from './events';
+import type { AudioStartPayload, ClearAudioPayload, PlayedTextCommitPayload } from './events';
 
 export interface UCVEVoiceClientOptions {
   wsUrl?: string;
@@ -12,8 +12,12 @@ export interface UCVEVoiceClientOptions {
   onTranscript?: (speaker: 'user' | 'agent', text: string) => void;
   onAudio?: (pcm16: Int16Array) => void;
   onAudioStart?: (event: AudioStartPayload) => void;
+  onBargeIn?: (event: Record<string, unknown>) => void;
+  onClearAudio?: (event: ClearAudioPayload) => number | void | Promise<number | void>;
+  onPlayedTextCommit?: (event: PlayedTextCommitPayload) => void;
   onMetric?: (metric: Record<string, unknown>) => void;
   onError?: (err: Error) => void;
+  onClose?: () => void;
   [key: string]: unknown;
 }
 
@@ -22,6 +26,8 @@ export class UCVEVoiceClient {
   public readonly wsUrl: string;
   public readonly options: UCVEVoiceClientOptions;
   private ws: WebSocket | null = null;
+  private activeTurnId: string | null = null;
+  private controlSequence = 0;
   public static readonly versionManifest = {
     apiVersion: '1.0.0',
     eventSchemaVersion: '1.0.0',
@@ -71,7 +77,7 @@ export class UCVEVoiceClient {
           reject(errorObj);
         };
 
-        this.ws.onmessage = (event: MessageEvent) => {
+        this.ws.onmessage = async (event: MessageEvent) => {
           if (event.data instanceof ArrayBuffer) {
             this.options.onAudio?.(new Int16Array(event.data));
             return;
@@ -86,7 +92,22 @@ export class UCVEVoiceClient {
                 const text = data.payload?.text || data.text || '';
                 this.options.onTranscript?.(speaker, text);
               } else if (eventType === 'audio_start') {
-                this.options.onAudioStart?.(data.payload as AudioStartPayload);
+                const payload = data.payload as AudioStartPayload;
+                this.activeTurnId = payload.turn_id || null;
+                this.options.onAudioStart?.(payload);
+              } else if (eventType === 'control.barge_in' || eventType === 'barge_in') {
+                this.options.onBargeIn?.(data.payload || {});
+              } else if (eventType === 'control.clear_audio') {
+                const payload = data.payload as ClearAudioPayload;
+                const reported = await this.options.onClearAudio?.(payload);
+                this.sendControl('control.clear_audio_ack', {
+                  turn_id: payload.turn_id,
+                  sequence: payload.sequence,
+                  played_audio_ms: typeof reported === 'number' ? Math.max(0, reported) : 0,
+                });
+                this.activeTurnId = null;
+              } else if (eventType === 'assistant.played_text_commit') {
+                this.options.onPlayedTextCommit?.(data.payload as PlayedTextCommitPayload);
               } else if (eventType === 'metric') {
                 this.options.onMetric?.(data.payload || data);
               } else if (eventType === 'error') {
@@ -96,6 +117,11 @@ export class UCVEVoiceClient {
               // Non-JSON string frames ignored
             }
           }
+        };
+
+        this.ws.onclose = () => {
+          this.activeTurnId = null;
+          this.options.onClose?.();
         };
       } catch (err) {
         reject(err);
@@ -140,12 +166,27 @@ export class UCVEVoiceClient {
 
   public sendBargeIn(rms = 0.08): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    this.ws.send(
-      JSON.stringify({
-        event_type: 'control.barge_in',
-        payload: { rms, t: Date.now() },
-      })
-    );
+    this.controlSequence += 1;
+    this.sendControl('control.barge_in', {
+      rms,
+      t: Date.now(),
+      turn_id: this.activeTurnId,
+      sequence: this.controlSequence,
+    });
+  }
+
+  public emitPlaybackDrained(turnId: string, playedAudioMs: number): void {
+    if (!turnId.trim()) throw new Error('turnId is required for playback correlation.');
+    this.sendControl('control.playback_drained', {
+      turn_id: turnId,
+      played_audio_ms: Math.max(0, playedAudioMs),
+    });
+    if (this.activeTurnId === turnId) this.activeTurnId = null;
+  }
+
+  private sendControl(eventType: string, payload: Record<string, unknown>): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify({ event_type: eventType, payload }));
   }
 
   public disconnect(): void {
@@ -155,6 +196,7 @@ export class UCVEVoiceClient {
       this.ws.onerror = null;
       this.ws.close();
       this.ws = null;
+      this.activeTurnId = null;
     }
   }
 }
