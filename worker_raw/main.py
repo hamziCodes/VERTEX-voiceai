@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -17,8 +17,12 @@ from core.runtime.env import require_production_secrets
 from core.transport.native_websocket import NativeWebSocketTransport
 from worker_raw.orchestration.pipeline import PipelineOrchestrator
 from worker_raw.orchestration.session_config import PipelineSessionConfig
+from worker_raw.security.ws_policy import (
+    WSSecurityViolation,
+    validate_demo_provider_overrides,
+)
 from worker_raw.ws_constants import WS_MAX_SIZE_BYTES
-from worker_raw.ws_session import WebSocketSessionRunner
+from worker_raw.ws_session import ProtocolSessionError, WebSocketSessionRunner
 
 
 @asynccontextmanager
@@ -132,14 +136,30 @@ async def ws_audio(websocket: WebSocket) -> None:
 
     try:
         payload = verify_session_jwt(token)
+        overrides = validate_demo_provider_overrides(
+            {
+                "stt_provider": websocket.query_params.get("stt_provider"),
+                "llm_provider": websocket.query_params.get("llm_provider"),
+                "llm_model": websocket.query_params.get("llm_model"),
+                "tts_provider": websocket.query_params.get("tts_provider"),
+                "tts_voice_id": websocket.query_params.get("tts_voice_id"),
+            }
+        )
         config = await _load_session_config(
             payload,
-            stt_provider=websocket.query_params.get("stt_provider"),
-            llm_provider=websocket.query_params.get("llm_provider"),
-            llm_model=websocket.query_params.get("llm_model"),
-            tts_provider=websocket.query_params.get("tts_provider"),
-            tts_voice_id=websocket.query_params.get("tts_voice_id"),
+            stt_provider=overrides.get("stt_provider"),
+            llm_provider=overrides.get("llm_provider"),
+            llm_model=overrides.get("llm_model"),
+            tts_provider=overrides.get("tts_provider"),
+            tts_voice_id=overrides.get("tts_voice_id"),
         )
+    except WSSecurityViolation as exc:
+        await transport.send_control_event(
+            "error",
+            {"code": "PROVIDER_OVERRIDE_FORBIDDEN", "message": str(exc)},
+        )
+        await websocket.close(code=4403, reason="provider override forbidden")
+        return
     except Exception as exc:
         await websocket.close(code=4401, reason=f"invalid token: {exc}")
         return
@@ -148,7 +168,9 @@ async def ws_audio(websocket: WebSocket) -> None:
         await transport.send_audio_frame(pcm_bytes)
 
     async def _on_transcript(speaker: str, text: str) -> None:
-        await transport.send_control_event("transcript", {"speaker": speaker, "text": text})
+        await transport.send_control_event(
+            "transcript.final", {"speaker": speaker, "text": text}
+        )
 
     orchestrator = PipelineOrchestrator(
         on_audio_out=_on_audio_out,
@@ -160,7 +182,9 @@ async def ws_audio(websocket: WebSocket) -> None:
         await transport.close(websocket)
         return
 
-    raw_rate = websocket.query_params.get("sample_rate") or websocket.query_params.get("rate")
+    raw_rate = websocket.query_params.get(
+        "sample_rate"
+    ) or websocket.query_params.get("rate")
     client_rate = 16000
     if raw_rate:
         try:
@@ -175,10 +199,11 @@ async def ws_audio(websocket: WebSocket) -> None:
         config,
         client_sample_rate=client_rate,
         release_admission=lambda: session_admission.release(config.session_id),
+        token_expires_at=(float(payload["exp"]) if payload.get("exp") else None),
     )
     try:
         await runner.start()
-    except WebSocketDisconnect:
+    except (ProtocolSessionError, WebSocketDisconnect):
         pass
 
 

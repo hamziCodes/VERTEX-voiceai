@@ -1,4 +1,4 @@
-/// UCVE Flutter SDK Interface Stub (Roadmap item for Post-v1).
+/// Roadmap-only interface sketch. This package is not shipped or supported in v1.
 library ucve_voice_client;
 
 class UCVEVoiceClientStub {
@@ -15,10 +15,10 @@ class UCVEVoiceClientStub {
   }
 
   Future<void> connect() async {
-    // Planned native channel bridge implementation
+    throw UnsupportedError('Flutter SDK is not available in Wavia v1.');
   }
 
   Future<void> disconnect() async {
-    // Disconnect transport
+    throw UnsupportedError('Flutter SDK is not available in Wavia v1.');
   }
 }

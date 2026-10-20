@@ -20,9 +20,9 @@ class ControlEventType(str, Enum):
     HANGUP = "hangup"
     LANGUAGE_CHANGED = "language_changed"
     METRIC = "metric"
-    DEGRADED_MODE = "degraded_mode"
-    PONG = "pong"
-    PLAYBACK_STARTED = "playback_started"
+    DEGRADED_MODE = "degraded"
+    PONG = "control.pong"
+    PLAYBACK_STARTED = "control.playback_started"
 
 
 @dataclass(frozen=True)

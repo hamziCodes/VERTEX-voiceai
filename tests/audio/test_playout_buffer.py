@@ -20,7 +20,7 @@ def test_browser_clears_scheduled_audio_and_reports_drain_boundaries() -> None:
         encoding="utf-8"
     )
     assert "type === 'control.clear_audio'" in browser
-    assert "event_type: 'control.clear_audio_ack'" in browser
-    assert "event_type: 'control.playback_drained'" in browser
+    assert "buildWireEvent('control.clear_audio_ack'" in browser
+    assert "buildWireEvent('control.playback_drained'" in browser
     assert "played_audio_ms: stopped.playedAudioMs" in browser
     assert "playbackEndReceived" in browser

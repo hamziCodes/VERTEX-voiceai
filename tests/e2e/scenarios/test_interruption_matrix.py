@@ -315,7 +315,7 @@ async def test_missing_clear_ack_commits_no_unplayed_context(
 
     assert turns == []
     assert any(
-        kind == "degraded_mode" and payload.get("kind") == "clear_audio_ack_timeout"
+        kind == "degraded" and payload.get("kind") == "clear_audio_ack_timeout"
         for kind, payload in transport.events
     )
 

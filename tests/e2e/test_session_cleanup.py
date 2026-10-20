@@ -99,6 +99,16 @@ class _StartupSocket:
     async def close(self, code: int = 1000, reason: str = "") -> None:
         self.closed = True
 
+    async def receive(self) -> dict[str, str]:
+        return {
+            "text": (
+                '{"protocol_version":"1.0.0","event_id":"startup-1",'
+                '"sequence":1,"event_type":"protocol.hello","payload":'
+                '{"protocol_version":"1.0.0","sdk":'
+                '{"name":"pytest","version":"1.0.0"}}}'
+            )
+        }
+
 
 class _StartupTransport:
     def __init__(self) -> None:
@@ -107,6 +117,11 @@ class _StartupTransport:
     async def close(self, websocket: _StartupSocket) -> None:
         self.closed = True
         await websocket.close()
+
+    async def send_control_event(
+        self, _event_type: str, _payload: dict[str, object]
+    ) -> None:
+        return None
 
 
 @pytest.mark.asyncio

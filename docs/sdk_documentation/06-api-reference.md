@@ -53,7 +53,8 @@ Returns control plane readiness status.
   "status": "success",
   "session_id": "e5333b60-920b-4e30-9076-cf85ff771944",
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "expires_in": 3600
+  "ttl_sec": 120,
+  "ws_url": "ws://localhost:8081/ws/audio"
 }
 ```
 
@@ -85,7 +86,7 @@ Refresh an expiring session JWT.
 
 **Response:**
 ```json
-{"token": "<new JWT>", "expires_in": 3600}
+{"status": "success", "token": "<new JWT>", "ttl_sec": 120}
 ```
 
 ---

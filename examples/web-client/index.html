@@ -1527,9 +1527,25 @@
     let totalBytesSent = 0;
     let pingStartTime = 0;
     let pingInterval = null;
+    let protocolSequence = 0;
+    const protocolVersion = '1.0.0';
     const echoGuardCheck = document.getElementById('echoGuardCheck');
     const speakerAudio = document.getElementById('speakerAudio');
     const speakerTestBtn = document.getElementById('speakerTestBtn');
+
+    function buildWireEvent(eventType, payload = {}) {
+      protocolSequence += 1;
+      return {
+        protocol_version: protocolVersion,
+        event_id: (window.crypto && window.crypto.randomUUID)
+          ? window.crypto.randomUUID()
+          : `evt-${Date.now()}-${protocolSequence}`,
+        sequence: protocolSequence,
+        event_type: eventType,
+        timestamp_ms: Date.now(),
+        payload
+      };
+    }
 
     if (canvas) {
       canvas.width = canvas.offsetWidth;
@@ -1641,13 +1657,26 @@
         const model = (llmModelSelect && llmModelSelect.value) || '';
         const tts = (ttsProviderSelect && ttsProviderSelect.value) || 'cartesia';
 
-        const wsUrl = `${wsUrlRaw}?token=${encodeURIComponent(token)}&stt_provider=${stt}&llm_provider=${llm}&llm_model=${encodeURIComponent(model)}&tts_provider=${tts}`;
+        const wsTarget = new URL(wsUrlRaw);
+        wsTarget.searchParams.set('token', token);
+        wsTarget.searchParams.set('protocol_version', protocolVersion);
+        wsTarget.searchParams.set('stt_provider', stt);
+        wsTarget.searchParams.set('llm_provider', llm);
+        wsTarget.searchParams.set('llm_model', model);
+        wsTarget.searchParams.set('tts_provider', tts);
+        const wsUrl = wsTarget.toString();
         addLog('WS', `Connecting to Worker Raw: STT=${stt}, LLM=${llm} (${model}), TTS=${tts}`, 'tag-ws');
 
         ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
 
         ws.onopen = async () => {
+          ws.send(JSON.stringify(buildWireEvent('protocol.hello', {
+            protocol_version: protocolVersion,
+            sdk: { name: 'wavia-local-demo', version: '1.0.0' },
+            capabilities: ['pcm16', 'barge_in', 'playback_ack'],
+            resume: null
+          })));
           setStatus('connected', 'CONNECTED');
           startBtn.disabled = true;
           muteBtn.disabled = false;
@@ -1662,7 +1691,7 @@
           pingInterval = setInterval(() => {
             if (ws && ws.readyState === WebSocket.OPEN) {
               pingStartTime = performance.now();
-              ws.send(JSON.stringify({ event_type: 'ping' }));
+              ws.send(JSON.stringify(buildWireEvent('control.ping')));
             }
           }, 3000);
 
@@ -1753,23 +1782,20 @@
         const p = msg.payload || {};
         const stopped = stopPlayback();
         if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            event_type: 'control.clear_audio_ack',
-            payload: {
+          ws.send(JSON.stringify(buildWireEvent('control.clear_audio_ack', {
               turn_id: p.turn_id || stopped.turnId || null,
               sequence: Number(p.sequence || 0),
               played_audio_ms: stopped.playedAudioMs
-            }
-          }));
+          })));
         }
       } else if (type === 'pong' || type === 'control.pong') {
         const rtt = Math.round(performance.now() - pingStartTime);
         if (metricRtt) metricRtt.textContent = rtt + ' ms';
       } else if (type === 'ping' || type === 'control.ping') {
         if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ event_type: 'pong' }));
+          ws.send(JSON.stringify(buildWireEvent('control.pong')));
         }
-      } else if (type === 'transcript') {
+      } else if (type === 'transcript.final' || type === 'transcript.partial' || type === 'transcript') {
         const p = msg.payload || {};
         appendTranscript(p.role || p.speaker || 'agent', p.text || msg.text || '');
       } else if (type === 'metric') {
@@ -1803,7 +1829,7 @@
         } else if (p.kind === 'latency') {
           updateLatencyWaterfall(p);
         }
-      } else if (type === 'audio_start') {
+      } else if (type === 'audio.start' || type === 'audio_start') {
         const p = msg.payload || {};
         pendingPlaybackTurnId = p.turn_id || null;
         activePlaybackTurnId = p.turn_id || null;
@@ -1814,7 +1840,7 @@
         if (!prebufferConfiguredByQuery && Number.isFinite(Number(p.recommended_prebuffer_ms))) {
           clientPrebufferMs = Math.min(250, Math.max(0, Number(p.recommended_prebuffer_ms)));
         }
-      } else if (type === 'audio_end') {
+      } else if (type === 'audio.end' || type === 'audio_end') {
         const p = msg.payload || {};
         if (!activePlaybackTurnId || p.turn_id === activePlaybackTurnId) {
           playbackEndReceived = true;
@@ -1900,9 +1926,7 @@
           const timerId = setTimeout(() => {
             playbackAckTimers.delete(turnId);
             if (!ws || ws.readyState !== WebSocket.OPEN) return;
-            ws.send(JSON.stringify({
-              event_type: 'control.playback_started',
-              payload: {
+            ws.send(JSON.stringify(buildWireEvent('control.playback_started', {
                 kind: 'playback_started',
                 turn_id: turnId,
                 client_clock_domain: 'client_performance_ms',
@@ -1912,8 +1936,7 @@
                 prebuffer_ms: delayMs,
                 underrun: underrun,
                 underrun_count: playbackUnderrunCount
-              }
-            }));
+            })));
           }, delayMs);
           playbackAckTimers.set(turnId, timerId);
         }
@@ -1949,13 +1972,10 @@
       if (!playbackEndReceived || playbackDrainSent || activeSources.length > 0) return;
       if (!activePlaybackTurnId || !ws || ws.readyState !== WebSocket.OPEN) return;
       playbackDrainSent = true;
-      ws.send(JSON.stringify({
-        event_type: 'control.playback_drained',
-        payload: {
+      ws.send(JSON.stringify(buildWireEvent('control.playback_drained', {
           turn_id: activePlaybackTurnId,
           played_audio_ms: playbackScheduledMs
-        }
-      }));
+      })));
       activePlaybackTurnId = null;
     }
 
@@ -2035,7 +2055,7 @@
         const text = textTurnInput.value.trim();
         if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
         appendTranscript('user', text);
-        ws.send(JSON.stringify({ event_type: 'text_turn', text: text }));
+        ws.send(JSON.stringify(buildWireEvent('text.turn', { text })));
         textTurnInput.value = '';
       };
     }

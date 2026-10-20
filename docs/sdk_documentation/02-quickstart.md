@@ -54,6 +54,9 @@ UCVE_MINT_HMAC_SECRET=dev-mint-secret
 
 # Environment (enables unauthenticated /mint in demo mode)
 UCVE_ENV=development
+
+# Required only when using the local demo's provider selection controls
+UCVE_ALLOW_DEMO_PROVIDER_OVERRIDES=1
 ```
 
 Optional (ElevenLabs TTS, Cartesia TTS, Deepgram STT, Gemini LLM):
@@ -144,9 +147,17 @@ Response:
 ```javascript
 const token = "<JWT from /mint>";
 const ws = new WebSocket(`ws://127.0.0.1:8081/ws/audio?token=${token}`);
-
-// Optional: override providers per session
-// ws://127.0.0.1:8081/ws/audio?token=...&stt_provider=deepgram&llm_provider=gemini&tts_provider=elevenlabs
+ws.onopen = () => ws.send(JSON.stringify({
+  protocol_version: '1.0.0',
+  event_id: crypto.randomUUID(),
+  sequence: 1,
+  event_type: 'protocol.hello',
+  timestamp_ms: Date.now(),
+  payload: {
+    protocol_version: '1.0.0',
+    sdk: { name: 'quickstart', version: '1.0.0' }
+  }
+}));
 ```
 
 Send raw 16-bit PCM16 audio (16 kHz, mono) as binary frames:

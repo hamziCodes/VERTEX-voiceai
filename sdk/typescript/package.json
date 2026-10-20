@@ -1,13 +1,25 @@
 {
   "name": "@ucve/voice-sdk",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "Official TypeScript Client SDK and React Hooks for Wavia Sovereign Voice AI Engine",
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
-  "types": "dist/index.d.ts",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
+    }
+  },
+  "files": ["dist", "README.md"],
   "scripts": {
     "build": "tsc",
-    "test": "jest"
+    "test": "npm run build --silent && node --test test/*.test.mjs"
   },
   "keywords": ["voice", "ai", "webrtc", "websocket", "streaming", "llm"],
   "author": "Wavia Core Team",
@@ -17,5 +29,9 @@
   },
   "peerDependenciesMeta": {
     "react": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "typescript": "^5.7.0"
   }
 }

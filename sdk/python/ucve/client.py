@@ -7,10 +7,12 @@ import json
 import time
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from uuid import uuid4
 
 import websockets
 
-from sdk.python.ucve.version import SDK_VERSION_MANIFEST
+from .version import SDK_VERSION_MANIFEST
 
 
 class UCVEVoiceClient:
@@ -25,9 +27,11 @@ class UCVEVoiceClient:
         token: str,
         ws_url: str = "ws://localhost:8081/ws/audio",
         *,
-        stt_provider: str = "gladia",
-        llm_provider: str = "groq",
-        tts_provider: str = "cartesia",
+        demo_provider_overrides: dict[str, str] | None = None,
+        allow_demo_provider_overrides: bool = False,
+        handshake_timeout_sec: float = 5.0,
+        max_connect_attempts: int = 3,
+        reconnect_backoff_sec: float = 0.25,
         on_transcript: Callable[[str, str], Any] | None = None,
         on_audio: Callable[[bytes], Any] | None = None,
         on_audio_start: Callable[[dict[str, Any]], Any] | None = None,
@@ -35,6 +39,10 @@ class UCVEVoiceClient:
         on_clear_audio: Callable[[dict[str, Any]], Any] | None = None,
         on_played_text_commit: Callable[[dict[str, Any]], Any] | None = None,
         on_metric: Callable[[dict[str, Any]], Any] | None = None,
+        on_degraded: Callable[[dict[str, Any]], Any] | None = None,
+        on_token_expiring: Callable[[dict[str, Any]], Any] | None = None,
+        on_close: Callable[[dict[str, Any]], Any] | None = None,
+        on_error: Callable[[dict[str, Any]], Any] | None = None,
         **kwargs: Any,
     ) -> None:
         # Strict zero-secret constructor validation
@@ -53,9 +61,25 @@ class UCVEVoiceClient:
 
         self.token = token.strip()
         self.ws_url = ws_url.strip()
-        self.stt_provider = stt_provider
-        self.llm_provider = llm_provider
-        self.tts_provider = tts_provider
+        if demo_provider_overrides and not allow_demo_provider_overrides:
+            raise ValueError(
+                "Provider overrides are demo-only; set "
+                "allow_demo_provider_overrides=True only for a local demo."
+            )
+        allowed_demo_keys = {
+            "stt_provider",
+            "llm_provider",
+            "llm_model",
+            "tts_provider",
+            "tts_voice_id",
+        }
+        unknown = set(demo_provider_overrides or {}) - allowed_demo_keys
+        if unknown:
+            raise ValueError(f"Unsupported demo override keys: {sorted(unknown)}")
+        self.demo_provider_overrides = dict(demo_provider_overrides or {})
+        self.handshake_timeout_sec = max(0.1, float(handshake_timeout_sec))
+        self.max_connect_attempts = max(1, min(int(max_connect_attempts), 5))
+        self.reconnect_backoff_sec = max(0.0, float(reconnect_backoff_sec))
         self.on_transcript = on_transcript
         self.on_audio = on_audio
         self.on_audio_start = on_audio_start
@@ -63,27 +87,101 @@ class UCVEVoiceClient:
         self.on_clear_audio = on_clear_audio
         self.on_played_text_commit = on_played_text_commit
         self.on_metric = on_metric
+        self.on_degraded = on_degraded
+        self.on_token_expiring = on_token_expiring
+        self.on_close = on_close
+        self.on_error = on_error
         self._ws: Any | None = None
         self._running = False
         self._listen_task: asyncio.Task[None] | None = None
         self._active_turn_id: str | None = None
         self._control_sequence = 0
+        self._event_sequence = 0
         self.version_manifest = SDK_VERSION_MANIFEST
+
+    @property
+    def connection_url(self) -> str:
+        """Return an encoded connection URL without mutating the base URL."""
+
+        parts = urlsplit(self.ws_url)
+        query = dict(parse_qsl(parts.query, keep_blank_values=True))
+        query.update(
+            {
+                "token": self.token,
+                "protocol_version": SDK_VERSION_MANIFEST["event_schema_version"],
+            }
+        )
+        query.update(self.demo_provider_overrides)
+        return urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
+        )
+
+    def _build_event(self, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._event_sequence += 1
+        return {
+            "protocol_version": SDK_VERSION_MANIFEST["event_schema_version"],
+            "event_id": str(uuid4()),
+            "sequence": self._event_sequence,
+            "event_type": event_type,
+            "timestamp_ms": time.time() * 1000.0,
+            "payload": payload,
+        }
+
+    def build_hello_event(self) -> dict[str, Any]:
+        """Build the mandatory first event for protocol negotiation."""
+
+        return self._build_event(
+            "protocol.hello",
+            {
+                "protocol_version": SDK_VERSION_MANIFEST["event_schema_version"],
+                "sdk": {
+                    "name": "ucve-python",
+                    "version": SDK_VERSION_MANIFEST["api_version"],
+                },
+                "capabilities": ["pcm16", "barge_in", "playback_ack"],
+                "resume": None,
+            },
+        )
+
+    def build_text_turn(self, text: str) -> dict[str, Any]:
+        cleaned = text.strip()
+        if not cleaned:
+            raise ValueError("text is required")
+        return self._build_event("text.turn", {"text": cleaned})
 
     async def connect(self) -> None:
         """Establish the WebSocket and start the background receiver loop."""
-        url = self.ws_url
-        separator = "&" if "?" in url else "?"
-        query = (
-            f"token={self.token}"
-            f"&stt_provider={self.stt_provider}"
-            f"&llm_provider={self.llm_provider}"
-            f"&tts_provider={self.tts_provider}"
-        )
-        full_url = f"{url}{separator}{query}"
-        self._ws = await websockets.connect(full_url)
-        self._running = True
-        self._listen_task = asyncio.create_task(self._listen_loop())
+        last_error: Exception | None = None
+        for attempt in range(self.max_connect_attempts):
+            try:
+                self._ws = await websockets.connect(self.connection_url)
+                await self._ws.send(json.dumps(self.build_hello_event()))
+                raw_ready = await asyncio.wait_for(
+                    self._ws.recv(), timeout=self.handshake_timeout_sec
+                )
+                if not isinstance(raw_ready, str):
+                    raise ConnectionError(
+                        "Server did not return a JSON session.ready event"
+                    )
+                ready = json.loads(raw_ready)
+                if ready.get("event_type") != "session.ready":
+                    payload = ready.get("payload") or {}
+                    code = payload.get("code") or "protocol handshake failed"
+                    raise ConnectionError(str(code))
+                self._running = True
+                self._listen_task = asyncio.create_task(self._listen_loop())
+                return
+            except Exception as exc:
+                last_error = exc
+                if self._ws is not None:
+                    try:
+                        await self._ws.close()
+                    finally:
+                        self._ws = None
+                if attempt + 1 >= self.max_connect_attempts:
+                    raise
+                await asyncio.sleep(self.reconnect_backoff_sec * (2**attempt))
+        raise ConnectionError("WebSocket connection failed") from last_error
 
     async def _listen_loop(self) -> None:
         """Background receiver loop routing incoming audio and control events."""
@@ -99,7 +197,15 @@ class UCVEVoiceClient:
                     try:
                         data = json.loads(message)
                         event_type = data.get("event_type") or data.get("type")
-                        if event_type == "transcript" and self.on_transcript:
+                        if event_type in ("ping", "control.ping"):
+                            await self._ws.send(
+                                json.dumps(self._build_event("control.pong", {}))
+                            )
+                        elif event_type in (
+                            "transcript.final",
+                            "transcript.partial",
+                            "transcript",
+                        ) and self.on_transcript:
                             payload = data.get("payload", {})
                             speaker = (
                                 payload.get("speaker")
@@ -110,7 +216,7 @@ class UCVEVoiceClient:
                             res = self.on_transcript(speaker, text)
                             if asyncio.iscoroutine(res):
                                 await res
-                        elif event_type == "audio_start":
+                        elif event_type in ("audio.start", "audio_start"):
                             payload = data.get("payload") or {}
                             turn_id = str(payload.get("turn_id") or "")
                             self._active_turn_id = turn_id or None
@@ -141,11 +247,35 @@ class UCVEVoiceClient:
                                 res = self.on_played_text_commit(payload)
                                 if asyncio.iscoroutine(res):
                                     await res
-                        elif event_type == "metric" and self.on_metric:
+                        elif (
+                            event_type in ("metric.latency", "metric")
+                            and self.on_metric
+                        ):
                             payload = data.get("payload") or data
                             res = self.on_metric(payload)
                             if asyncio.iscoroutine(res):
                                 await res
+                        elif event_type == "degraded" and self.on_degraded:
+                            res = self.on_degraded(data.get("payload") or {})
+                            if asyncio.iscoroutine(res):
+                                await res
+                        elif (
+                            event_type == "session.token_expiring"
+                            and self.on_token_expiring
+                        ):
+                            res = self.on_token_expiring(data.get("payload") or {})
+                            if asyncio.iscoroutine(res):
+                                await res
+                        elif event_type == "error" and self.on_error:
+                            res = self.on_error(data.get("payload") or {})
+                            if asyncio.iscoroutine(res):
+                                await res
+                        elif event_type == "session.close":
+                            self._running = False
+                            if self.on_close:
+                                res = self.on_close(data.get("payload") or {})
+                                if asyncio.iscoroutine(res):
+                                    await res
                     except json.JSONDecodeError:
                         pass
             except asyncio.CancelledError:
@@ -161,6 +291,13 @@ class UCVEVoiceClient:
             raise RuntimeError("Client is not connected. Call connect() first.")
         await self._ws.send(pcm16_bytes)
 
+    async def send_text_turn(self, text: str) -> None:
+        """Send one canonical text turn through the realtime pipeline."""
+
+        if not self._ws:
+            raise RuntimeError("Client is not connected. Call connect() first.")
+        await self._ws.send(json.dumps(self.build_text_turn(text)))
+
     async def emit_playback_started(
         self,
         turn_id: str,
@@ -175,9 +312,9 @@ class UCVEVoiceClient:
             return
         if not turn_id.strip():
             raise ValueError("turn_id is required for playback correlation")
-        msg = {
-            "event_type": "control.playback_started",
-            "payload": {
+        msg = self._build_event(
+            "control.playback_started",
+            {
                 "kind": "playback_started",
                 "turn_id": turn_id,
                 "client_clock_domain": "client_performance_ms",
@@ -187,7 +324,7 @@ class UCVEVoiceClient:
                 "prebuffer_ms": prebuffer_ms,
                 "underrun": underrun,
             },
-        }
+        )
         await self._ws.send(json.dumps(msg))
 
     async def send_barge_in(self, rms: float = 0.08) -> None:
@@ -195,15 +332,15 @@ class UCVEVoiceClient:
         if not self._ws:
             return
         self._control_sequence += 1
-        msg = {
-            "event_type": "control.barge_in",
-            "payload": {
+        msg = self._build_event(
+            "control.barge_in",
+            {
                 "rms": rms,
                 "t": time.time() * 1000,
                 "turn_id": self._active_turn_id,
                 "sequence": self._control_sequence,
             },
-        }
+        )
         await self._ws.send(json.dumps(msg))
 
     async def _ack_clear_audio(
@@ -213,14 +350,14 @@ class UCVEVoiceClient:
             return
         await self._ws.send(
             json.dumps(
-                {
-                    "event_type": "control.clear_audio_ack",
-                    "payload": {
+                self._build_event(
+                    "control.clear_audio_ack",
+                    {
                         "turn_id": payload.get("turn_id"),
                         "sequence": int(payload.get("sequence") or 0),
                         "played_audio_ms": played_audio_ms,
                     },
-                }
+                )
             )
         )
 
@@ -232,13 +369,13 @@ class UCVEVoiceClient:
             return
         await self._ws.send(
             json.dumps(
-                {
-                    "event_type": "control.playback_drained",
-                    "payload": {
+                self._build_event(
+                    "control.playback_drained",
+                    {
                         "turn_id": turn_id,
                         "played_audio_ms": max(0.0, played_audio_ms),
                     },
-                }
+                )
             )
         )
         if self._active_turn_id == turn_id:

@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from control_plane.app import app as control_plane_app
+from core.protocol.realtime import build_event
 from core.providers.factory import (
     SUPPORTED_LLM,
     SUPPORTED_STT,
@@ -292,26 +293,45 @@ def test_worker_raw_websocket_handshake_and_turn(cp_client: TestClient, worker_c
     assert mint_res.status_code == 200
     token = mint_res.json()["token"]
 
-    # 2. Connect WebSocket to Worker Raw with query params
-    ws_path = f"/ws/audio?token={token}&stt_provider=deepgram&llm_provider=openai&llm_model=gpt-4o-mini&tts_provider=cartesia"
+    # 2. Connect using the published session plan (provider query overrides are demo-only).
+    ws_path = f"/ws/audio?token={token}"
     with worker_client.websocket_connect(ws_path) as ws:
-        # On connect, worker emits session_ready metric
+        ws.send_text(
+            json.dumps(
+                build_event(
+                    "protocol.hello",
+                    {
+                        "protocol_version": "1.0.0",
+                        "sdk": {"name": "pytest", "version": "1.0.0"},
+                    },
+                    sequence=1,
+                )
+            )
+        )
+        # Protocol readiness precedes provider/runtime readiness.
         first_event = json.loads(ws.receive_text())
-        assert first_event.get("event_type") in ("metric", "info", "ready") or "session_id" in str(first_event)
+        assert first_event["event_type"] == "session.ready"
+        assert first_event["payload"]["protocol_version"] == "1.0.0"
+        runtime_ready = json.loads(ws.receive_text())
+        assert runtime_ready["event_type"] == "metric"
+        assert runtime_ready["payload"]["kind"] == "session_ready"
 
         # Ping/Pong control event
-        ws.send_text(json.dumps({"type": "ping", "t": time.time()}))
+        ws.send_text(
+            json.dumps(build_event("control.ping", {"t": time.time()}, sequence=2))
+        )
         resp_text = ws.receive_text()
         resp_data = json.loads(resp_text)
-        assert resp_data.get("event_type") in ("control.pong", "pong", "control.ping") or resp_data.get("type") in ("control.pong", "pong")
+        assert resp_data["event_type"] == "control.pong"
 
         # Simulate text turn
         ws.send_text(
             json.dumps(
-                {
-                    "type": "text_turn",
-                    "text": "Hello Wavia, confirm system status.",
-                }
+                build_event(
+                    "text.turn",
+                    {"text": "Hello Wavia, confirm system status."},
+                    sequence=3,
+                )
             )
         )
         time.sleep(0.1)

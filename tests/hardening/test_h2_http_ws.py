@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 import pytest
@@ -11,6 +12,27 @@ from starlette.testclient import TestClient as StarletteTestClient
 from control_plane.auth.hmac_mint import expected_signature
 from control_plane.routes.session import reset_default_mint_context
 from core.db.models import Agent, Tenant
+from core.protocol.realtime import build_event
+
+
+def _complete_protocol_handshake(ws: object) -> None:
+    ws.send_text(
+        json.dumps(
+            build_event(
+                "protocol.hello",
+                {
+                    "protocol_version": "1.0.0",
+                    "sdk": {"name": "pytest", "version": "1.0.0"},
+                },
+                sequence=1,
+            )
+        )
+    )
+    ready = json.loads(ws.receive_text())
+    assert ready["event_type"] == "session.ready"
+    runtime = json.loads(ws.receive_text())
+    assert runtime["event_type"] == "metric"
+    assert runtime["payload"]["kind"] == "session_ready"
 
 
 @pytest.fixture
@@ -112,9 +134,8 @@ async def test_ws_connect_with_valid_token(env: None) -> None:
     with StarletteTestClient(worker_app) as worker:
         with worker.websocket_connect(f"/ws/audio?token={token}") as ws:
             # session_ready metric — connect path only (binary PCM covered by C1 gate below)
-            msg = ws.receive_text()
-            assert "session_ready" in msg or "metric" in msg
-            ws.send_text('{"event_type":"ping"}')
+            _complete_protocol_handshake(ws)
+            ws.send_text(json.dumps(build_event("control.ping", {}, sequence=2)))
             pong = ws.receive_text()
             assert "pong" in pong.lower()
 
@@ -122,18 +143,15 @@ async def test_ws_connect_with_valid_token(env: None) -> None:
 @pytest.mark.asyncio
 async def test_binary_pcm_frame_ingress_no_typeerror(env: None) -> None:
     """Binary PCM must be accepted and leave the socket usable (R1 C1)."""
-    import json
-
     from worker_raw.main import app as worker_app
 
     token = await _mint_ws_token("t-ws-pcm", "agent-ws-pcm", "ws-pcm-nonce")
 
     with StarletteTestClient(worker_app) as worker:
         with worker.websocket_connect(f"/ws/audio?token={token}") as ws:
-            msg = ws.receive_text()
-            assert "session_ready" in msg or "metric" in msg
+            _complete_protocol_handshake(ws)
             ws.send_bytes(b"\x00\x01" * 160)
-            ws.send_text(json.dumps({"event_type": "ping"}))
+            ws.send_text(json.dumps(build_event("control.ping", {}, sequence=2)))
             pong = ws.receive_text()
             assert "pong" in pong.lower()
 
@@ -149,11 +167,11 @@ async def test_oversized_frame_rejected(env: None) -> None:
 
     with StarletteTestClient(worker_app) as worker:
         with worker.websocket_connect(f"/ws/audio?token={token}") as ws:
-            ws.receive_text()
+            _complete_protocol_handshake(ws)
             ws.send_bytes(oversized)
             # Connection should close or stop accepting; next receive may raise
             with pytest.raises(Exception):
-                ws.send_text('{"event_type":"ping"}')
+                ws.send_text(json.dumps(build_event("control.ping", {}, sequence=2)))
                 ws.receive_text(timeout=2)
 
 

@@ -14,6 +14,13 @@ from core.buffers.typed_queue import TypedAsyncQueue
 from core.fsm.events import SessionEvent
 from core.fsm.states import SessionState
 from core.listening.frame_slicer import FrameSlicer
+from core.protocol.realtime import (
+    PROTOCOL_VERSION,
+    SUPPORTED_PROTOCOL_RANGE,
+    ProtocolCompatibilityError,
+    ProtocolNegotiation,
+    negotiate_protocol,
+)
 from core.providers.mode import provider_runtime_status
 from core.transport.native_websocket import NativeWebSocketTransport
 from core.types.audio import AudioFrame
@@ -29,6 +36,10 @@ from worker_raw.ws_constants import (
 )
 
 
+class ProtocolSessionError(RuntimeError):
+    """A protocol failure already reported to and closed on the client."""
+
+
 class WebSocketSessionRunner:
     """Manages one WS audio session: ingress queue, turn worker, ping/pong, teardown."""
 
@@ -40,6 +51,9 @@ class WebSocketSessionRunner:
         config: PipelineSessionConfig,
         client_sample_rate: int = 16000,
         release_admission: Callable[[], Awaitable[None]] | None = None,
+        token_expires_at: float | None = None,
+        token_refresh_url: str = "/v1/session/refresh",
+        token_expiry_notice_sec: float = 30.0,
     ) -> None:
         self.websocket = websocket
         self.transport = transport
@@ -47,20 +61,34 @@ class WebSocketSessionRunner:
         self.config = config
         self.client_sample_rate = client_sample_rate
         self._release_admission = release_admission
+        self.token_expires_at = token_expires_at
+        self.token_refresh_url = token_refresh_url
+        self.token_expiry_notice_sec = max(0.0, token_expiry_notice_sec)
         self._ingress_resampler: Resampler | None = (
             Resampler(source_rate=client_sample_rate, target_rate=16000)
-            if client_sample_rate != 16000 and client_sample_rate in Resampler.SUPPORTED_RATES
+            if client_sample_rate != 16000
+            and client_sample_rate in Resampler.SUPPORTED_RATES
             else None
         )
         self.stop = asyncio.Event()
         self.last_pong_monotonic = time.monotonic()
         self._ingress_seq = 0
-        self._ingress_queue: TypedAsyncQueue[AudioFrame] = TypedAsyncQueue(INBOUND_MIC_POLICY)
-        self._turn_queue: TypedAsyncQueue[tuple[str, asyncio.Future[str] | None]] = TypedAsyncQueue(
-            BufferPolicy(name="turn_queue", maxsize=32, overflow=OverflowPolicy.BLOCK)
+        self._ingress_queue: TypedAsyncQueue[AudioFrame] = TypedAsyncQueue(
+            INBOUND_MIC_POLICY
+        )
+        self._turn_queue: TypedAsyncQueue[
+            tuple[str, asyncio.Future[str] | None]
+        ] = TypedAsyncQueue(
+            BufferPolicy(
+                name="turn_queue",
+                maxsize=32,
+                overflow=OverflowPolicy.BLOCK,
+            )
         )
         self._active_turns: set[asyncio.Task[Any]] = set()
         self._finalized = False
+        self._server_sequence = 0
+        self._last_client_sequence = 0
         # Canonical framing is a transport invariant, not an optional feature.
         self._frame_slicer = FrameSlicer()
         self.security_policy = WSSecurityPolicy()
@@ -79,6 +107,7 @@ class WebSocketSessionRunner:
     async def start(self) -> None:
         workers: list[asyncio.Task[Any]] = []
         try:
+            await self._perform_protocol_handshake()
             self.orchestrator.attach_ws_session(self)
             await self.orchestrator.apply_provider_selection(self.config)
             self.orchestrator.barge_in_controller.fsm = self.orchestrator.fsm
@@ -110,6 +139,8 @@ class WebSocketSessionRunner:
                     asyncio.create_task(self._ping_loop()),
                 )
             )
+            if self.token_expires_at is not None:
+                workers.append(asyncio.create_task(self._token_expiry_loop()))
             await self._receive_loop()
         finally:
             self.stop.set()
@@ -128,6 +159,130 @@ class WebSocketSessionRunner:
                 finally:
                     if self._release_admission is not None:
                         await self._release_admission()
+
+    async def _perform_protocol_handshake(self) -> ProtocolNegotiation:
+        """Require a compatible client hello before provider startup."""
+
+        try:
+            message = await asyncio.wait_for(self.websocket.receive(), timeout=5.0)
+        except TimeoutError as exc:
+            await self.transport.send_control_event(
+                "error",
+                {
+                    "code": "PROTOCOL_HANDSHAKE_TIMEOUT",
+                    "message": "protocol.hello was not received within 5 seconds",
+                    "supported_range": SUPPORTED_PROTOCOL_RANGE,
+                },
+            )
+            await self.websocket.close(code=4408, reason="protocol handshake timeout")
+            raise ProtocolSessionError("PROTOCOL_HANDSHAKE_TIMEOUT") from exc
+
+        raw = message.get("text") if isinstance(message, dict) else None
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else {}
+        except json.JSONDecodeError:
+            data = {}
+        payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
+        client_version = str(payload.get("protocol_version") or "")
+        if data.get("event_type") != "protocol.hello" or not client_version:
+            await self.transport.send_control_event(
+                "error",
+                {
+                    "code": "PROTOCOL_HELLO_REQUIRED",
+                    "message": "the first client event must be protocol.hello",
+                    "supported_range": SUPPORTED_PROTOCOL_RANGE,
+                },
+            )
+            await self.websocket.close(code=4400, reason="protocol hello required")
+            raise ProtocolSessionError("PROTOCOL_HELLO_REQUIRED")
+
+        try:
+            envelope_version = str(data["protocol_version"])
+            event_id = str(data["event_id"]).strip()
+            sequence = int(data["sequence"])
+            if not envelope_version or not event_id or sequence < 1:
+                raise ValueError
+        except (KeyError, TypeError, ValueError) as exc:
+            await self.transport.send_control_event(
+                "error",
+                {
+                    "code": "PROTOCOL_ENVELOPE_REQUIRED",
+                    "message": (
+                        "protocol.hello requires version, event_id, and sequence"
+                    ),
+                    "supported_range": SUPPORTED_PROTOCOL_RANGE,
+                },
+            )
+            await self.websocket.close(code=4400, reason="protocol envelope required")
+            raise ProtocolSessionError("PROTOCOL_ENVELOPE_REQUIRED") from exc
+
+        try:
+            negotiate_protocol(envelope_version)
+            negotiated = negotiate_protocol(client_version)
+        except ProtocolCompatibilityError as exc:
+            await self.transport.send_control_event(
+                "error",
+                {
+                    "code": exc.code,
+                    "message": str(exc),
+                    "client_version": exc.client_version,
+                    "supported_range": exc.supported_range,
+                },
+            )
+            await self.websocket.close(code=4406, reason="protocol version unsupported")
+            raise ProtocolSessionError(exc.code) from exc
+
+        await self.transport.send_control_event(
+            "session.ready",
+            {
+                "protocol_version": PROTOCOL_VERSION,
+                "supported_range": SUPPORTED_PROTOCOL_RANGE,
+                "session_id": self.config.session_id,
+                "resume_supported": False,
+            },
+        )
+        self._last_client_sequence = sequence
+        return negotiated
+
+    async def _validate_client_envelope(
+        self, data: dict[str, Any], event_type: str
+    ) -> bool:
+        """Enforce ordering for canonical v1 events; allow named legacy aliases."""
+
+        legacy_aliases = {
+            "barge_in",
+            "text_turn",
+            "user_turn",
+            "ping",
+            "pong",
+            "playback_started",
+            "set_prompt",
+        }
+        if event_type in legacy_aliases and "sequence" not in data:
+            return True
+        try:
+            negotiate_protocol(str(data["protocol_version"]))
+            sequence = int(data["sequence"])
+            event_id = str(data["event_id"]).strip()
+            if not event_id or sequence <= self._last_client_sequence:
+                raise ValueError
+        except (KeyError, TypeError, ValueError, ProtocolCompatibilityError):
+            await self.transport.send_control_event(
+                "error",
+                {
+                    "code": "PROTOCOL_SEQUENCE_INVALID",
+                    "message": (
+                        "canonical events require a unique event_id and "
+                        "increasing sequence"
+                    ),
+                    "last_sequence": self._last_client_sequence,
+                },
+            )
+            await self.websocket.close(code=4400, reason="protocol sequence invalid")
+            self.stop.set()
+            return False
+        self._last_client_sequence = sequence
+        return True
 
     async def _enqueue_pcm(self, pcm_data: bytes) -> None:
         """Slice (optional) and enqueue canonical PCM frames for ingress."""
@@ -199,6 +354,13 @@ class WebSocketSessionRunner:
             except json.JSONDecodeError:
                 continue
             event_type = data.get("event_type") or data.get("type")
+            if not isinstance(event_type, str):
+                continue
+            if not await self._validate_client_envelope(data, event_type):
+                break
+            if event_type == "session.close":
+                self.stop.set()
+                break
             if event_type in ("pong", "control.pong"):
                 self.last_pong_monotonic = time.monotonic()
                 continue
@@ -216,14 +378,16 @@ class WebSocketSessionRunner:
                         "info", {"message": "System prompt updated for session."}
                     )
                 continue
-            if event_type in ("text_turn", "user_turn"):
+            if event_type in ("text.turn", "text_turn", "user_turn"):
                 payload_dict = (
                     data.get("payload") if isinstance(data.get("payload"), dict) else {}
                 )
                 user_text = str(
                     data.get("text") or payload_dict.get("text") or ""
                 ).strip()
-                new_prompt = data.get("system_prompt") or payload_dict.get("system_prompt")
+                new_prompt = data.get("system_prompt") or payload_dict.get(
+                    "system_prompt"
+                )
                 if new_prompt:
                     self.config.system_prompt = str(new_prompt)
                 if user_text:
@@ -248,11 +412,17 @@ class WebSocketSessionRunner:
                             "removal": "next_protocol_major",
                         },
                     )
-                reason = str((data.get("payload") or {}).get("reason") or "client_barge_in")
+                reason = str(
+                    (data.get("payload") or {}).get("reason") or "client_barge_in"
+                )
                 await self.orchestrator.execute_immediate_barge_in(reason=reason)
                 continue
             if event_type == ControlEventType.CLEAR_AUDIO_ACK.value:
-                payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
+                payload = (
+                    data.get("payload")
+                    if isinstance(data.get("payload"), dict)
+                    else {}
+                )
                 try:
                     await self.orchestrator.handle_clear_audio_ack(
                         turn_id=str(payload.get("turn_id") or ""),
@@ -263,7 +433,11 @@ class WebSocketSessionRunner:
                     pass
                 continue
             if event_type == ControlEventType.PLAYBACK_DRAINED.value:
-                payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
+                payload = (
+                    data.get("payload")
+                    if isinstance(data.get("payload"), dict)
+                    else {}
+                )
                 try:
                     await self.orchestrator.handle_playback_drained(
                         turn_id=str(payload.get("turn_id") or ""),
@@ -278,12 +452,22 @@ class WebSocketSessionRunner:
                 "control.playback_started",
                 ControlEventType.PLAYBACK_STARTED.value,
             ):
-                payload = data.get("payload") if isinstance(data.get("payload"), dict) else data
+                payload = (
+                    data.get("payload")
+                    if isinstance(data.get("payload"), dict)
+                    else data
+                )
                 kind = str(payload.get("kind") or event_type or "")
-                if kind in ("playback_started", ControlEventType.PLAYBACK_STARTED.value):
+                if kind in (
+                    "playback_started",
+                    ControlEventType.PLAYBACK_STARTED.value,
+                ):
                     try:
                         turn_id = UUID(str(payload.get("turn_id") or ""))
-                        result = self.orchestrator.latency_collector.acknowledge_playback(
+                        acknowledge = (
+                            self.orchestrator.latency_collector.acknowledge_playback
+                        )
+                        result = acknowledge(
                             turn_id=turn_id,
                             client_playback_started_ms=float(
                                 payload.get("client_playback_started_ms")
@@ -292,7 +476,8 @@ class WebSocketSessionRunner:
                             ),
                             client_scheduled_playback_ms=(
                                 float(payload["client_scheduled_playback_ms"])
-                                if payload.get("client_scheduled_playback_ms") is not None
+                                    if payload.get("client_scheduled_playback_ms")
+                                    is not None
                                 else None
                             ),
                             receipt_monotonic_ms=self.orchestrator.latency_hooks.now_ms(),
@@ -310,7 +495,9 @@ class WebSocketSessionRunner:
                     except (TypeError, ValueError):
                         continue
                     if result.accepted and result.waterfall is not None:
-                        await self.orchestrator._emit_latency_telemetry(result.waterfall)
+                        await self.orchestrator._emit_latency_telemetry(
+                            result.waterfall
+                        )
                 continue
 
     async def _ingress_worker(self) -> None:
@@ -349,7 +536,7 @@ class WebSocketSessionRunner:
                     self.orchestrator.run_greeting(self.config, phrase)
                 )
             else:
-                # Coalesce any rapid successive utterance fragments queued during latency
+                # Coalesce rapid utterance fragments queued during inference.
                 accumulated = [user_text]
                 while not self._turn_queue.empty():
                     try:
@@ -382,11 +569,57 @@ class WebSocketSessionRunner:
                 break
             if time.monotonic() - self.last_pong_monotonic > deadline:
                 try:
+                    await self.transport.send_control_event(
+                        "session.close",
+                        {
+                            "code": "PONG_TIMEOUT",
+                            "reason": "keepalive response deadline exceeded",
+                            "retryable": True,
+                        },
+                    )
                     await self.websocket.close(code=1001, reason="pong timeout")
                 except Exception:
                     pass
                 self.stop.set()
                 break
             await self.transport.send_control_event(
-                "ping", {"interval_sec": PING_INTERVAL_SEC}
+                "control.ping", {"interval_sec": PING_INTERVAL_SEC}
             )
+
+    async def _wait_until_epoch(self, epoch_seconds: float) -> bool:
+        """Return True when stopped early, False when the deadline arrives."""
+
+        delay = max(0.0, epoch_seconds - time.time())
+        try:
+            await asyncio.wait_for(self.stop.wait(), timeout=delay)
+        except TimeoutError:
+            return False
+        return True
+
+    async def _token_expiry_loop(self) -> None:
+        """Warn before JWT expiry, then close deterministically at expiry."""
+
+        if self.token_expires_at is None:
+            return
+        notice_at = self.token_expires_at - self.token_expiry_notice_sec
+        if await self._wait_until_epoch(notice_at):
+            return
+        await self.transport.send_control_event(
+            "session.token_expiring",
+            {
+                "expires_at_ms": self.token_expires_at * 1000.0,
+                "refresh_url": self.token_refresh_url,
+            },
+        )
+        if await self._wait_until_epoch(self.token_expires_at):
+            return
+        await self.transport.send_control_event(
+            "session.close",
+            {
+                "code": "TOKEN_EXPIRED",
+                "reason": "session token expired",
+                "retryable": True,
+            },
+        )
+        await self.websocket.close(code=4401, reason="session token expired")
+        self.stop.set()

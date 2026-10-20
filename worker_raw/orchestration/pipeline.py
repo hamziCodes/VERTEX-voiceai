@@ -443,7 +443,7 @@ class PipelineOrchestrator:
                 if transport is not None:
                     try:
                         await transport.send_control_event(
-                            "audio_start",
+                            "audio.start",
                             {
                                 "turn_id": str(waterfall.turn_id),
                                 "server_send_ms": waterfall.server_send_ms,
@@ -454,7 +454,7 @@ class PipelineOrchestrator:
                             },
                         )
                     except Exception as exc:
-                        logger.debug("Client audio_start notify failed", error=str(exc))
+                        logger.debug("Client audio.start notify failed", error=str(exc))
             if self.fsm.can_transition(SessionEvent.TTS_FIRST_BYTE):
                 self.fsm.trigger(SessionEvent.TTS_FIRST_BYTE)
         await self._ensure_egress_sender()
@@ -649,7 +649,7 @@ class PipelineOrchestrator:
             )
             return
         await transport.send_control_event(
-            "audio_end",
+            "audio.end",
             {
                 "turn_id": turn_id,
                 "generated_audio_ms": self._turn_commit_tracker.generated_audio_ms(turn_id),
@@ -680,7 +680,7 @@ class PipelineOrchestrator:
         try:
             payload = waterfall.to_metric_payload()
             payload["population"] = self.latency_collector.percentile_summary()
-            await transport.send_control_event(ControlEventType.METRIC, payload)
+            await transport.send_control_event("metric.latency", payload)
         except Exception as exc:
             logger.debug("Failed to emit latency telemetry", error=str(exc))
 

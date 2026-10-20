@@ -1,48 +1,87 @@
-# UCVE Realtime Audio and Event WebSocket Protocol
+# Wavia Realtime Protocol
 
-## Transport and connection
+> Generated from `sdk/shared/event_schema.json` by
+> `sdk/shared/generate_protocol_docs.py`. Edit the schema, then regenerate this
+> file; do not hand-edit the event inventory.
 
-- Endpoint: `ws://<host>:8081/ws/audio?token=<JWT>&stt_provider=...&llm_provider=...&tts_provider=...`
-- Authentication: ephemeral mint token issued by `POST /v1/session/mint`.
-- Multiplexing: one WebSocket carries binary PCM audio and JSON control frames.
+## Compatibility
 
-## Audio framing contract
+- Current protocol: `1.0.0`
+- Server-supported client range: `>=1.0.0 <2.0.0`
+- Clients send `protocol.hello` as the first frame. The server answers
+  `session.ready` before provider startup or rejects the connection with a
+  typed `error` and WebSocket close code.
+- Sequence numbers increase independently in each direction. `event_id` is
+  unique per JSON frame. Unknown optional payload fields must be ignored within
+  protocol v1.
+- Breaking removals or payload reinterpretations require a new protocol major.
 
-- Encoding: raw signed 16-bit little-endian PCM (`pcm_s16le`).
-- Sample rate: 16,000 Hz.
-- Channels: one (mono).
-- Transport: binary WebSocket frames. The worker slices accepted ingress chunks into its canonical internal frame size.
+## Transport
 
-## Control and telemetry events
+- Endpoint: `ws://<worker>/ws/audio?token=<ephemeral-token>&protocol_version=1.0.0`
+- JSON control frames use the versioned envelope below.
+- Binary media frames are signed 16-bit little-endian PCM, 16 kHz, mono.
+- Provider query overrides are forbidden by default. They require an explicitly
+  enabled development/test demo and are never part of the public SDK contract.
 
-| Direction | Event | Required payload | Meaning |
-|---|---|---|---|
-| Client to server | `pong` or `control.pong` | optional client timestamp | Heartbeat response |
-| Client to server | `control.playback_started` | `turn_id`, client performance timestamp and clock domain | Correlated actual playback onset |
-| Client to server | `control.playback_drained` | `turn_id`, `played_audio_ms` | Confirms all scheduled speech for the turn reached the speaker |
-| Client to server | `control.clear_audio_ack` | `turn_id`, monotonic `sequence`, `played_audio_ms` | Confirms interruption cleared client playout and reports the played boundary |
-| Client to server | `control.barge_in` | `turn_id`, monotonic `sequence`, optional energy metadata | Canonical interruption request; bare `barge_in` remains an inbound compatibility alias |
-| Client to server | `text.turn`, `text_turn`, or `user_turn` | text | Text turn that bypasses STT |
-| Server to client | `ping` | interval | Liveness heartbeat |
-| Server to client | `audio_start` | `turn_id`, server send timestamp and clock domain | Identifies the turn for following audio |
-| Server to client | `transcript` | speaker and text | User or agent transcript |
-| Server to client | `metric` with `kind: latency` | versioned latency payload | Raw timestamps, valid durations, missing reasons, queue state and population percentiles |
-| Server to client | `control.barge_in` | `turn_id`, monotonic `sequence`, reason | Signals a committed interruption |
-| Server to client | `control.clear_audio` | `turn_id`, monotonic `sequence`, reason | Requires immediate client buffer clear and acknowledgment |
-| Server to client | `audio_end` | `turn_id`, generated audio duration | Marks the last server audio frame for a turn |
-| Server to client | `assistant.played_text_commit` | `turn_id`, text, played duration, completeness | Reports the assistant text admitted to conversation history |
+```json
+{
+  "protocol_version": "1.0.0",
+  "event_id": "unique-event-id",
+  "sequence": 1,
+  "event_type": "protocol.hello",
+  "timestamp_ms": 0,
+  "payload": {}
+}
+```
 
-The primary user metric is acoustic end-of-speech to playback acknowledgement receipt using the server monotonic clock. It is labeled `server_ack_upper_bound` because it includes acknowledgement network delay. Client `performance.now()` values stay in the client clock domain and are never subtracted from server timestamps.
+## Event inventory
 
-Missing anchors remain `null` and appear in `missing_reasons`. The server does not substitute, cap, or invent stage durations. SLO evaluation remains provisional until production measurements establish contractual targets.
+| Direction | Event | Required payload |
+|---|---|---|
+| client to server | `protocol.hello` | `protocol_version`, `sdk` |
+| server to client | `session.ready` | `protocol_version`, `supported_range`, `session_id` |
+| server to client | `control.ping` | none |
+| client to server | `control.pong` | none |
+| client to server | `text.turn` | `text` |
+| server to client | `transcript.partial` | schema-defined payload |
+| server to client | `transcript.final` | schema-defined payload |
+| server to client | `transcript` | schema-defined payload |
+| server to client | `audio.start` | schema-defined payload |
+| server to client | `audio.end` | `turn_id`, `generated_audio_ms` |
+| client to server | `control.playback_started` | `turn_id`, `client_playback_started_ms` |
+| client to server | `control.barge_in` | `sequence` |
+| server to client | `control.clear_audio` | `turn_id`, `sequence` |
+| client to server | `control.clear_audio_ack` | `turn_id`, `sequence`, `played_audio_ms` |
+| client to server | `control.playback_drained` | `turn_id`, `played_audio_ms` |
+| server to client | `assistant.played_text_commit` | `turn_id`, `text`, `played_audio_ms`, `complete` |
+| server to client | `metric.latency` | `kind`, `turn_id`, `durations_ms` |
+| server to client | `session.token_expiring` | `expires_at_ms`, `refresh_url` |
+| bidirectional | `session.close` | `code`, `reason`, `retryable` |
+| server to client | `error` | schema-defined payload |
+| server to client | `degraded` | schema-defined payload |
 
-The canonical machine-readable contract is `sdk/shared/event_schema.json`.
+`transcript.partial` may be superseded by later partials for the same turn;
+`transcript.final` is never silently dropped. Binary audio following
+`audio.start` belongs to that turn until `audio.end`. On interruption, clients
+must clear scheduled audio and answer `control.clear_audio` with
+`control.clear_audio_ack`; uninterrupted playback ends with
+`control.playback_drained`.
 
-The bare inbound `barge_in` alias is deprecated until the next protocol major;
-the worker emits a `protocol_deprecation` info event when it is used.
+## Keepalive, expiry, close, and retry
 
-The client must stop scheduled sources on `control.clear_audio` and return
-`control.clear_audio_ack`. The server commits assistant context only through the
-PCM boundary reported by that acknowledgment. On an uninterrupted turn, the
-client sends `control.playback_drained` after receiving `audio_end` and rendering
-all scheduled sources; only then does the session return to `LISTENING`.
+Clients answer `control.ping` with `control.pong`. A missed heartbeat closes the
+session. `session.token_expiring` instructs the host application to mint or
+refresh an ephemeral token; raw credentials never travel through the SDK.
+`session.close.payload.retryable` decides whether a reconnect may be attempted.
+SDK connection attempts use capped exponential backoff and never retry forever.
+Protocol v1 does not promise mid-session resume, so a reconnect creates a new
+media connection and must not replay microphone audio automatically.
+
+## Compatibility aliases
+
+The worker temporarily accepts `barge_in`, `text_turn`, `user_turn`, `ping`,
+`pong`, `playback_started`, `audio_start`, `audio_end`, `transcript`, and
+`degraded_mode` while v1 clients migrate. Public SDKs emit canonical names.
+Aliases are removed only in the next protocol major and produce a deprecation
+signal where the runtime can safely do so.
