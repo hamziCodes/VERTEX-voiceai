@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from control_plane.agents.models.persona import PersonaConfig
 from control_plane.agents.models.provider_config import AgentProvidersConfig
@@ -14,6 +14,8 @@ from control_plane.agents.models.provider_config import AgentProvidersConfig
 
 class AgentConfig(BaseModel):
     """Tenant-authored agent configuration root domain model."""
+
+    model_config = ConfigDict(extra="forbid")
 
     agent_id: UUID = Field(default_factory=uuid4, description="Unique agent identifier.")
     tenant_id: UUID = Field(description="Owning tenant identifier.")
@@ -35,6 +37,10 @@ class AgentConfig(BaseModel):
     compliance: dict[str, Any] = Field(
         default_factory=lambda: {"tier": "standard", "hipaa_baa_acknowledged": False},
         description="Compliance tier and HIPAA BAA status.",
+    )
+    session_limits: dict[str, int] = Field(
+        default_factory=lambda: {"max_duration_sec": 3600, "max_turns": 500},
+        description="Published per-session duration and turn ceilings.",
     )
     version: int = Field(default=1, ge=1, description="Monotonically increasing version number.")
     published_at: datetime | None = Field(default=None, description="Timestamp of latest publish.")

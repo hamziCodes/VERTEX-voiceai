@@ -10,10 +10,14 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from control_plane.auth.jwt import verify_session_jwt
-from control_plane.routes.session import get_default_mint_context
-from core.db.repos.tenant_repo import TenantRepository
+from control_plane.routes.session import (
+    MintContext,
+    get_default_mint_context,
+    unsafe_session_overrides_enabled,
+)
 from core.runtime.admission import CapacityExceededError, SessionAdmissionController
 from core.runtime.env import require_production_secrets
+from core.runtime.session_plan import RuntimeSessionPlan, SessionPlanIntegrityError
 from core.transport.native_websocket import NativeWebSocketTransport
 from worker_raw.orchestration.pipeline import PipelineOrchestrator
 from worker_raw.orchestration.session_config import PipelineSessionConfig
@@ -43,6 +47,10 @@ app.add_middleware(
 )
 
 
+class SessionPlanLoadError(ValueError):
+    """Raised when a worker cannot authenticate a session's pinned plan."""
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "worker-raw"}
@@ -63,59 +71,91 @@ async def json_version() -> dict[str, str]:
         "note": "Not a Chrome DevTools endpoint",
     }
 
+
 async def _load_session_config(
-    token_payload: dict[str, str],
+    token_payload: dict[str, object],
     *,
+    mint_context: MintContext | None = None,
     stt_provider: str | None = None,
     llm_provider: str | None = None,
     llm_model: str | None = None,
     tts_provider: str | None = None,
     tts_voice_id: str | None = None,
 ) -> PipelineSessionConfig:
-    """Load PipelineSessionConfig from mint context / DB."""
+    """Load and authenticate the immutable plan pinned when the session was minted."""
     session_id = str(token_payload["sub"])
     tenant_id = str(token_payload["tenant_id"])
     agent_id = str(token_payload["agent_id"])
-    ctx = get_default_mint_context()
+    ctx = mint_context or get_default_mint_context()
     session = await ctx.session_repo.get_session(tenant_id, session_id)
-    compliance_tier = "standard"
-    hipaa_baa = False
-    if session is not None:
-        compliance_tier = session.compliance_tier
-    tenant = await ctx.tenant_repo.get_tenant(tenant_id)
-    if isinstance(ctx.tenant_repo, TenantRepository):
-        profile = ctx.tenant_repo.get_compliance_profile(tenant_id)
-    else:
-        profile = getattr(ctx.tenant_repo, "_compliance_profiles", {}).get(tenant_id)
-    if profile is not None:
-        compliance_tier = getattr(profile, "compliance_tier", compliance_tier)
-        hipaa_baa = getattr(profile, "hipaa_baa_acknowledged_at", None) is not None
-    _ = tenant
-    import os
+    if session is None:
+        raise SessionPlanLoadError("Pinned session was not found.")
+    if str(session.tenant_id) != tenant_id or str(session.agent_id) != agent_id:
+        raise SessionPlanLoadError("Session identity does not match signed claims.")
+    if not isinstance(session.runtime_plan_snapshot, dict):
+        raise SessionPlanLoadError("Pinned runtime plan snapshot is missing.")
 
-    greeting = (os.environ.get("UCVE_INITIAL_GREETING") or "").strip() or None
-    chosen_llm_model = (llm_model or "").strip()
-    if not chosen_llm_model:
-        lp = (llm_provider or "").strip().lower()
-        if lp == "gemini":
-            chosen_llm_model = "gemini-2.5-flash"
-        elif lp == "openai":
-            chosen_llm_model = "gpt-4o-mini"
-        else:
-            chosen_llm_model = "openai/gpt-oss-120b"
-    return PipelineSessionConfig(
-        session_id=session_id,
-        tenant_id=tenant_id,
-        agent_id=agent_id,
-        compliance_tier=compliance_tier,
-        hipaa_baa_acknowledged=hipaa_baa,
-        initial_greeting=greeting,
-        stt_provider=stt_provider or "gladia",
-        llm_provider=llm_provider or "groq",
-        llm_model=chosen_llm_model,
-        tts_provider=tts_provider or "uplift",
-        tts_voice_id=(tts_voice_id or "default"),
+    try:
+        plan = RuntimeSessionPlan.from_snapshot(session.runtime_plan_snapshot)
+    except SessionPlanIntegrityError as exc:
+        raise SessionPlanLoadError(str(exc)) from exc
+
+    expected = {
+        "tenant_id": (plan.tenant_id, tenant_id),
+        "agent_id": (plan.agent_id, agent_id),
+        "session_plan_ref": (plan.plan_id, token_payload.get("session_plan_ref")),
+        "session_plan_hash": (plan.plan_hash, token_payload.get("session_plan_hash")),
+        "agent_config_version": (
+            plan.agent_version,
+            token_payload.get("agent_config_version"),
+        ),
+    }
+    for field_name, (actual, claimed) in expected.items():
+        if str(actual) != str(claimed):
+            raise SessionPlanLoadError(
+                f"Pinned runtime plan {field_name} does not match signed claims."
+            )
+    if session.runtime_plan_hash != plan.plan_hash:
+        raise SessionPlanLoadError("Pinned runtime plan hash does not match session.")
+    if session.config_version_id != plan.plan_id:
+        raise SessionPlanLoadError(
+            "Pinned runtime plan reference does not match session."
+        )
+    if bool(token_payload.get("unsafe_demo", False)) != plan.unsafe_demo:
+        raise SessionPlanLoadError("Unsafe plan status does not match signed claims.")
+
+    language = str(
+        token_payload.get("session_language") or session.session_language or ""
     )
+    voice_id = str(
+        token_payload.get("session_voice_id") or session.session_voice_id or ""
+    )
+    if session.session_language != language or session.session_voice_id != voice_id:
+        raise SessionPlanLoadError("Session selection does not match signed claims.")
+    try:
+        selection = plan.select(language=language, voice_id=voice_id)
+    except ValueError as exc:
+        raise SessionPlanLoadError(str(exc)) from exc
+
+    unsafe_overrides = unsafe_session_overrides_enabled()
+    config = PipelineSessionConfig.from_runtime_plan(
+        session_id=session_id,
+        plan=plan,
+        selection=selection,
+        allow_unsafe_session_overrides=unsafe_overrides,
+    )
+    if unsafe_overrides:
+        if stt_provider:
+            config.stt_provider = stt_provider
+        if llm_provider:
+            config.llm_provider = llm_provider
+        if llm_model:
+            config.llm_model = llm_model
+        if tts_provider:
+            config.tts_provider = tts_provider
+        if tts_voice_id:
+            config.tts_voice_id = tts_voice_id
+    return config
 
 
 @app.websocket("/ws/audio")
@@ -182,9 +222,9 @@ async def ws_audio(websocket: WebSocket) -> None:
         await transport.close(websocket)
         return
 
-    raw_rate = websocket.query_params.get(
-        "sample_rate"
-    ) or websocket.query_params.get("rate")
+    raw_rate = websocket.query_params.get("sample_rate") or websocket.query_params.get(
+        "rate"
+    )
     client_rate = 16000
     if raw_rate:
         try:

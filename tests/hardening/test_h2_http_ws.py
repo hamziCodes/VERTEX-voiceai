@@ -38,6 +38,7 @@ def _complete_protocol_handshake(ws: object) -> None:
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UCVE_ENV", "test")
+    monkeypatch.setenv("UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES", "1")
     monkeypatch.setenv("UCVE_MINT_HMAC_SECRET", "dev-mint-secret")
     monkeypatch.setenv("UCVE_METRICS_BEARER", "test-metrics-bearer-32chars-ok")
     monkeypatch.setenv("UCVE_WS_PUBLIC_URL", "ws://localhost:8081/ws/audio")

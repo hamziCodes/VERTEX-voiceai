@@ -14,11 +14,12 @@ from control_plane.agents import (
     AgentNotFoundError,
     SessionConfigPin,
 )
+from control_plane.agents.repo import get_default_agent_config_repo
 
 router = APIRouter(prefix="/v1/agents", tags=["agents"])
 
 # Module-level default repository and pin engine instance
-_agent_repo = AgentConfigRepo()
+_agent_repo = get_default_agent_config_repo()
 _pin_engine = SessionConfigPin(_agent_repo)
 
 

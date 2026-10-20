@@ -69,6 +69,7 @@ def test_session_mint_success_and_jwt_generation(auth_module, monkeypatch) -> No
     from core.db.models import Agent, Tenant
 
     monkeypatch.setenv("UCVE_ENV", "test")
+    monkeypatch.setenv("UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES", "1")
 
     async def _run() -> None:
         ctx = MintContext()

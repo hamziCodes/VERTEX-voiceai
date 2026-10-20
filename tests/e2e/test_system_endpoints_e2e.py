@@ -30,6 +30,15 @@ from telephony_gateway.webhook_normalizer import WebhookNormalizer
 from worker_raw.main import app as worker_raw_app
 
 
+@pytest.fixture(autouse=True)
+def _offline_demo_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make this demo endpoint suite explicit and independent of local .env state."""
+
+    monkeypatch.setenv("UCVE_DEMO_MODE", "1")
+    monkeypatch.setenv("RUN_MOCK_PROVIDERS", "1")
+    monkeypatch.setenv("RUN_LIVE_PROVIDERS", "0")
+
+
 @pytest.fixture
 def cp_client() -> TestClient:
     return TestClient(control_plane_app)

@@ -296,6 +296,10 @@ class PipelineOrchestrator:
 
     async def apply_provider_selection(self, session_config: PipelineSessionConfig) -> None:
         """Swap STT/LLM/TTS adapters from session config (call at session start only)."""
+        self.language_router.set_supported_languages(session_config.allowed_languages)
+        configure_tools = getattr(self.tool_handler, "set_allowed_tools", None)
+        if callable(configure_tools):
+            configure_tools(session_config.tool_allowlist)
         stt_id = normalize_stt_provider(session_config.stt_provider)
         llm_id = normalize_llm_provider(session_config.llm_provider)
         tts_id = normalize_tts_provider(session_config.tts_provider)

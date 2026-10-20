@@ -38,6 +38,13 @@ def issue_session_jwt(
     agent_id: str,
     ttl_sec: int = 120,
     secret: str | None = None,
+    *,
+    session_plan_ref: str | None = None,
+    session_plan_hash: str | None = None,
+    agent_config_version: int | None = None,
+    session_language: str | None = None,
+    session_voice_id: str | None = None,
+    unsafe_demo: bool = False,
 ) -> str:
     """Issue short-lived roomJoin JWT (HS256, default TTL 120s)."""
     signing_secret = resolve_jwt_secret(secret)
@@ -50,6 +57,18 @@ def issue_session_jwt(
         "iat": iat,
         "exp": iat + ttl_sec,
     }
+    optional_claims = {
+        "session_plan_ref": session_plan_ref,
+        "session_plan_hash": session_plan_hash,
+        "agent_config_version": agent_config_version,
+        "session_language": session_language,
+        "session_voice_id": session_voice_id,
+    }
+    payload.update(
+        {key: value for key, value in optional_claims.items() if value is not None}
+    )
+    if unsafe_demo:
+        payload["unsafe_demo"] = True
     return jwt.encode(payload, signing_secret, algorithm="HS256")
 
 
@@ -61,7 +80,16 @@ def verify_session_jwt(token: str, secret: str | None = None) -> dict[str, Any]:
             token,
             signing_secret,
             algorithms=["HS256"],
-            options={"require": ["exp", "iat", "sub", "action"]},
+            options={
+                "require": [
+                    "exp",
+                    "iat",
+                    "sub",
+                    "tenant_id",
+                    "agent_id",
+                    "action",
+                ]
+            },
         )
     except jwt.ExpiredSignatureError as exc:
         raise ValueError("JWT token expired.") from exc

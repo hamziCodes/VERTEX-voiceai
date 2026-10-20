@@ -33,8 +33,8 @@ def validate_demo_provider_overrides(
     if not selected:
         return {}
     environment = os.environ.get("UCVE_ENV", "development").strip().lower()
-    enabled = os.environ.get("UCVE_ALLOW_DEMO_PROVIDER_OVERRIDES", "0") == "1"
-    if environment not in {"development", "test"} or not enabled:
+    enabled = os.environ.get("UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES", "0") == "1"
+    if environment not in {"development", "dev", "test"} or not enabled:
         raise WSSecurityViolation(
             "PROVIDER_OVERRIDE_FORBIDDEN: provider selection must come from the "
             "published session plan outside an explicitly enabled local demo"

@@ -195,16 +195,16 @@ def test_provider_overrides_require_explicit_local_demo_policy(
 ) -> None:
     overrides = {"stt_provider": "gladia"}
     monkeypatch.setenv("UCVE_ENV", "production")
-    monkeypatch.setenv("UCVE_ALLOW_DEMO_PROVIDER_OVERRIDES", "1")
+    monkeypatch.setenv("UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES", "1")
     with pytest.raises(WSSecurityViolation, match="PROVIDER_OVERRIDE_FORBIDDEN"):
         validate_demo_provider_overrides(overrides)
 
     monkeypatch.setenv("UCVE_ENV", "development")
-    monkeypatch.setenv("UCVE_ALLOW_DEMO_PROVIDER_OVERRIDES", "0")
+    monkeypatch.setenv("UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES", "0")
     with pytest.raises(WSSecurityViolation, match="PROVIDER_OVERRIDE_FORBIDDEN"):
         validate_demo_provider_overrides(overrides)
 
-    monkeypatch.setenv("UCVE_ALLOW_DEMO_PROVIDER_OVERRIDES", "1")
+    monkeypatch.setenv("UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES", "1")
     assert validate_demo_provider_overrides(overrides) == overrides
 
 

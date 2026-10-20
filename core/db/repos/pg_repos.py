@@ -175,9 +175,11 @@ class PostgresSessionRepository:
             conn.execute(
                 """
                 INSERT INTO sessions (
-                    id, tenant_id, agent_id, transport_type, compliance_tier, degraded_flags
+                    id, tenant_id, agent_id, transport_type, compliance_tier,
+                    config_version_id, pinned_at, degraded_flags
                 ) VALUES (
-                    %s::uuid, %s::uuid, %s::uuid, %s, %s::compliance_tier_enum, %s::jsonb
+                    %s::uuid, %s::uuid, %s::uuid, %s, %s::compliance_tier_enum,
+                    %s::uuid, %s, %s::jsonb
                 )
                 """,
                 (
@@ -186,6 +188,8 @@ class PostgresSessionRepository:
                     session.agent_id,
                     session.transport_type,
                     session.compliance_tier,
+                    session.config_version_id,
+                    session.pinned_at,
                     json.dumps(session.degraded_flags),
                 ),
             )
@@ -208,7 +212,8 @@ class PostgresSessionRepository:
             TenantScopedDBSession(tenant_id).set_app_tenant_id(conn)
             row = conn.execute(
                 "SELECT id::text, tenant_id::text, agent_id::text, transport_type, "
-                "compliance_tier::text, degraded_flags FROM sessions "
+                "compliance_tier::text, config_version_id::text, pinned_at, "
+                "degraded_flags FROM sessions "
                 "WHERE id = %s::uuid AND tenant_id = %s::uuid",
                 (session_id, tenant_id),
             ).fetchone()
@@ -220,7 +225,9 @@ class PostgresSessionRepository:
                 agent_id=row[2],
                 transport_type=row[3],
                 compliance_tier=row[4],
-                degraded_flags=dict(row[5] or {}),
+                config_version_id=row[5],
+                pinned_at=row[6],
+                degraded_flags=dict(row[7] or {}),
             )
         finally:
             if own:

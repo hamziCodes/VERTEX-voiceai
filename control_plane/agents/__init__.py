@@ -13,6 +13,8 @@ from control_plane.agents.repo import (
     AgentConfigRepo,
     AgentNotFoundError,
     DebounceThrottledError,
+    get_default_agent_config_repo,
+    reset_default_agent_config_repo,
 )
 from control_plane.agents.session_pin import SessionConfigPin
 from control_plane.agents.validation.validator import (
@@ -31,5 +33,7 @@ __all__ = [
     "AgentConfigRepo",
     "AgentNotFoundError",
     "DebounceThrottledError",
+    "get_default_agent_config_repo",
+    "reset_default_agent_config_repo",
     "SessionConfigPin",
 ]

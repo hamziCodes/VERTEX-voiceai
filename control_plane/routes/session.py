@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
 from control_plane.auth.hmac_mint import verify_mint_signature
 from control_plane.auth.jwt import issue_session_jwt, verify_session_jwt
 from control_plane.auth.rate_limit import RateLimiter
+from control_plane.agents.compiler import (
+    SessionPlanCompilationError,
+    build_unsafe_demo_plan,
+    compile_agent_version,
+)
+from control_plane.agents.repo import AgentConfigRepo, get_default_agent_config_repo
 from core.db.models import Session, Tenant
 from core.db.repos.session_repo import SessionRepository
 from core.db.repos.tenant_repo import TenantRepository
@@ -32,6 +39,9 @@ class MintContext:
     nonce_store: NonceStore = field(default_factory=NonceStore)
     tenant_repo: Any = field(default_factory=build_tenant_repository)
     session_repo: Any = field(default_factory=build_session_repository)
+    agent_config_repo: AgentConfigRepo = field(
+        default_factory=get_default_agent_config_repo
+    )
     quota: QuotaEnforcer = field(default_factory=QuotaEnforcer)
     rate_limiter: RateLimiter = field(default_factory=lambda: RateLimiter(limit_per_min=120))
     admission: SessionAdmissionController = field(default_factory=SessionAdmissionController)
@@ -90,6 +100,14 @@ def _record_rejection(
     ctx.audit_events.append({"action": "mint_rejected", **event})
 
 
+def unsafe_session_overrides_enabled() -> bool:
+    """Return True only for an explicitly enabled local development/test process."""
+
+    environment = (os.environ.get("UCVE_ENV") or "development").strip().lower()
+    enabled = os.environ.get("UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES", "0") == "1"
+    return environment in {"development", "dev", "test"} and enabled
+
+
 async def handle_session_mint(
     tenant_id: str,
     ts: str,
@@ -105,6 +123,8 @@ async def handle_session_mint(
     current_concurrent: int = 0,
     current_monthly_minutes: float = 0.0,
     jwt_secret: str | None = None,
+    requested_language: str | None = None,
+    requested_voice_id: str | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """POST /v1/session — HMAC-authenticated room mint endpoint."""
     mint_ctx = ctx or _default_ctx
@@ -152,6 +172,39 @@ async def handle_session_mint(
         _record_rejection(mint_ctx, tenant_id, 403, "origin not allowed")
         return 403, {"error": "Origin not allowed."}
 
+    try:
+        plan = compile_agent_version(
+            tenant_id,
+            agent_id,
+            None,
+            repo=mint_ctx.agent_config_repo,
+        )
+    except SessionPlanCompilationError as exc:
+        if exc.code == "PUBLISHED_CONFIG_NOT_FOUND" and unsafe_session_overrides_enabled():
+            plan = build_unsafe_demo_plan(
+                tenant_id,
+                agent_id,
+                system_prompt=getattr(agent, "system_prompt", ""),
+            )
+        else:
+            _record_rejection(mint_ctx, tenant_id, 409, exc.code)
+            return 409, {
+                "error": "A valid published agent configuration is required.",
+                "code": "PUBLISHED_CONFIG_REQUIRED",
+            }
+
+    try:
+        selection = plan.select(
+            language=requested_language,
+            voice_id=requested_voice_id,
+        )
+    except ValueError as exc:
+        _record_rejection(mint_ctx, tenant_id, 422, "invalid session selection")
+        return 422, {
+            "error": str(exc),
+            "code": "SESSION_SELECTION_INVALID",
+        }
+
     quota_result = await mint_ctx.quota.check_mint(
         tenant_id,
         current_concurrent=current_concurrent,
@@ -172,10 +225,37 @@ async def handle_session_mint(
         _record_rejection(mint_ctx, tenant_id, 503, str(exc))
         return 503, {"error": "Worker capacity limit reached. Please retry shortly."}
 
-    session = Session(id=session_id, tenant_id=tenant_id, agent_id=agent_id)
-    await mint_ctx.session_repo.create_session(tenant_id, session)
+    session = Session(
+        id=session_id,
+        tenant_id=tenant_id,
+        agent_id=agent_id,
+        compliance_tier=plan.compliance_tier,  # type: ignore[arg-type]
+        config_version_id=plan.plan_id,
+        agent_config_version=plan.agent_version,
+        runtime_plan_hash=plan.plan_hash,
+        runtime_plan_snapshot=plan.to_snapshot(),
+        session_language=selection.language,
+        session_voice_id=selection.voice_id,
+        pinned_at=datetime.now(timezone.utc),
+    )
+    try:
+        await mint_ctx.session_repo.create_session(tenant_id, session)
+    except Exception:
+        mint_ctx.admission.release_sync(session_id)
+        raise
 
-    token = issue_session_jwt(tenant_id, session_id, agent_id, secret=jwt_secret)
+    token = issue_session_jwt(
+        tenant_id,
+        session_id,
+        agent_id,
+        secret=jwt_secret,
+        session_plan_ref=plan.plan_id,
+        session_plan_hash=plan.plan_hash,
+        agent_config_version=plan.agent_version,
+        session_language=selection.language,
+        session_voice_id=selection.voice_id,
+        unsafe_demo=plan.unsafe_demo,
+    )
     mint_ctx.quota.acquire(tenant_id, session_id)
     ws_url = os.environ.get("UCVE_WS_PUBLIC_URL", "ws://localhost:8081/ws/audio")
 
@@ -185,6 +265,8 @@ async def handle_session_mint(
         "token": token,
         "ttl_sec": 120,
         "ws_url": ws_url,
+        "agent_config_version": plan.agent_version,
+        "session_plan_ref": plan.plan_id,
     }
     if headers:
         body["_headers"] = headers
@@ -210,6 +292,12 @@ def handle_session_refresh(
             payload["sub"],
             payload["agent_id"],
             secret=jwt_secret,
+            session_plan_ref=payload.get("session_plan_ref"),
+            session_plan_hash=payload.get("session_plan_hash"),
+            agent_config_version=payload.get("agent_config_version"),
+            session_language=payload.get("session_language"),
+            session_voice_id=payload.get("session_voice_id"),
+            unsafe_demo=bool(payload.get("unsafe_demo", False)),
         )
         return 200, {"status": "success", "token": new_token, "ttl_sec": 120}
     except Exception as exc:

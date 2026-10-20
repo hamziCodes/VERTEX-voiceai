@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PersonaConfig(BaseModel):
     """Vocal personality, system prompt, and greeting configuration."""
+
+    model_config = ConfigDict(extra="forbid")
 
     system_prompt: str = Field(
         default="You are Vertex Voice AI, a helpful, natural, concise voice assistant.",
@@ -19,6 +21,10 @@ class PersonaConfig(BaseModel):
     voice_id: str = Field(
         default="default",
         description="Vocal timbre / voice ID for synthesis (e.g. cartesia sonic voice ID).",
+    )
+    voice_by_language: dict[str, str] = Field(
+        default_factory=dict,
+        description="Optional published language-to-voice bindings.",
     )
     persona_isolation: bool = Field(
         default=True,

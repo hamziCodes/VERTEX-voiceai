@@ -104,6 +104,26 @@ class WebSocketSessionRunner:
             return
         await self._turn_queue.put((cleaned, None))
 
+    async def _apply_system_prompt_override(self, prompt: object) -> bool:
+        """Apply a local-only prompt override or report a typed policy error."""
+
+        if prompt in (None, ""):
+            return False
+        if not self.config.allow_unsafe_session_overrides:
+            await self.transport.send_control_event(
+                "error",
+                {
+                    "code": "SESSION_OVERRIDE_FORBIDDEN",
+                    "message": "The system prompt is pinned by the published agent plan.",
+                },
+            )
+            return False
+        self.config.system_prompt = str(prompt)
+        await self.transport.send_control_event(
+            "info", {"message": "System prompt updated for local development session."}
+        )
+        return True
+
     async def start(self) -> None:
         workers: list[asyncio.Task[Any]] = []
         try:
@@ -371,12 +391,7 @@ class WebSocketSessionRunner:
                 )
                 continue
             if event_type == "set_prompt":
-                new_prompt = data.get("system_prompt")
-                if new_prompt:
-                    self.config.system_prompt = str(new_prompt)
-                    await self.transport.send_control_event(
-                        "info", {"message": "System prompt updated for session."}
-                    )
+                await self._apply_system_prompt_override(data.get("system_prompt"))
                 continue
             if event_type in ("text.turn", "text_turn", "user_turn"):
                 payload_dict = (
@@ -389,7 +404,7 @@ class WebSocketSessionRunner:
                     "system_prompt"
                 )
                 if new_prompt:
-                    self.config.system_prompt = str(new_prompt)
+                    await self._apply_system_prompt_override(new_prompt)
                 if user_text:
                     if self.orchestrator.fsm.state in (
                         SessionState.AGENT_SPEAKING,

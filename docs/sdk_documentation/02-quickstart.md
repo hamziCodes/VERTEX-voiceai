@@ -55,8 +55,8 @@ UCVE_MINT_HMAC_SECRET=dev-mint-secret
 # Environment (enables unauthenticated /mint in demo mode)
 UCVE_ENV=development
 
-# Required only when using the local demo's provider selection controls
-UCVE_ALLOW_DEMO_PROVIDER_OVERRIDES=1
+# Enables local-only prompt/provider overrides. Never enable in production.
+UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES=1
 ```
 
 Optional (ElevenLabs TTS, Cartesia TTS, Deepgram STT, Gemini LLM):

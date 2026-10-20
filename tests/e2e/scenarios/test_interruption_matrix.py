@@ -22,6 +22,14 @@ from sdk.python.ucve.client import UCVEVoiceClient
 from worker_raw.orchestration.pipeline import PipelineOrchestrator
 
 
+@pytest.fixture(autouse=True)
+def _offline_provider_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep interruption timing tests isolated from workstation provider settings."""
+
+    monkeypatch.setenv("RUN_MOCK_PROVIDERS", "1")
+    monkeypatch.setenv("RUN_LIVE_PROVIDERS", "0")
+
+
 def test_played_text_commit_uses_pcm_boundary_and_is_idempotent() -> None:
     tracker = TurnCommitTracker()
     tracker.start_segment("turn-1", "one two three four")

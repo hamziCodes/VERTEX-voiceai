@@ -23,6 +23,16 @@ class LanguageRouter:
         self._pending_count: int = 0
         self._supported_languages: set[str] = {"en", "ur", "ar", "ms"}
 
+    def set_supported_languages(self, languages: tuple[str, ...]) -> None:
+        """Constrain runtime language switching to the published agent plan."""
+
+        normalized = {language.strip().lower() for language in languages if language.strip()}
+        if not normalized:
+            raise ValueError("At least one supported language is required.")
+        self._supported_languages = normalized
+        self._pending_language = None
+        self._pending_count = 0
+
     def route(self, transcript: Any, current_language: str) -> str:
         """Route transcript hypothesis and return target language code."""
         # Extract text and detected language attribute

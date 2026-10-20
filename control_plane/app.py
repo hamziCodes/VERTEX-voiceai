@@ -37,6 +37,8 @@ from core.runtime.env import get_ucve_env, require_production_secrets
 class QuickMintBody(BaseModel):
     tenant_id: str = "00000000-0000-0000-0000-000000000001"
     agent_id: str = "00000000-0000-0000-0000-0000000000a1"
+    language: str | None = None
+    voice_id: str | None = None
 
 
 class RotateSecretBody(BaseModel):
@@ -170,6 +172,8 @@ async def mint_session(
     origin: str | None = Header(None, alias="Origin"),
     referer: str | None = Header(None, alias="Referer"),
     authorization: str | None = Header(None, alias="Authorization"),
+    x_language: str | None = Header(None, alias="X-Language"),
+    x_voice_id: str | None = Header(None, alias="X-Voice-Id"),
 ) -> JSONResponse:
     ctx: MintContext = getattr(request.app.state, "mint_ctx", None) or get_default_mint_context()
     api_key_mint = False
@@ -192,6 +196,8 @@ async def mint_session(
         referer=referer,
         api_key_mint=api_key_mint,
         ctx=ctx,
+        requested_language=x_language,
+        requested_voice_id=x_voice_id,
     )
     if status != 200:
         raise HTTPException(status_code=status, detail=body.get("error", "mint failed"))
@@ -235,6 +241,8 @@ async def quick_mint_session(
         secret=secret,
         api_key_mint=api_key_mint,
         ctx=ctx,
+        requested_language=body.language,
+        requested_voice_id=body.voice_id,
     )
     if status != 200:
         raise HTTPException(status_code=status, detail=res_body.get("error", "mint failed"))

@@ -38,9 +38,6 @@ class AgentConfigRepo:
         key = (config.tenant_id, config.agent_id)
         now = datetime.now(timezone.utc)
         record = config.model_dump(mode="json")
-        record["created_at"] = now.isoformat()
-        record["updated_at"] = now.isoformat()
-        record["last_autosaved_at"] = now.isoformat()
         self._drafts[key] = record
         self._last_autosave[key] = now
         return config
@@ -89,8 +86,6 @@ class AgentConfigRepo:
         dumped.update(patch_data)
         dumped["tenant_id"] = str(tenant_id)
         dumped["agent_id"] = str(agent_id)
-        dumped["updated_at"] = now.isoformat()
-        dumped["last_autosaved_at"] = now.isoformat()
 
         updated = AgentConfig.model_validate(dumped)
         self._drafts[key] = dumped
@@ -169,3 +164,34 @@ class AgentConfigRepo:
                     }
                 )
         return results
+
+
+_default_agent_config_repo: AgentConfigRepo | None = None
+
+
+def get_default_agent_config_repo() -> AgentConfigRepo:
+    """Return the process-wide repository shared by publish and session mint."""
+
+    global _default_agent_config_repo
+    if _default_agent_config_repo is None:
+        repo = AgentConfigRepo()
+        tenant_id = UUID("00000000-0000-0000-0000-000000000001")
+        agent_id = UUID("00000000-0000-0000-0000-0000000000a1")
+        repo.create_agent(
+            AgentConfig(
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                name="Wavia local demo agent",
+            )
+        )
+        repo.publish(tenant_id, agent_id, published_by="system:local-demo-seed")
+        _default_agent_config_repo = repo
+    return _default_agent_config_repo
+
+
+def reset_default_agent_config_repo() -> AgentConfigRepo:
+    """Reset the shared repository for isolated tests and local process restarts."""
+
+    global _default_agent_config_repo
+    _default_agent_config_repo = None
+    return get_default_agent_config_repo()

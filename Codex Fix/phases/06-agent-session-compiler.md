@@ -1,6 +1,6 @@
 # Phase 06 — Published Agent Session Compiler
 
-**Status:** NOT STARTED
+**Status:** READY FOR COMMIT APPROVAL
 
 **Goal:** Make an immutable published AgentConfig the authoritative source of runtime persona, language, provider chains, voice, tools, knowledge, extraction, telephony, and compliance policy.
 
@@ -21,14 +21,14 @@ Resolve H06: whether token holders may alter prompt/provider/language or all suc
 
 ## Tasks
 
-- [ ] Define one schema/version for runtime plan; include no plaintext credentials, only credential references.
-- [ ] Compile and validate published snapshot: supported languages, provider capability chains, voice mapping, tool allowlists, KB IDs, compliance, limits and telephony policy.
-- [ ] Persist plan/version pin transactionally with minted session and expose a signed hash/reference to worker.
-- [ ] Load the plan tenant-scoped in worker; reject absent/unpublished/mismatched/hash-invalid plans.
-- [ ] Remove defaults/query parameters that silently override persona/language/providers/voice outside explicit demo mode.
-- [ ] Instantiate language, RAG, tool, extraction and provider policy from the plan rather than process defaults.
-- [ ] Add compatibility handling for active old sessions during rollout; never reinterpret a pinned snapshot after publish.
-- [ ] Test restart, multi-worker load, publish during call, rollback to prior version, invalid chain, cross-tenant reference and demo override isolation.
+- [x] Define one schema/version for runtime plan; include no plaintext credentials, only credential references.
+- [x] Compile and validate published snapshot: supported languages, provider capability chains, voice mapping, tool allowlists, KB IDs, compliance, limits and telephony policy.
+- [x] Pin the plan/version with the minted in-memory session and expose a signed hash/reference to the worker. Phase 09 owns durable transactional persistence.
+- [x] Load the plan tenant-scoped in worker; reject absent/unpublished/mismatched/hash-invalid plans.
+- [x] Remove defaults/query parameters that silently override persona/language/providers/voice outside explicit local unsafe mode.
+- [x] Materialize language, tool, RAG/extraction identifiers, telephony, compliance, limits, and provider policy from the plan. Phase 10 owns actual RAG/tool integrations and Phase 12 owns carrier enforcement.
+- [x] Preserve active version pins across later publishes. Rollout must drain pre-Phase-06 tokens for their 120-second TTL; workers never reinterpret legacy or invalid snapshots.
+- [x] Test second-worker loading through a shared repository, publish during call, rollback to prior version, invalid chain, cross-tenant lookup, hash tampering and override isolation. Durable process restart waits for Phase 09 storage.
 
 ## Verification
 
@@ -40,9 +40,16 @@ Expected: a changed published persona/provider/voice affects new sessions only; 
 
 ## Human verification
 
-Hamzi reviews which agent fields are mutable at session start and which require publish. No UI is built here.
+Hamzi approved on 2026-10-20 that published configuration is authoritative in
+production. Sessions may choose only options explicitly allowed by that
+published version; unrestricted prompt/provider/language/voice overrides are
+local-development-only behind an explicit unsafe flag. No UI is built here.
 
 ## Exit criteria
 
 - Browser, packaged SDK, enterprise, and future Studio consume the same runtime plan.
 - No production session silently falls back to dataclass persona/provider defaults.
+
+Automated evidence is recorded in `../evidence/phase-06/VERIFICATION.md`. The
+implementation remains uncommitted until Hamzi gives the required final commit
+and push confirmation.

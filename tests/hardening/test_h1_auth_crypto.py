@@ -19,6 +19,7 @@ from core.secrets.kms.local_dev import LocalDevKMSBackend
 @pytest.fixture
 def test_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UCVE_ENV", "test")
+    monkeypatch.setenv("UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES", "1")
     monkeypatch.delenv("REDIS_URL", raising=False)
     monkeypatch.setenv("UCVE_WS_PUBLIC_URL", "ws://localhost:8081/ws/audio")
 
