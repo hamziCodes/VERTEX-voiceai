@@ -1,6 +1,6 @@
 # Phase 06 — Published Agent Session Compiler
 
-**Status:** READY FOR COMMIT APPROVAL
+**Status:** READY FOR FINAL QA
 
 **Goal:** Make an immutable published AgentConfig the authoritative source of runtime persona, language, provider chains, voice, tools, knowledge, extraction, telephony, and compliance policy.
 
@@ -50,6 +50,4 @@ local-development-only behind an explicit unsafe flag. No UI is built here.
 - Browser, packaged SDK, enterprise, and future Studio consume the same runtime plan.
 - No production session silently falls back to dataclass persona/provider defaults.
 
-Automated evidence is recorded in `../evidence/phase-06/VERIFICATION.md`. The
-implementation remains uncommitted until Hamzi gives the required final commit
-and push confirmation.
+Automated evidence is recorded in `../evidence/phase-06/VERIFICATION.md`.

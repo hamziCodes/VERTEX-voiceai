@@ -6,9 +6,9 @@
 
 **Rollback base:** `cbc9e3366d6dfab422eedea3517975ae14dbcf97`
 
-**Implementation commit:** pending Hamzi's required final commit approval
+**Implementation commit:** `5311b3c`
 
-**Status:** READY FOR COMMIT APPROVAL
+**Status:** READY FOR FINAL QA
 
 ## Result
 
@@ -87,5 +87,5 @@ without an authenticated pinned plan instead of rebuilding them from defaults.
 
 ## Rollback
 
-Before commit, restore the working tree to rollback base `cbc9e33`. After the
-approved commit, revert that implementation commit and its evidence update.
+Revert implementation commit `5311b3c` and its following evidence-only commit.
+No external database migration or deployment state needs rollback.
