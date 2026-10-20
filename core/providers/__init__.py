@@ -9,10 +9,23 @@ from core.providers.exceptions import (
     CircuitBreakerOpenError,
     ConfigurationError,
     NoProviderAvailableError,
+    ProviderCapabilityError,
+    ProviderFailure,
+    ProviderFailureCategory,
     ProviderTimeoutError,
+    UnknownProviderError,
+    classify_http_failure,
 )
 from core.providers.failover import FailoverRouter, ProviderHealthState
 from core.providers.registry import ProviderRegistry
+from core.providers.spec import (
+    ADVERTISED_PROVIDER_IDS,
+    CredentialPolicyState,
+    ProviderCategory,
+    ProviderRolloutState,
+    ProviderSpec,
+    get_provider_spec,
+)
 
 __all__ = [
     "interfaces",
@@ -25,9 +38,18 @@ __all__ = [
     "AgentProviderConfig",
     "ProviderChainConfig",
     "ConfigurationError",
+    "ProviderCapabilityError",
+    "ProviderFailure",
+    "ProviderFailureCategory",
+    "UnknownProviderError",
+    "classify_http_failure",
+    "ADVERTISED_PROVIDER_IDS",
+    "CredentialPolicyState",
+    "ProviderCategory",
+    "ProviderRolloutState",
+    "ProviderSpec",
+    "get_provider_spec",
     "NoProviderAvailableError",
     "ProviderTimeoutError",
     "CircuitBreakerOpenError",
 ]
-
-

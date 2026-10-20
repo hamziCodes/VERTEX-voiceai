@@ -14,28 +14,44 @@ from core.providers.adapters.uplift_tts import UpliftTTSProvider
 from core.providers.interfaces.llm import BaseLLMProvider
 from core.providers.interfaces.stt import BaseSTTProvider
 from core.providers.interfaces.tts import BaseTTSProvider
+from core.providers.spec import (
+    DEFAULT_PROVIDER_CATALOG,
+    ProviderCategory,
+    get_provider_spec,
+)
 
-SUPPORTED_STT = frozenset({"gladia", "deepgram"})
-SUPPORTED_LLM = frozenset({"groq", "gemini", "openai"})
-SUPPORTED_TTS = frozenset({"uplift", "elevenlabs", "cartesia"})
+SUPPORTED_STT = frozenset(
+    spec.provider_id
+    for spec in DEFAULT_PROVIDER_CATALOG.by_category(ProviderCategory.STT)
+)
+SUPPORTED_LLM = frozenset(
+    spec.provider_id
+    for spec in DEFAULT_PROVIDER_CATALOG.by_category(ProviderCategory.LLM)
+)
+SUPPORTED_TTS = frozenset(
+    spec.provider_id
+    for spec in DEFAULT_PROVIDER_CATALOG.by_category(ProviderCategory.TTS)
+)
 
 
 def normalize_stt_provider(provider_id: str | None) -> str:
     pid = (provider_id or "gladia").strip().lower()
-    return pid if pid in SUPPORTED_STT else "gladia"
+    return get_provider_spec(pid, category=ProviderCategory.STT).provider_id
 
 
 def normalize_llm_provider(provider_id: str | None) -> str:
     pid = (provider_id or "groq").strip().lower()
-    return pid if pid in SUPPORTED_LLM else "groq"
+    return get_provider_spec(pid, category=ProviderCategory.LLM).provider_id
 
 
 def normalize_tts_provider(provider_id: str | None) -> str:
     pid = (provider_id or "uplift").strip().lower()
-    return pid if pid in SUPPORTED_TTS else "uplift"
+    return get_provider_spec(pid, category=ProviderCategory.TTS).provider_id
 
 
-def build_stt_provider(provider_id: str | None, *, mock_text: str = "") -> BaseSTTProvider:
+def build_stt_provider(
+    provider_id: str | None, *, mock_text: str = ""
+) -> BaseSTTProvider:
     pid = normalize_stt_provider(provider_id)
     if pid == "deepgram":
         return DeepgramSTTProvider(mock_text=mock_text)

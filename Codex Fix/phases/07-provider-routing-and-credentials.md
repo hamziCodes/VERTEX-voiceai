@@ -1,6 +1,6 @@
 # Phase 07 — Provider Routing, Failover, and Credentials
 
-**Status:** NOT STARTED
+**Status:** SPLIT — 07A READY FOR COMMIT APPROVAL
 
 **Goal:** Select real tenant-authorized providers by capability and make failover truthful, independent, stream-safe, and observable.
 
@@ -11,6 +11,20 @@
 ## Human gate before implementation
 
 Resolve H07. Provider adapters can be normalized offline, but release chains and credential tiers cannot be assumed.
+
+## Execution split
+
+- **07A — Provider contracts and typed failures:** strict capability catalog,
+  unknown-provider rejection, failure taxonomy, compiler/factory integration,
+  and offline contract tests. Does not resolve H07.
+- **07B — Tenant credentials and independent routing:** SecretVault resolution,
+  cache isolation/rotation, real provider instances, scoped health and circuit
+  evidence. Blocked on H07 credential-tier and release-chain decisions.
+- **07C — Stream-safe failover and adapter hardening:** pre/post-commit rules,
+  tool-call normalization, adapter deadlines/cancellation, partial-stream repair,
+  and both-down behavior. Live qualification remains a separate V5 gate.
+
+Only one checkpoint is executed and verified at a time.
 
 ## Files and interfaces
 

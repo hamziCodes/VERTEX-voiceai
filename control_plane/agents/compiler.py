@@ -15,7 +15,8 @@ from control_plane.agents.repo import (
     get_default_agent_config_repo,
 )
 from core.language.registry import LanguageRegistry
-from core.providers.factory import SUPPORTED_LLM, SUPPORTED_STT, SUPPORTED_TTS
+from core.providers.exceptions import ConfigurationError
+from core.providers.spec import ProviderCategory, get_provider_spec
 from core.runtime.session_plan import (
     RuntimeProviderChain,
     RuntimeProviderRoute,
@@ -46,11 +47,6 @@ _SENSITIVE_KEYS = frozenset(
         "credentials",
     }
 )
-_SUPPORTED_BY_CATEGORY = {
-    "stt": SUPPORTED_STT,
-    "llm": SUPPORTED_LLM,
-    "tts": SUPPORTED_TTS,
-}
 
 
 def _canonical_json(value: Any) -> str:
@@ -130,12 +126,17 @@ def _compile_chains(
             routes: list[RuntimeProviderRoute] = []
             for route in enabled:
                 provider_id = route.provider_id.strip().lower()
-                supported = _SUPPORTED_BY_CATEGORY.get(category)
-                if supported is not None and provider_id not in supported:
+                try:
+                    get_provider_spec(
+                        provider_id,
+                        category=ProviderCategory(category),
+                        language=language,
+                    )
+                except (ConfigurationError, ValueError) as exc:
                     raise SessionPlanCompilationError(
                         "PROVIDER_UNSUPPORTED",
                         f"Unsupported {category} provider {provider_id!r}",
-                    )
+                    ) from exc
                 routes.append(
                     RuntimeProviderRoute(
                         provider_id=provider_id,
