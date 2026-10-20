@@ -6,9 +6,9 @@
 
 **Rollback base:** `b2f1ae0c41e06befe1b6fcd23daabd88e2d93983`
 
-**Implementation commit:** pending Hamzi's required final commit approval
+**Implementation commit:** `cdb2741` — strict provider contracts and typed failures
 
-**Status:** READY FOR COMMIT APPROVAL
+**Status:** READY FOR FINAL QA
 
 ## Result
 
@@ -80,5 +80,5 @@ live database tests. No provider request or telephony call was made.
 
 ## Rollback
 
-Before commit, restore the tracked working tree to `b2f1ae0`. After an approved
-commit, revert that implementation commit and its evidence update.
+Revert implementation commit `cdb2741` and the following Phase 07A evidence
+commit.

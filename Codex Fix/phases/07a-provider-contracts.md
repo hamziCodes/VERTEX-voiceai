@@ -1,6 +1,6 @@
 # Phase 07A — Provider Contracts and Typed Failures
 
-**Status:** READY FOR COMMIT APPROVAL
+**Status:** READY FOR FINAL QA
 
 **Goal:** Give every advertised provider one strict, source-controlled runtime
 identity and make unsupported selections and provider failures explicit.
