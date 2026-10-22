@@ -6,7 +6,7 @@
 
 **Pre-phase rollback checkpoint:** `c751e3e2da329fcc6060cf12c06c315e38acb174`
 
-**State:** verified, uncommitted; explicit commit confirmation required
+**State:** verified and committed as `bf52744`
 
 ## Implemented boundary
 
@@ -65,15 +65,15 @@ telephony request was made.
 - OIDC and API-key identities using the same tenant boundary;
 - production/staging use of the in-memory key store.
 
-## Deferred deliberately
+## Follow-on status
 
-- Phase 08C: mint ownership, JWT issuer/audience/JTI, one-use sockets, atomic
-  nonce/replay behavior, refresh/revocation, and demo-mint production guards.
-- Phase 08D: remaining rate/size hardening and operational integration.
+- Phase 08C/08D mint ownership, JWT lifecycle, atomic replay behavior,
+  refresh/revocation, demo guards, and auth endpoint hardening were completed
+  later in `f2f861e`.
 - External IdP provisioning and durable database adapter/runtime proof require
   deployment infrastructure and do not use live services in this phase.
 
-## Next exact action
+## Commit record
 
-Review the Phase 08A/08B diff. If Hamzi confirms, create one clean implementation
-commit on `wavia-fixv1`. Ask separately before pushing. Do not begin Phase 08C.
+Hamzi approved the checkpoint commit. Phase 08A/08B was committed on
+`wavia-fixv1` as `bf52744`; it has not been pushed in this phase.

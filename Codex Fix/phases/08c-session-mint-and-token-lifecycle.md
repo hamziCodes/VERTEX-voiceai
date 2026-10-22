@@ -1,6 +1,6 @@
 # Phase 08C — Session Mint and Token Lifecycle
 
-**Status:** IN PROGRESS
+**Status:** COMPLETE — COMMITTED AS `f2f861e`
 
 ## Contract
 
@@ -24,4 +24,3 @@
 - Reused WebSocket and refresh JTIs are rejected.
 - API keys cannot mint for another tenant.
 - Refresh verifies the persisted session tenant/agent before rotation.
-

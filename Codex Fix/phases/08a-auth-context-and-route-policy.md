@@ -1,6 +1,6 @@
 # Phase 08A — Auth Context and Route Policy
 
-**Status:** VERIFIED — AWAITING COMMIT
+**Status:** COMPLETE — COMMITTED AS `bf52744`
 
 ## Decision
 
@@ -49,4 +49,4 @@
   operations, and tenant-management surfaces.
 - Protected agents, knowledge, extraction, alerts, usage, audit, and secret
   rotation. Telnyx webhooks keep their carrier-signature boundary.
-- Phase 08C session mint/JWT work was not started.
+- Phase 08C session mint/JWT work was completed in `f2f861e`.

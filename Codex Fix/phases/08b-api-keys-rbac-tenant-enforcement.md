@@ -1,6 +1,6 @@
 # Phase 08B — API Keys, RBAC, and Tenant Enforcement
 
-**Status:** VERIFIED — AWAITING COMMIT
+**Status:** COMPLETE — COMMITTED AS `bf52744`
 
 ## Work
 
@@ -23,10 +23,10 @@
 - Run focused auth/security tests, full forced-offline pytest, Ruff, compile,
   plan integrity, diff, secret, and forbidden-scope checks.
 
-## Deferred
+## Follow-on status
 
 - Mint binding, JWT issuer/audience/JTI, one-use socket policy, atomic nonce,
-  refresh, and token revocation: Phase 08C.
+  refresh, and token revocation were completed in Phase 08C/08D as `f2f861e`.
 - External user provisioning and a specific OIDC vendor: deployment choice;
   no external call is required for 08A/08B.
 

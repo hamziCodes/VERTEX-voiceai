@@ -1,6 +1,6 @@
 # Phase 08D — Auth Endpoint Hardening
 
-**Status:** IN PROGRESS
+**Status:** COMPLETE — COMMITTED AS `f2f861e`
 
 ## Contract
 
@@ -21,4 +21,3 @@
 - Oversized auth requests return 413.
 - Direct-peer rate limiting cannot be bypassed with `X-Forwarded-For`.
 - Invalid refresh and WebSocket tokens return sanitized failures.
-
