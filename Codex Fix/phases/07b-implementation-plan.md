@@ -51,35 +51,35 @@
 - Produces: `SecretVault.resolve_credential(tenant_id, provider_id, *, credential_ref, credential_type, tier) -> ResolvedCredential`.
 - Preserves: `SecretVault.resolve(...) -> str` as a compatibility wrapper for existing callers/tests.
 
-- [ ] **Step 1: Write failing resolver and cache tests**
+- [x] **Step 1: Write failing resolver and cache tests**
 
 Add tests named `test_platform_never_uses_tenant_secret`, `test_byok_never_falls_back_to_platform`, `test_both_prefers_byok_then_explicit_platform`, `test_cache_identity_isolates_tenant_ref_type_tier_and_version`, `test_rotation_evicts_old_version`, and `test_resolved_credential_repr_omits_secret`.
 
-- [ ] **Step 2: Verify the new tests fail**
+- [x] **Step 2: Verify the new tests fail**
 
 Run: `py -3.12 -m pytest tests/security/test_provider_credentials.py -q`
 
 Expected: collection/import failures for the new policy, repository, and resolved-credential contracts.
 
-- [ ] **Step 3: Implement the credential contracts and repository port**
+- [x] **Step 3: Implement the credential contracts and repository port**
 
 Implement the interfaces above. `CredentialRecord` owns ciphertext, key version, credential reference, and rotation version. Repository lookup is keyed by tenant, provider, credential type, and reference. Environment lookup is confined to `EnvironmentPlatformSecretProvider` and recognizes only `PLATFORM_<PROVIDER>_API_KEY` for platform credentials.
 
-- [ ] **Step 4: Replace string cache keys with `CredentialCacheKey`**
+- [x] **Step 4: Replace string cache keys with `CredentialCacheKey`**
 
 Create a frozen key containing tenant, provider, credential type, tier, reference, and rotation/version. Add predicate-based invalidation for rotation/revocation while retaining `clear()`.
 
-- [ ] **Step 5: Implement strict resolution semantics**
+- [x] **Step 5: Implement strict resolution semantics**
 
 `platform` ignores tenant records; `byok` requires a reference and never falls back; `both` tries the referenced tenant record and then the injected platform provider. Audit hooks receive metadata only. Decryption and missing-secret errors remain fail closed.
 
-- [ ] **Step 6: Run Task 1 tests**
+- [x] **Step 6: Run Task 1 tests**
 
 Run: `py -3.12 -m pytest tests/security/test_provider_credentials.py voice_engine_plan/tests/phase_tests/test_phase_09_credential_vaulting.py -q`
 
 Expected: all pass with compatibility tests retained.
 
-- [ ] **Step 7: Record the Task 1 checkpoint in `hamza_local/phase-07b-execution/progress.md`**
+- [x] **Step 7: Record the Task 1 checkpoint in the execution ledger**
 
 Do not commit; list modified files and the exact passing command.
 
@@ -99,29 +99,29 @@ Do not commit; list modified files and the exact passing command.
 - Produces: `RuntimeProviderRoute.credential_tier: Literal["platform", "byok", "both"]` in the signed/hash-addressed snapshot.
 - Produces: `DEFAULT_RELEASE_CHAINS` or an equivalent immutable mapping for the approved en/ur/ar/ms chains.
 
-- [ ] **Step 1: Write failing compiler and default-chain tests**
+- [x] **Step 1: Write failing compiler and default-chain tests**
 
 Test that `byok` and `both` require a non-empty `credential_ref`, `platform` rejects a tenant reference, client input cannot alter a compiled tier, the plan hash changes with the tier, all advertised providers declare `BOTH` capability after H07, and the approved four-language chains match the specification.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `py -3.12 -m pytest tests/agents/test_session_plan_compiler.py tests/providers/test_provider_catalog.py -q`
 
-- [ ] **Step 3: Add typed route policy and compiler validation**
+- [x] **Step 3: Add typed route policy and compiler validation**
 
 Add the fields above, validate tier/reference combinations before creating `RuntimeProviderRoute`, and keep all plaintext-secret rejection rules. Increment `SESSION_PLAN_SCHEMA_VERSION` because the authenticated snapshot shape changes.
 
-- [ ] **Step 4: Encode the approved candidate chains**
+- [x] **Step 4: Encode the approved candidate chains**
 
 Represent Gladia→Deepgram and Groq→Gemini for all four languages, Uplift→Cartesia for Urdu, and Cartesia→ElevenLabs for English/Arabic/Malay. OpenAI remains catalogued but absent from mandatory defaults.
 
-- [ ] **Step 5: Run Task 2 tests**
+- [x] **Step 5: Run Task 2 tests**
 
 Run: `py -3.12 -m pytest tests/agents/test_session_plan_compiler.py tests/providers/test_provider_catalog.py -q`
 
 Expected: all pass, including snapshot integrity tests.
 
-- [ ] **Step 6: Update the ignored execution checkpoint**
+- [x] **Step 6: Update the ignored execution checkpoint**
 
 Record the schema version and passing command; do not commit.
 
@@ -149,29 +149,29 @@ Record the schema version and passing command; do not commit.
 - Produces: `build_tts_provider(provider_id, *, api_key, model=None, speaking_config=None)`.
 - Produces: `build_live_stt_session(provider_id, *, api_key, language, endpointing, receive_partials)`.
 
-- [ ] **Step 1: Write failing injection tests**
+- [x] **Step 1: Write failing injection tests**
 
 Parameterize all eight provider adapters. Set matching provider-key environment variables to sentinel values, construct adapters with a different explicit key or `None`, and assert the sentinel is never loaded. Assert each factory passes the exact injected key and creates distinct primary/fallback objects.
 
-- [ ] **Step 2: Verify the tests fail against current environment lookup**
+- [x] **Step 2: Verify the tests fail against current environment lookup**
 
 Run: `py -3.12 -m pytest tests/providers/test_provider_credential_injection.py -q`
 
-- [ ] **Step 3: Remove provider-key environment reads from adapters**
+- [x] **Step 3: Remove provider-key environment reads from adapters**
 
 Keep non-secret endpoint, voice, audio-format, and test-mode configuration reads in scope. Adapter constructors may accept `None` for explicit mock tests, but factories require the `api_key` keyword with no default.
 
-- [ ] **Step 4: Pass model selection through factories**
+- [x] **Step 4: Pass model selection through factories**
 
 Use published route models for Deepgram, LLM, Cartesia, and ElevenLabs where their adapters support model selection. Do not silently substitute a different provider.
 
-- [ ] **Step 5: Run Task 3 provider tests**
+- [x] **Step 5: Run Task 3 provider tests**
 
 Run: `py -3.12 -m pytest tests/providers tests/listening/test_gladia_live_stt.py tests/latency/test_no_live_network.py -q`
 
 Expected: all pass with live traffic disabled.
 
-- [ ] **Step 6: Update the ignored execution checkpoint**
+- [x] **Step 6: Update the ignored execution checkpoint**
 
 Record adapter/factory paths and passing command; do not commit.
 
@@ -194,31 +194,31 @@ Record adapter/factory paths and passing command; do not commit.
 - Produces: `ProviderInvocationError(failure: ProviderFailure)` for sanitized typed routing evidence.
 - Produces: bounded half-open probe acquisition in `ProviderHealthState`.
 
-- [ ] **Step 1: Write failing route construction and circuit-scope tests**
+- [x] **Step 1: Write failing route construction and circuit-scope tests**
 
 Test distinct adapter objects/provider IDs, catalog validation before credential resolution, two-usable-route enforcement, auth/quota isolation by credential scope, transient server sharing only within category/provider/model/region, category isolation, and exactly one concurrent half-open probe.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `py -3.12 -m pytest tests/providers/test_provider_routing.py tests/e2e/scenarios/test_failover_e2e.py -q`
 
-- [ ] **Step 3: Implement immutable route identities and builder**
+- [x] **Step 3: Implement immutable route identities and builder**
 
 Build each route independently from its own resolved credential and published model. Credential scope is metadata derived from tenant/reference/source/version and contains no secret material.
 
-- [ ] **Step 4: Split credential and provider health evidence**
+- [x] **Step 4: Split credential and provider health evidence**
 
 Authentication, quota, and configuration failures update only the concrete route scope. Timeout and transient-server failures update the provider/model/region/category scope. Preserve the compatibility path for existing string-priority tests while production routes use identities.
 
-- [ ] **Step 5: Bound half-open probes and sanitize aggregate errors**
+- [x] **Step 5: Bound half-open probes and sanitize aggregate errors**
 
 Allow one probe per health key and release the lease on success, failure, timeout, or cancellation. `NoProviderAvailableError` names failed routes and typed categories without exception reprs or response bodies.
 
-- [ ] **Step 6: Run Task 4 tests**
+- [x] **Step 6: Run Task 4 tests**
 
 Run: `py -3.12 -m pytest tests/providers/test_provider_routing.py tests/e2e/scenarios/test_failover_e2e.py tests/hardening/test_remediation_r1_r7.py -q`
 
-- [ ] **Step 7: Update the ignored execution checkpoint**
+- [x] **Step 7: Update the ignored execution checkpoint**
 
 Record route and circuit evidence; do not commit.
 
@@ -239,31 +239,31 @@ Record route and circuit evidence; do not commit.
 - Produces: `ProviderSessionBinder.bind(config: PipelineSessionConfig) -> BoundProviderChains`.
 - Changes: `PipelineOrchestrator.apply_provider_selection` binds complete chains once at session startup and category invocations select the adapter supplied by the router.
 
-- [ ] **Step 1: Write failing startup binding tests**
+- [x] **Step 1: Write failing startup binding tests**
 
 Test that all six primary/fallback objects for one language are constructed before readiness, the router invokes the selected route's adapter rather than a single shared provider, unavailable credentials reject startup, and teardown closes every constructed adapter exactly once.
 
-- [ ] **Step 2: Write production mock-safety tests**
+- [x] **Step 2: Write production mock-safety tests**
 
 With `UCVE_ENV=production`, `RUN_MOCK_PROVIDERS=0`, and `RUN_LIVE_PROVIDERS=0`, assert missing credentials and all-routes-down return typed failure and never synthesize the existing “I heard you say” mock response.
 
-- [ ] **Step 3: Verify the tests fail**
+- [x] **Step 3: Verify the tests fail**
 
 Run: `py -3.12 -m pytest tests/providers/test_session_provider_binding.py tests/listening/test_warm_stt_session.py tests/latency/test_pipeline_baseline.py -q`
 
-- [ ] **Step 4: Implement session binding and category routers**
+- [x] **Step 4: Implement session binding and category routers**
 
 Inject a `SecretVault`/route builder at the worker boundary, bind the selected language chains before audio readiness, and store category-specific routes/routers. Batch STT, LLM, and TTS callbacks use the adapter attached to the router-selected route. Live STT receives the primary route's injected key; unsupported live fallback remains the explicit batch path.
 
-- [ ] **Step 5: Enforce owned teardown and production fail-closed behavior**
+- [x] **Step 5: Enforce owned teardown and production fail-closed behavior**
 
 Close every bound adapter once. Retain synthetic replies only in explicit test/mock mode; production routing exhaustion surfaces the sanitized typed failure.
 
-- [ ] **Step 6: Run Task 5 tests**
+- [x] **Step 6: Run Task 5 tests**
 
 Run: `py -3.12 -m pytest tests/providers/test_session_provider_binding.py tests/listening tests/latency/test_pipeline_baseline.py -q`
 
-- [ ] **Step 7: Update the ignored execution checkpoint**
+- [x] **Step 7: Update the ignored execution checkpoint**
 
 Record worker integration evidence; do not commit.
 
@@ -281,30 +281,30 @@ Record worker integration evidence; do not commit.
 - Consumes: passing Tasks 1–5 and their checkpoint evidence.
 - Produces: a reviewable Phase 07B diff and explicit Phase 07C starting point.
 
-- [ ] **Step 1: Run focused Phase 07B verification**
+- [x] **Step 1: Run focused Phase 07B verification**
 
 Run with forced-offline environment:
 
 `py -3.12 -m pytest tests/security/test_provider_credentials.py tests/providers tests/agents/test_session_plan_compiler.py tests/e2e/scenarios/test_failover_e2e.py tests/listening/test_warm_stt_session.py tests/latency/test_no_live_network.py -q`
 
-- [ ] **Step 2: Run the full forced-offline suite**
+- [x] **Step 2: Run the full forced-offline suite**
 
 Run: `py -3.12 -m pytest -q`
 
 Expected: no new failure; record exact pass/skip/warning counts without hiding existing failures.
 
-- [ ] **Step 3: Run static verification**
+- [x] **Step 3: Run static verification**
 
 Run scoped Ruff, `python -m compileall -q` on modified Python packages/tests, `python voice_engine_plan/scripts/verify_plan_integrity.py`, and `git diff --check`.
 
-- [ ] **Step 4: Run secret and forbidden-scope review**
+- [x] **Step 4: Run secret and forbidden-scope review**
 
 Scan the Phase 07B diff for credential-shaped literals, authorization headers in logs, `.env`/raw-key paths, live-network enabling, edits under `legacy_codebases/`, `docs/blueprint/`, or `.github/workflows`, and accidental secret serialization.
 
-- [ ] **Step 5: Write evidence and sync trackers**
+- [x] **Step 5: Write evidence and sync trackers**
 
 Record commands/results, changed architecture, limitations, no-live-traffic statement, rollback base `d9e59f1`, and the explicit fact that durable credential persistence remains Phase 09. Set 07B to `READY FOR COMMIT APPROVAL`; leave 07C `NOT STARTED`.
 
-- [ ] **Step 6: Stop for Hamzi's commit/push confirmation**
+- [x] **Step 6: Stop for Hamzi's commit/push confirmation**
 
 Do not stage, commit, or push until that confirmation is received.

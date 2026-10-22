@@ -1,6 +1,6 @@
 # Phase 07 — Provider Routing, Failover, and Credentials
 
-**Status:** SPLIT — 07A READY FOR FINAL QA; H07 RESOLVED; 07B PLAN REVIEW
+**Status:** SPLIT — 07A READY FOR FINAL QA; 07B READY FOR FINAL QA; 07C NOT STARTED
 
 **Goal:** Select real tenant-authorized providers by capability and make failover truthful, independent, stream-safe, and observable.
 
@@ -20,8 +20,9 @@ in `07b-tenant-credentials-and-routing.md`.
   unknown-provider rejection, failure taxonomy, compiler/factory integration,
   and offline contract tests. Does not resolve H07.
 - **07B — Tenant credentials and independent routing:** SecretVault resolution,
-  cache isolation/rotation, real provider instances, scoped health and circuit
-  evidence. Blocked on H07 credential-tier and release-chain decisions.
+  cache isolation/rotation/revocation, real provider instances, scoped health
+  and circuit evidence. Implemented, verified offline, and committed locally;
+  awaiting separate push approval.
 - **07C — Stream-safe failover and adapter hardening:** pre/post-commit rules,
   tool-call normalization, adapter deadlines/cancellation, partial-stream repair,
   and both-down behavior. Live qualification remains a separate V5 gate.
