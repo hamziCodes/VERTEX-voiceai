@@ -1,6 +1,6 @@
 # Phase 07 — Provider Routing, Failover, and Credentials
 
-**Status:** SPLIT — 07A READY FOR FINAL QA; 07B READY FOR FINAL QA; 07C NOT STARTED
+**Status:** READY FOR FINAL QA — 07A, 07B, AND 07C VERIFIED
 
 **Goal:** Select real tenant-authorized providers by capability and make failover truthful, independent, stream-safe, and observable.
 
@@ -37,16 +37,16 @@ Only one checkpoint is executed and verified at a time.
 
 ## Tasks
 
-- [ ] Define strict ProviderSpec by capability/model/region/language/streaming/tools/audio/compliance/key tier; reject unknown IDs.
-- [ ] Inject resolved credential into adapter construction through tenant-scoped SecretVault; never cache across tenant/provider identity incorrectly.
-- [ ] Implement actual provider IDs in callbacks; prove secondary instance differs from primary.
-- [ ] Share circuit evidence by category/provider/model/region with bounded half-open probes; do not mix LLM and TTS health.
-- [ ] Map HTTP/auth/quota/rate/timeout/config/invalid-output errors to typed categories and retry policy.
-- [ ] Remove live-path mocks and always-healthy checks. Test mode selects test providers explicitly.
-- [ ] Normalize tools per LLM adapter; fix OpenAI serialization/nonexistent option access and test fragmented tool calls.
-- [ ] Implement pre-commit failover and post-commit repair rules; forbid duplicate side-effect tools.
-- [ ] Add cancellation and connect/first/inter-chunk/overall deadlines to every adapter.
-- [ ] Test per-language capability, compliance/BYOK/platform rules, rotation, cache eviction, primary 401/429/5xx/partial stream, and both-down behavior.
+- [x] Define strict ProviderSpec by capability/model/region/language/streaming/tools/audio/compliance/key tier; reject unknown IDs.
+- [x] Inject resolved credential into adapter construction through tenant-scoped SecretVault; never cache across tenant/provider identity incorrectly.
+- [x] Implement actual provider IDs in callbacks; prove secondary instance differs from primary.
+- [x] Share circuit evidence by category/provider/model/region with bounded half-open probes; do not mix LLM and TTS health.
+- [x] Map HTTP/auth/quota/rate/timeout/config/invalid-output errors to typed categories and retry policy.
+- [x] Remove live-path mocks and always-healthy checks. Test mode selects test providers explicitly.
+- [x] Normalize tools per LLM adapter; fix OpenAI serialization/nonexistent option access and test fragmented tool calls.
+- [x] Implement pre-commit failover and post-commit repair rules; forbid duplicate side-effect tools.
+- [x] Add cancellation and connect/first/inter-chunk/overall deadlines to every routed adapter stream.
+- [x] Test per-language capability, compliance/BYOK/platform rules, rotation, cache eviction, primary 401/429/5xx/partial stream, and both-down behavior.
 
 ## Verification
 
