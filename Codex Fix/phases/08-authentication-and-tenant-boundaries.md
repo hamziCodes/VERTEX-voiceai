@@ -1,6 +1,6 @@
 # Phase 08 — Authentication and Tenant Boundaries
 
-**Status:** NOT STARTED
+**Status:** SPLIT — 08A/08B VERIFIED, AWAITING COMMIT; 08C/08D NOT STARTED
 
 **Goal:** Authenticate every management operation, derive tenant/role from trusted identity, and bind mint/session tokens to authorized tenants and agents.
 
@@ -10,7 +10,9 @@
 
 ## Human gate before implementation
 
-Resolve H08 before selecting IdP/session architecture. API-key management and offline authorization tests can start from the existing scope model.
+H08 was resolved on 2026-10-22. Dashboard identity uses a provider-neutral
+external OIDC boundary; SDK/server management uses scoped tenant API keys.
+Session JWT and mint/replay hardening remain 08C.
 
 ## Files and interfaces
 
@@ -21,9 +23,9 @@ Resolve H08 before selecting IdP/session architecture. API-key management and of
 
 ## Tasks
 
-- [ ] Inventory every registered route and declare auth/scopes/roles; make public health/docs choices explicit.
-- [ ] Ignore/reject caller tenant headers that disagree with AuthContext; pass context through services/repositories.
-- [ ] Persist hashed API keys with tenant, scopes, role, expiry/revocation and last-used metadata.
+- [x] Inventory every registered route and declare auth/scopes/roles; make public health/docs choices explicit.
+- [x] Ignore/reject caller tenant headers that disagree with AuthContext; pass context through services/repositories.
+- [x] Persist hashed API keys with tenant, scopes, role, expiry/revocation and last-used metadata.
 - [ ] Bind quick/signed mint to authenticated tenant and tenant-owned published agent.
 - [ ] Replace nonce exists-then-set with atomic Redis SET NX + TTL and test concurrent replay.
 - [ ] Require JWT tenant/agent/session/action/iat/exp plus issuer/audience/jti; define one-use/concurrent-socket and refresh/revocation policy.

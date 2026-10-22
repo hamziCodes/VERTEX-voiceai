@@ -2,29 +2,61 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 
 class RBACManager:
-    """RBAC policy matrix for platform_admin, tenant_admin, tenant_editor, tenant_viewer, and compliance_admin."""
+    """Permission matrix for platform, tenant, and compliance roles."""
 
     _matrix: dict[str, set[str]] = {
         "platform_admin": {"*"},
         "tenant_admin": {
-            "agent:read", "agent:write", "session:mint", "session:read",
-            "usage:read", "secret:rotate", "audit:read", "member:write"
+            "agent:read",
+            "agent:write",
+            "session:mint",
+            "session:read",
+            "usage:read",
+            "secret:rotate",
+            "audit:read",
+            "member:write",
+            "knowledge:read",
+            "knowledge:write",
+            "extraction:read",
+            "extraction:write",
+            "alert:read",
+            "alert:write",
         },
         "tenant_editor": {
-            "agent:read", "agent:write", "session:mint", "session:read",
-            "usage:read", "audit:read"
+            "agent:read",
+            "agent:write",
+            "session:mint",
+            "session:read",
+            "usage:read",
+            "audit:read",
+            "knowledge:read",
+            "knowledge:write",
+            "extraction:read",
+            "extraction:write",
+            "alert:read",
+            "alert:write",
         },
         "tenant_viewer": {
-            "agent:read", "session:read", "usage:read"
+            "agent:read",
+            "session:read",
+            "usage:read",
+            "knowledge:read",
+            "extraction:read",
+            "alert:read",
         },
         "compliance_admin": {
-            "audit:read", "erasure:execute", "legal_hold:manage", "compliance:write"
+            "audit:read",
+            "erasure:execute",
+            "legal_hold:manage",
+            "compliance:write",
         },
     }
+
+    @classmethod
+    def roles(cls) -> frozenset[str]:
+        return frozenset(cls._matrix)
 
     @classmethod
     def check_permission(cls, role: str, resource: str, action: str) -> bool:

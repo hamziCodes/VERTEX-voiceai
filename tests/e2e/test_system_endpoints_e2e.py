@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from control_plane.app import app as control_plane_app
+from control_plane.auth.api_keys import APIKeyManager
 from core.protocol.realtime import build_event
 from core.providers.factory import (
     SUPPORTED_LLM,
@@ -36,6 +37,8 @@ def _offline_demo_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UCVE_DEMO_MODE", "1")
     monkeypatch.setenv("RUN_MOCK_PROVIDERS", "1")
     monkeypatch.setenv("RUN_LIVE_PROVIDERS", "0")
+    monkeypatch.setenv("UCVE_METRICS_BEARER", "test-metrics-bearer")
+    control_plane_app.state.api_keys = APIKeyManager()
 
 
 @pytest.fixture
@@ -95,7 +98,16 @@ def test_control_plane_quick_mint(cp_client: TestClient) -> None:
 
 def test_control_plane_knowledge_base_status(cp_client: TestClient) -> None:
     tenant_id = "00000000-0000-0000-0000-000000000001"
-    res = cp_client.get(f"/v1/knowledge-bases/status/{tenant_id}")
+    raw_key, _ = control_plane_app.state.api_keys.generate_api_key(
+        tenant_id,
+        "e2e-knowledge-reader",
+        scopes=["knowledge:read"],
+        role="tenant_viewer",
+    )
+    res = cp_client.get(
+        f"/v1/knowledge-bases/status/{tenant_id}",
+        headers={"Authorization": f"Bearer {raw_key}"},
+    )
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "ready"

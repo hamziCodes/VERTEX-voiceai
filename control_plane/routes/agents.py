@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from control_plane.agents import (
@@ -15,8 +15,12 @@ from control_plane.agents import (
     SessionConfigPin,
 )
 from control_plane.agents.repo import get_default_agent_config_repo
+from control_plane.auth.context import AuthContext
+from control_plane.auth.dependencies import require_permission
 
 router = APIRouter(prefix="/v1/agents", tags=["agents"])
+AgentReader = Annotated[AuthContext, Depends(require_permission("agent:read"))]
+AgentWriter = Annotated[AuthContext, Depends(require_permission("agent:write"))]
 
 # Module-level default repository and pin engine instance
 _agent_repo = get_default_agent_config_repo()
@@ -54,10 +58,10 @@ class PinSessionBody(BaseModel):
 @router.post("", status_code=201)
 async def create_agent(
     body: CreateAgentBody,
-    x_tenant_id: str = Header(default="00000000-0000-0000-0000-000000000001"),
+    auth: AgentWriter,
 ) -> dict[str, Any]:
     """Create a new agent draft under the tenant."""
-    tenant_uuid = UUID(x_tenant_id)
+    tenant_uuid = UUID(auth.tenant_id)
     config_dict: dict[str, Any] = {
         "tenant_id": tenant_uuid,
         "name": body.name,
@@ -78,10 +82,10 @@ async def create_agent(
 
 @router.get("")
 async def list_agents(
-    x_tenant_id: str = Header(default="00000000-0000-0000-0000-000000000001"),
+    auth: AgentReader,
 ) -> list[dict[str, Any]]:
     """List all agents for the tenant."""
-    tenant_uuid = UUID(x_tenant_id)
+    tenant_uuid = UUID(auth.tenant_id)
     agents = _agent_repo.list_agents(tenant_uuid)
     return [a.model_dump(mode="json") for a in agents]
 
@@ -89,10 +93,10 @@ async def list_agents(
 @router.get("/{agent_id}")
 async def get_agent_draft(
     agent_id: UUID,
-    x_tenant_id: str = Header(default="00000000-0000-0000-0000-000000000001"),
+    auth: AgentReader,
 ) -> dict[str, Any]:
     """Retrieve the editable draft of an agent."""
-    tenant_uuid = UUID(x_tenant_id)
+    tenant_uuid = UUID(auth.tenant_id)
     try:
         draft = _agent_repo.get_draft(tenant_uuid, agent_id)
         return draft.model_dump(mode="json")
@@ -104,10 +108,10 @@ async def get_agent_draft(
 async def autosave_draft(
     agent_id: UUID,
     body: AutosavePatchBody,
-    x_tenant_id: str = Header(default="00000000-0000-0000-0000-000000000001"),
+    auth: AgentWriter,
 ) -> dict[str, Any]:
     """Apply debounced updates to the agent draft."""
-    tenant_uuid = UUID(x_tenant_id)
+    tenant_uuid = UUID(auth.tenant_id)
     try:
         config, did_save = _agent_repo.save_draft_autosave(
             tenant_uuid,
@@ -127,16 +131,19 @@ async def autosave_draft(
 @router.post("/{agent_id}/publish")
 async def publish_agent(
     agent_id: UUID,
-    x_tenant_id: str = Header(default="00000000-0000-0000-0000-000000000001"),
-    x_actor: str = Header(default="system"),
+    auth: AgentWriter,
 ) -> dict[str, Any]:
     """Validate and publish an agent draft into an immutable version snapshot."""
-    tenant_uuid = UUID(x_tenant_id)
+    tenant_uuid = UUID(auth.tenant_id)
     try:
-        published, val_res = _agent_repo.publish(tenant_uuid, agent_id, published_by=x_actor)
+        published, val_res = _agent_repo.publish(
+            tenant_uuid, agent_id, published_by=auth.subject_id
+        )
         return {
             "version": published.version,
-            "published_at": published.published_at.isoformat() if published.published_at else None,
+            "published_at": published.published_at.isoformat()
+            if published.published_at
+            else None,
             "config": published.model_dump(mode="json"),
         }
     except AgentNotFoundError as exc:
@@ -148,10 +155,10 @@ async def publish_agent(
 @router.get("/{agent_id}/versions")
 async def list_agent_versions(
     agent_id: UUID,
-    x_tenant_id: str = Header(default="00000000-0000-0000-0000-000000000001"),
+    auth: AgentReader,
 ) -> list[dict[str, Any]]:
     """List published version metadata."""
-    tenant_uuid = UUID(x_tenant_id)
+    tenant_uuid = UUID(auth.tenant_id)
     try:
         return _agent_repo.list_versions(tenant_uuid, agent_id)
     except AgentNotFoundError as exc:
@@ -162,10 +169,10 @@ async def list_agent_versions(
 async def get_agent_version_snapshot(
     agent_id: UUID,
     version: int,
-    x_tenant_id: str = Header(default="00000000-0000-0000-0000-000000000001"),
+    auth: AgentReader,
 ) -> dict[str, Any]:
     """Get an immutable published snapshot by version."""
-    tenant_uuid = UUID(x_tenant_id)
+    tenant_uuid = UUID(auth.tenant_id)
     try:
         cfg = _agent_repo.get_published_version(tenant_uuid, agent_id, version=version)
         return cfg.model_dump(mode="json")
@@ -177,10 +184,10 @@ async def get_agent_version_snapshot(
 async def pin_session_config(
     agent_id: UUID,
     body: PinSessionBody,
-    x_tenant_id: str = Header(default="00000000-0000-0000-0000-000000000001"),
+    auth: AgentWriter,
 ) -> dict[str, Any]:
     """Pin an active session to a published agent version snapshot."""
-    tenant_uuid = UUID(x_tenant_id)
+    tenant_uuid = UUID(auth.tenant_id)
     try:
         pinned = _pin_engine.pin_session(
             body.session_id, tenant_uuid, agent_id, version=body.version

@@ -6,7 +6,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator
+from typing import Annotated, Any, AsyncGenerator
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,7 +16,8 @@ from pydantic import BaseModel, Field
 from control_plane.audit_routes import handle_get_audit_logs
 from control_plane.auth.api_keys import APIKeyManager
 from control_plane.auth.hmac_mint import expected_signature
-from control_plane.auth.middleware import enforce_rbac
+from control_plane.auth.context import AuthContext
+from control_plane.auth.dependencies import enforce_tenant_access, require_permission
 from control_plane.metrics import handle_metrics_request
 from control_plane.routes.agents import router as agents_router
 from control_plane.routes.alerts import router as alerts_router
@@ -49,6 +50,13 @@ class RotateSecretBody(BaseModel):
 
 class RefreshBody(BaseModel):
     token: str
+
+
+UsageReader = Annotated[AuthContext, Depends(require_permission("usage:read"))]
+AuditReader = Annotated[AuthContext, Depends(require_permission("audit:read"))]
+SecretRotator = Annotated[
+    AuthContext, Depends(require_permission("secret:rotate"))
+]
 
 
 def _mint_secret() -> str:
@@ -87,7 +95,9 @@ def _allowed_origins() -> list[str]:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     require_production_secrets()
     app.state.mint_ctx = get_default_mint_context()
-    app.state.api_keys = APIKeyManager()
+    if not hasattr(app.state, "api_keys"):
+        app.state.api_keys = APIKeyManager()
+    app.state.api_keys.assert_runtime_ready(get_ucve_env())
     app.state.db_pool = None
     app.state.redis = None
     yield
@@ -129,7 +139,6 @@ if web_client_path.exists():
 async def request_id_and_tenant_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
     request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
     request.state.request_id = request_id
-    request.state.tenant_id = request.headers.get("x-tenant-id")
     response: Response = await call_next(request)
     response.headers["X-Request-Id"] = request_id
     return response
@@ -258,31 +267,11 @@ async def refresh_session(body: RefreshBody) -> dict[str, Any]:
     return payload
 
 
-async def require_tenant_context(
-    request: Request,
-    x_tenant_id: str | None = Header(None, alias="X-Tenant-Id"),
-    x_actor_role: str | None = Header(None, alias="X-Actor-Role"),
-    authorization: str | None = Header(None, alias="Authorization"),
-) -> tuple[str, str]:
-    """Resolve tenant and role from verified API key / JWT credentials only."""
-    if authorization and authorization.lower().startswith("bearer "):
-        raw = authorization.split(" ", 1)[1].strip()
-        if raw.startswith("ucve_live_"):
-            try:
-                rec = request.app.state.api_keys.verify_api_key(raw)
-            except PermissionError as exc:
-                raise HTTPException(status_code=401, detail=str(exc)) from exc
-            role = str(rec.get("role") or "tenant_viewer")
-            return str(rec["tenant_id"]), role
-        raise HTTPException(status_code=401, detail="Invalid bearer token")
-    raise HTTPException(status_code=401, detail="Authorization required")
-
-
 @app.get("/v1/usage")
 async def get_usage(
-    tenant: tuple[str, str] = Depends(require_tenant_context),
+    auth: UsageReader,
 ) -> dict[str, Any]:
-    tenant_id, _role = tenant
+    tenant_id = auth.tenant_id
     status, body = handle_get_usage(tenant_id, tenant_id)
     if status != 200:
         raise HTTPException(status_code=status, detail=body.get("error"))
@@ -291,14 +280,10 @@ async def get_usage(
 
 @app.get("/v1/audit")
 async def get_audit(
-    tenant: tuple[str, str] = Depends(require_tenant_context),
+    auth: AuditReader,
 ) -> dict[str, Any]:
-    tenant_id, role = tenant
-    try:
-        enforce_rbac(role, "audit", "read")
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    status, body = handle_get_audit_logs(tenant_id, tenant_id, actor_role=role)
+    tenant_id = auth.tenant_id
+    status, body = handle_get_audit_logs(tenant_id, tenant_id, actor_role=auth.primary_role)
     if status != 200:
         raise HTTPException(status_code=status, detail=body.get("error"))
     return body
@@ -307,15 +292,9 @@ async def get_audit(
 @app.post("/v1/secrets/rotate")
 async def rotate_secret(
     body: RotateSecretBody,
-    tenant: tuple[str, str] = Depends(require_tenant_context),
+    auth: SecretRotator,
 ) -> dict[str, Any]:
-    tenant_id, role = tenant
-    try:
-        enforce_rbac(role, "secret", "rotate")
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    if body.tenant_id != tenant_id and role != "platform_admin":
-        raise HTTPException(status_code=403, detail="Cross-tenant secret rotate forbidden.")
+    enforce_tenant_access(auth, body.tenant_id)
     status, payload = handle_rotate_secret(body.tenant_id, body.provider_id, body.new_secret)
     if status != 200:
         raise HTTPException(status_code=status, detail=payload.get("error"))
