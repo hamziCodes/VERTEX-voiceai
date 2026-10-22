@@ -1,6 +1,6 @@
 # Phase 07 — Provider Routing, Failover, and Credentials
 
-**Status:** SPLIT — 07A READY FOR FINAL QA
+**Status:** SPLIT — 07A READY FOR FINAL QA; H07 RESOLVED; 07B PLAN REVIEW
 
 **Goal:** Select real tenant-authorized providers by capability and make failover truthful, independent, stream-safe, and observable.
 
@@ -10,7 +10,9 @@
 
 ## Human gate before implementation
 
-Resolve H07. Provider adapters can be normalized offline, but release chains and credential tiers cannot be assumed.
+H07 was resolved by Hamzi on 2026-10-22. Phase 07B uses platform-managed and
+tenant BYOK tiers with explicit fallback policy and the language chains recorded
+in `07b-tenant-credentials-and-routing.md`.
 
 ## Execution split
 

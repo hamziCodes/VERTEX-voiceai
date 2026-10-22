@@ -10,7 +10,7 @@ The executor records dated answers here. No secret values belong in this file.
 | H04 | 02 | Choose aggressive (~400 ms), balanced (~550–650 ms), or adaptive endpoint after evidence | Speed versus cutoff tradeoff | DEFER UNTIL EVIDENCE |
 | H05 | 05 | Is Flutter in v1? Is LiveKit offered or roadmap-only? | Decides whether stubs block release | RESOLVED 2026-10-20 — v1 ships the raw-WebSocket Python and TypeScript SDKs; Flutter and LiveKit are explicitly roadmap-only |
 | H06 | 06 | May token holders override prompt/providers, or is published config authoritative? | Security and reproducibility | RESOLVED 2026-10-20 — published configuration is authoritative in production; sessions may choose only options explicitly allowed by that version; unrestricted overrides require an explicit local-development-only unsafe flag |
-| H07 | 07 | Platform keys, BYOK, or both; required vendors per language | Credential/routing scope | OPEN |
+| H07 | 07 | Platform keys, BYOK, or both; required vendors per language | Credential/routing scope | RESOLVED 2026-10-22 — support platform-managed and tenant BYOK tiers; `platform` uses only WAVIA keys, `byok` uses only tenant keys, and explicit `both` prefers tenant keys with platform fallback; STT Gladia→Deepgram for en/ur/ar/ms; LLM Groq→Gemini for en/ur/ar/ms with OpenAI optional; TTS Uplift→Cartesia for ur and Cartesia→ElevenLabs for en/ar/ms |
 | H08 | 08 | Existing IdP, first-party auth, or API-key-only v1; admin model | Auth architecture | OPEN |
 | H09 | 09 | Provide or run disposable PostgreSQL+pgvector and Redis | Required for RLS/migration/quota proof | OPEN |
 | H10 | 10 | Allowed tools/data systems; define “hypercodes” | Feature was not found and must not be invented | OPEN |
