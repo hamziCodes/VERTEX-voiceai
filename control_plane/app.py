@@ -5,8 +5,9 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Annotated, Any, AsyncGenerator
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +17,7 @@ from pydantic import BaseModel, Field
 from control_plane.audit_routes import handle_get_audit_logs
 from control_plane.auth.api_keys import APIKeyManager
 from control_plane.auth.hmac_mint import expected_signature
+from control_plane.auth.rate_limit import RateLimiter
 from control_plane.auth.context import AuthContext
 from control_plane.auth.dependencies import enforce_tenant_access, require_permission
 from control_plane.metrics import handle_metrics_request
@@ -36,10 +38,18 @@ from core.runtime.env import get_ucve_env, require_production_secrets
 
 
 class QuickMintBody(BaseModel):
-    tenant_id: str = "00000000-0000-0000-0000-000000000001"
-    agent_id: str = "00000000-0000-0000-0000-0000000000a1"
-    language: str | None = None
-    voice_id: str | None = None
+    tenant_id: str = Field(
+        default="00000000-0000-0000-0000-000000000001",
+        min_length=1,
+        max_length=128,
+    )
+    agent_id: str = Field(
+        default="00000000-0000-0000-0000-0000000000a1",
+        min_length=1,
+        max_length=128,
+    )
+    language: str | None = Field(default=None, max_length=32)
+    voice_id: str | None = Field(default=None, max_length=255)
 
 
 class RotateSecretBody(BaseModel):
@@ -49,7 +59,7 @@ class RotateSecretBody(BaseModel):
 
 
 class RefreshBody(BaseModel):
-    token: str
+    token: str = Field(min_length=1, max_length=4096)
 
 
 UsageReader = Annotated[AuthContext, Depends(require_permission("usage:read"))]
@@ -69,6 +79,8 @@ def _metrics_bearer() -> str:
 
 def _demo_mode() -> bool:
     """Allow unauthenticated /mint for local demo console (development only by default)."""
+    if get_ucve_env() not in {"development", "dev", "test"}:
+        return False
     explicit = os.environ.get("UCVE_DEMO_MODE")
     if explicit is not None:
         return explicit.strip() == "1"
@@ -95,6 +107,7 @@ def _allowed_origins() -> list[str]:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     require_production_secrets()
     app.state.mint_ctx = get_default_mint_context()
+    app.state.auth_endpoint_limiter = RateLimiter(limit_per_min=60)
     if not hasattr(app.state, "api_keys"):
         app.state.api_keys = APIKeyManager()
     app.state.api_keys.assert_runtime_ready(get_ucve_env())
@@ -139,6 +152,37 @@ if web_client_path.exists():
 async def request_id_and_tenant_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
     request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
     request.state.request_id = request_id
+    auth_paths = {
+        "/mint",
+        "/v1/session",
+        "/v1/session/mint",
+        "/v1/session/refresh",
+    }
+    if request.url.path in auth_paths:
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                request_size = int(content_length)
+            except ValueError:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid request metadata."},
+                    headers={"X-Request-Id": request_id},
+                )
+            if request_size > 8192:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Authentication request is too large."},
+                    headers={"X-Request-Id": request_id},
+                )
+        peer = request.client.host if request.client else "unknown"
+        limiter = getattr(request.app.state, "auth_endpoint_limiter", None)
+        if limiter is not None and not limiter.is_allowed(f"auth-peer:{peer}"):
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Authentication rate limit exceeded."},
+                headers={"X-Request-Id": request_id, "Retry-After": "60"},
+            )
     response: Response = await call_next(request)
     response.headers["X-Request-Id"] = request_id
     return response
@@ -173,11 +217,19 @@ async def json_version() -> dict[str, str]:
 @app.post("/v1/session")
 async def mint_session(
     request: Request,
-    x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
-    x_timestamp: str = Header(..., alias="X-Timestamp"),
-    x_nonce: str = Header(..., alias="X-Nonce"),
-    x_agent_id: str = Header(..., alias="X-Agent-Id"),
-    x_signature: str = Header(..., alias="X-Signature"),
+    x_tenant_id: str = Header(
+        ..., alias="X-Tenant-Id", min_length=1, max_length=128
+    ),
+    x_timestamp: str = Header(
+        ..., alias="X-Timestamp", min_length=1, max_length=32
+    ),
+    x_nonce: str = Header(..., alias="X-Nonce", min_length=8, max_length=255),
+    x_agent_id: str = Header(
+        ..., alias="X-Agent-Id", min_length=1, max_length=128
+    ),
+    x_signature: str = Header(
+        ..., alias="X-Signature", min_length=64, max_length=128
+    ),
     origin: str | None = Header(None, alias="Origin"),
     referer: str | None = Header(None, alias="Referer"),
     authorization: str | None = Header(None, alias="Authorization"),
@@ -189,7 +241,11 @@ async def mint_session(
     if authorization and authorization.lower().startswith("bearer "):
         raw = authorization.split(" ", 1)[1].strip()
         try:
-            request.app.state.api_keys.verify_api_key(raw, required_scope="session:mint")
+            record = request.app.state.api_keys.verify_api_key(
+                raw, required_scope="session:mint"
+            )
+            if str(record["tenant_id"]) != x_tenant_id:
+                raise HTTPException(status_code=403, detail="Tenant context mismatch.")
             api_key_mint = True
         except PermissionError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
@@ -229,7 +285,11 @@ async def quick_mint_session(
     elif authorization and authorization.lower().startswith("bearer "):
         raw = authorization.split(" ", 1)[1].strip()
         try:
-            request.app.state.api_keys.verify_api_key(raw, required_scope="session:mint")
+            record = request.app.state.api_keys.verify_api_key(
+                raw, required_scope="session:mint"
+            )
+            if str(record["tenant_id"]) != body.tenant_id:
+                raise HTTPException(status_code=403, detail="Tenant context mismatch.")
             api_key_mint = True
         except PermissionError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
@@ -260,8 +320,11 @@ async def quick_mint_session(
 
 
 @app.post("/v1/session/refresh")
-async def refresh_session(body: RefreshBody) -> dict[str, Any]:
-    status, payload = handle_session_refresh(body.token)
+async def refresh_session(body: RefreshBody, request: Request) -> dict[str, Any]:
+    ctx: MintContext = (
+        getattr(request.app.state, "mint_ctx", None) or get_default_mint_context()
+    )
+    status, payload = await handle_session_refresh(body.token, ctx=ctx)
     if status != 200:
         raise HTTPException(status_code=status, detail=payload.get("error", "refresh failed"))
     return payload

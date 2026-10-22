@@ -13,6 +13,7 @@ from control_plane.auth.jwt import verify_session_jwt
 from control_plane.routes.session import MintContext, handle_session_mint
 from core.db.models import Agent, Tenant
 from core.language.router import LanguageRouter
+from core.redis.nonce_store import NonceStore
 from tests.agents.test_session_plan_compiler import make_config, publish
 from worker_raw.main import SessionPlanLoadError, _load_session_config
 from worker_raw.orchestration.session_config import PipelineSessionConfig
@@ -166,6 +167,19 @@ async def test_invalid_selection_and_unpublished_agent_fail_closed(
     )
     monkeypatch.setenv("UCVE_ENV", "production")
     monkeypatch.setenv("UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES", "1")
+
+    class AllowRateLimit:
+        def is_allowed(self, _tenant_id: str) -> bool:
+            return True
+
+    class AvailableReplayStore:
+        async def set(
+            self, _key: str, _value: str, *, ex: int, nx: bool = False
+        ) -> bool:
+            return ex > 0 and nx
+
+    empty_ctx.rate_limiter = AllowRateLimit()  # type: ignore[assignment]
+    empty_ctx.nonce_store = NonceStore(redis_client=AvailableReplayStore())
     status, body = await _mint(
         empty_ctx, other_tenant, other_agent, "unpublished-production"
     )

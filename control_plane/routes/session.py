@@ -3,33 +3,31 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
-from control_plane.auth.hmac_mint import verify_mint_signature
-from control_plane.auth.jwt import issue_session_jwt, verify_session_jwt
-from control_plane.auth.rate_limit import RateLimiter
 from control_plane.agents.compiler import (
     SessionPlanCompilationError,
     build_unsafe_demo_plan,
     compile_agent_version,
 )
 from control_plane.agents.repo import AgentConfigRepo, get_default_agent_config_repo
+from control_plane.auth.hmac_mint import verify_mint_signature
+from control_plane.auth.jwt import issue_session_jwt, verify_session_jwt
+from control_plane.auth.rate_limit import RateLimiter
 from core.db.models import Session, Tenant
-from core.db.repos.session_repo import SessionRepository
-from core.db.repos.tenant_repo import TenantRepository
-from core.metering.quota_enforcer import QuotaEnforcer
-from core.redis.nonce_store import NonceStore
-from core.runtime.admission import CapacityExceededError, SessionAdmissionController
-from core.types.ids import generate_session_id
-
-
 from core.db.repos.pg_repos import (
     build_session_repository,
     build_tenant_repository,
 )
+from core.metering.quota_enforcer import QuotaEnforcer
+from core.redis.nonce_store import NonceStore, ReplayStoreUnavailableError
+from core.redis.token_store import SessionTokenStore
+from core.runtime.admission import CapacityExceededError, SessionAdmissionController
+from core.types.ids import generate_session_id
 
 
 @dataclass
@@ -37,14 +35,19 @@ class MintContext:
     """Injectable dependencies for session mint."""
 
     nonce_store: NonceStore = field(default_factory=NonceStore)
+    token_store: SessionTokenStore = field(default_factory=SessionTokenStore)
     tenant_repo: Any = field(default_factory=build_tenant_repository)
     session_repo: Any = field(default_factory=build_session_repository)
     agent_config_repo: AgentConfigRepo = field(
         default_factory=get_default_agent_config_repo
     )
     quota: QuotaEnforcer = field(default_factory=QuotaEnforcer)
-    rate_limiter: RateLimiter = field(default_factory=lambda: RateLimiter(limit_per_min=120))
-    admission: SessionAdmissionController = field(default_factory=SessionAdmissionController)
+    rate_limiter: RateLimiter = field(
+        default_factory=lambda: RateLimiter(limit_per_min=120)
+    )
+    admission: SessionAdmissionController = field(
+        default_factory=SessionAdmissionController
+    )
     mint_rejections: list[dict[str, Any]] = field(default_factory=list)
     audit_events: list[dict[str, Any]] = field(default_factory=list)
 
@@ -75,7 +78,9 @@ def _origin_host(value: str | None) -> str | None:
     return host.lower().rstrip("/") if host else None
 
 
-def _origin_allowed(allowed: list[str], origin: str | None, referer: str | None) -> bool:
+def _origin_allowed(
+    allowed: list[str], origin: str | None, referer: str | None
+) -> bool:
     if not allowed:
         return True
     allowed_hosts = {_origin_host(a) for a in allowed if _origin_host(a)}
@@ -138,7 +143,14 @@ async def handle_session_mint(
         _record_rejection(mint_ctx, tenant_id, 401, "invalid or expired mint signature")
         return 401, {"error": "Invalid or expired mint signature."}
 
-    if await mint_ctx.nonce_store.is_used(tenant_id, nonce):
+    try:
+        nonce_claimed = await mint_ctx.nonce_store.consume_once(
+            tenant_id, nonce, ttl_sec=60
+        )
+    except ReplayStoreUnavailableError:
+        _record_rejection(mint_ctx, tenant_id, 503, "replay store unavailable")
+        return 503, {"error": "Authentication service temporarily unavailable."}
+    if not nonce_claimed:
         _record_rejection(mint_ctx, tenant_id, 401, "nonce replay")
         return 401, {"error": "Nonce replay rejected."}
 
@@ -168,7 +180,9 @@ async def handle_session_mint(
             _record_rejection(mint_ctx, tenant_id, 403, "agent not found")
             return 403, {"error": "Agent does not belong to tenant."}
 
-    if not api_key_mint and not _origin_allowed(tenant.allowed_origins, origin, referer):
+    if not api_key_mint and not _origin_allowed(
+        tenant.allowed_origins, origin, referer
+    ):
         _record_rejection(mint_ctx, tenant_id, 403, "origin not allowed")
         return 403, {"error": "Origin not allowed."}
 
@@ -180,7 +194,10 @@ async def handle_session_mint(
             repo=mint_ctx.agent_config_repo,
         )
     except SessionPlanCompilationError as exc:
-        if exc.code == "PUBLISHED_CONFIG_NOT_FOUND" and unsafe_session_overrides_enabled():
+        if (
+            exc.code == "PUBLISHED_CONFIG_NOT_FOUND"
+            and unsafe_session_overrides_enabled()
+        ):
             plan = build_unsafe_demo_plan(
                 tenant_id,
                 agent_id,
@@ -216,8 +233,6 @@ async def handle_session_mint(
     if quota_result.is_soft_cap_warn:
         headers["X-UCVE-Quota-Warning"] = "soft_cap"
 
-    await mint_ctx.nonce_store.mark_used(tenant_id, nonce, ttl_sec=60)
-
     session_id = str(generate_session_id())
     try:
         mint_ctx.admission.acquire_sync(session_id)
@@ -236,7 +251,7 @@ async def handle_session_mint(
         runtime_plan_snapshot=plan.to_snapshot(),
         session_language=selection.language,
         session_voice_id=selection.voice_id,
-        pinned_at=datetime.now(timezone.utc),
+        pinned_at=datetime.now(UTC),
     )
     try:
         await mint_ctx.session_repo.create_session(tenant_id, session)
@@ -281,16 +296,32 @@ async def handle_session_mint(
     return 200, body
 
 
-def handle_session_refresh(
-    token: str, jwt_secret: str | None = None
+async def handle_session_refresh(
+    token: str,
+    jwt_secret: str | None = None,
+    *,
+    ctx: MintContext | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """POST /v1/session/refresh — Refresh short-lived room token."""
+    mint_ctx = ctx or _default_ctx
     try:
         payload = verify_session_jwt(token, secret=jwt_secret)
+        tenant_id = str(payload["tenant_id"])
+        session_id = str(payload["sub"])
+        agent_id = str(payload["agent_id"])
+        session = await mint_ctx.session_repo.get_session(tenant_id, session_id)
+        if session is None or str(session.agent_id) != agent_id:
+            raise ValueError("Session identity mismatch.")
+        remaining = max(1, int(float(payload["exp"]) - time.time()))
+        consumed = await mint_ctx.token_store.consume_refresh(
+            tenant_id, str(payload["jti"]), remaining
+        )
+        if not consumed:
+            raise ValueError("Token refresh already consumed.")
         new_token = issue_session_jwt(
-            payload["tenant_id"],
-            payload["sub"],
-            payload["agent_id"],
+            tenant_id,
+            session_id,
+            agent_id,
             secret=jwt_secret,
             session_plan_ref=payload.get("session_plan_ref"),
             session_plan_hash=payload.get("session_plan_hash"),
@@ -300,5 +331,5 @@ def handle_session_refresh(
             unsafe_demo=bool(payload.get("unsafe_demo", False)),
         )
         return 200, {"status": "success", "token": new_token, "ttl_sec": 120}
-    except Exception as exc:
-        return 401, {"error": str(exc)}
+    except (KeyError, PermissionError, ReplayStoreUnavailableError, ValueError):
+        return 401, {"error": "Invalid or unavailable session token."}

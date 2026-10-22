@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -15,6 +16,8 @@ from control_plane.routes.session import (
     get_default_mint_context,
     unsafe_session_overrides_enabled,
 )
+from core.redis.nonce_store import ReplayStoreUnavailableError
+from core.redis.token_store import SessionTokenStore
 from core.runtime.admission import CapacityExceededError, SessionAdmissionController
 from core.runtime.env import require_production_secrets
 from core.runtime.session_plan import RuntimeSessionPlan, SessionPlanIntegrityError
@@ -32,11 +35,13 @@ from worker_raw.ws_session import ProtocolSessionError, WebSocketSessionRunner
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     require_production_secrets()
+    _app.state.token_store = SessionTokenStore()
     yield
 
 
 app = FastAPI(title="Wavia Worker Raw", version="0.1.0", lifespan=lifespan)
 session_admission = SessionAdmissionController()
+_default_token_store = SessionTokenStore()
 
 app.add_middleware(
     CORSMiddleware,
@@ -165,6 +170,20 @@ async def ws_audio(websocket: WebSocket) -> None:
         await websocket.close(code=4401, reason="missing token")
         return
 
+    try:
+        payload = verify_session_jwt(token)
+        remaining = max(1, int(float(payload["exp"]) - time.time()))
+        token_store = getattr(websocket.app.state, "token_store", _default_token_store)
+        claimed = await token_store.claim_connection(
+            str(payload["tenant_id"]), str(payload["jti"]), remaining
+        )
+    except (KeyError, ReplayStoreUnavailableError, TypeError, ValueError):
+        await websocket.close(code=4401, reason="invalid token")
+        return
+    if not claimed:
+        await websocket.close(code=4401, reason="invalid token")
+        return
+
     transport = NativeWebSocketTransport()
     ok = await transport.connect("ws", token)
     if not ok:
@@ -175,7 +194,6 @@ async def ws_audio(websocket: WebSocket) -> None:
     transport.bind(websocket)
 
     try:
-        payload = verify_session_jwt(token)
         overrides = validate_demo_provider_overrides(
             {
                 "stt_provider": websocket.query_params.get("stt_provider"),
@@ -200,8 +218,8 @@ async def ws_audio(websocket: WebSocket) -> None:
         )
         await websocket.close(code=4403, reason="provider override forbidden")
         return
-    except Exception as exc:
-        await websocket.close(code=4401, reason=f"invalid token: {exc}")
+    except Exception:
+        await websocket.close(code=4401, reason="invalid session")
         return
 
     async def _on_audio_out(pcm_bytes: bytes) -> None:

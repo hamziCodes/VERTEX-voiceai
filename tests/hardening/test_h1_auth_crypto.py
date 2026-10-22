@@ -51,13 +51,17 @@ def test_jwt_requires_room_join_action(test_env: None) -> None:
             "tenant_id": "t1",
             "agent_id": "a1",
             "action": "roomAdmin",
+            "token_type": "session_access",
+            "iss": "wavia-control-plane",
+            "aud": "wavia-worker",
+            "jti": "wrong-action-jti",
             "iat": now,
             "exp": now + 120,
         },
         "ucve-jwt-secret-test-only-32bytes!",
         algorithm="HS256",
     )
-    with pytest.raises(ValueError, match="roomJoin"):
+    with pytest.raises(ValueError, match="Invalid session token"):
         verify_session_jwt(bad, secret="ucve-jwt-secret-test-only-32bytes!")
 
 

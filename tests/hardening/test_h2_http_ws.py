@@ -8,6 +8,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 from starlette.testclient import TestClient as StarletteTestClient
+from starlette.websockets import WebSocketDisconnect
 
 from control_plane.auth.hmac_mint import expected_signature
 from control_plane.routes.session import reset_default_mint_context
@@ -139,6 +140,19 @@ async def test_ws_connect_with_valid_token(env: None) -> None:
             ws.send_text(json.dumps(build_event("control.ping", {}, sequence=2)))
             pong = ws.receive_text()
             assert "pong" in pong.lower()
+
+
+@pytest.mark.asyncio
+async def test_ws_token_cannot_open_a_second_connection(env: None) -> None:
+    from worker_raw.main import app as worker_app
+
+    token = await _mint_ws_token("t-ws-once", "agent-ws-once", "ws-once-nonce")
+    with StarletteTestClient(worker_app) as worker:
+        with worker.websocket_connect(f"/ws/audio?token={token}") as ws:
+            _complete_protocol_handshake(ws)
+        with pytest.raises(WebSocketDisconnect):
+            with worker.websocket_connect(f"/ws/audio?token={token}"):
+                pass
 
 
 @pytest.mark.asyncio

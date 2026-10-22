@@ -45,8 +45,8 @@ class NativeWebSocketTransport:
             self.agent_id = payload.get("agent_id")
             self.is_connected = True
             return True
-        except Exception as exc:
-            logger.warning("WS authentication failure", error=str(exc))
+        except Exception:
+            logger.warning("WS authentication failure")
             self.is_connected = False
             return False
 

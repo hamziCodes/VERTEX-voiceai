@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from control_plane.app import app as control_plane_app
 from control_plane.auth.api_keys import APIKeyManager
+from control_plane.auth.rate_limit import RateLimiter
 from core.protocol.realtime import build_event
 from core.providers.factory import (
     SUPPORTED_LLM,
@@ -39,6 +40,7 @@ def _offline_demo_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RUN_LIVE_PROVIDERS", "0")
     monkeypatch.setenv("UCVE_METRICS_BEARER", "test-metrics-bearer")
     control_plane_app.state.api_keys = APIKeyManager()
+    control_plane_app.state.auth_endpoint_limiter = RateLimiter(limit_per_min=60)
 
 
 @pytest.fixture
