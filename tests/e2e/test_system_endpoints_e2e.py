@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import time
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -247,15 +246,15 @@ async def test_all_18_provider_combinations_instantiate_cleanly() -> None:
 
     count = 0
     for stt_id in stt_list:
-        stt = build_stt_provider(stt_id, mock_text="Test prompt")
+        stt = build_stt_provider(stt_id, api_key="", mock_text="Test prompt")
         assert stt.health_check() is True
 
         for llm_id in llm_list:
-            llm = build_llm_provider(llm_id)
+            llm = build_llm_provider(llm_id, api_key="")
             assert llm.health_check() is True
 
             for tts_id in tts_list:
-                tts = build_tts_provider(tts_id)
+                tts = build_tts_provider(tts_id, api_key="")
                 assert tts.health_check() is True
                 count += 1
 
@@ -264,7 +263,7 @@ async def test_all_18_provider_combinations_instantiate_cleanly() -> None:
 
 @pytest.mark.asyncio
 async def test_openai_llm_generate_stream() -> None:
-    llm = build_llm_provider("openai", model="gpt-4o-mini")
+    llm = build_llm_provider("openai", api_key="", model="gpt-4o-mini")
     messages = [{"role": "user", "content": "What is 2+2?"}]
     chunks = []
     async for chunk in llm.generate_stream(messages, LLMConfig(model="gpt-4o-mini")):

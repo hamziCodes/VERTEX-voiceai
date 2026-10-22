@@ -24,6 +24,7 @@ from core.runtime.session_plan import (
     RuntimeSessionPlan,
     RuntimeVoiceBinding,
 )
+from core.secrets.policy import CredentialTier
 
 
 class SessionPlanCompilationError(ValueError):
@@ -137,16 +138,33 @@ def _compile_chains(
                         "PROVIDER_UNSUPPORTED",
                         f"Unsupported {category} provider {provider_id!r}",
                     ) from exc
+                credential_ref = (
+                    route.credential_ref.strip() if route.credential_ref else None
+                )
+                credential_tier = CredentialTier(route.credential_tier)
+                if (
+                    credential_tier in {CredentialTier.BYOK, CredentialTier.BOTH}
+                    and credential_ref is None
+                ):
+                    raise SessionPlanCompilationError(
+                        "CREDENTIAL_REFERENCE_REQUIRED",
+                        f"{credential_tier.value} route {provider_id!r} requires credential_ref",
+                    )
+                if (
+                    credential_tier is CredentialTier.PLATFORM
+                    and credential_ref is not None
+                ):
+                    raise SessionPlanCompilationError(
+                        "PLATFORM_CREDENTIAL_REFERENCE_FORBIDDEN",
+                        f"platform route {provider_id!r} must not contain credential_ref",
+                    )
                 routes.append(
                     RuntimeProviderRoute(
                         provider_id=provider_id,
                         model=(route.model.strip() if route.model else None),
                         priority=route.priority,
-                        credential_ref=(
-                            route.credential_ref.strip()
-                            if route.credential_ref
-                            else None
-                        ),
+                        credential_ref=credential_ref,
+                        credential_tier=credential_tier,
                     )
                 )
             if not routes:

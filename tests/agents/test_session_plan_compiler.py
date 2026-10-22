@@ -20,9 +20,11 @@ from control_plane.agents.models.provider_config import (
 )
 from control_plane.agents.repo import AgentConfigRepo
 from core.runtime.session_plan import (
+    SESSION_PLAN_SCHEMA_VERSION,
     RuntimeSessionPlan,
     SessionPlanIntegrityError,
 )
+from core.secrets.policy import CredentialTier
 
 
 def _chain(
@@ -38,6 +40,7 @@ def _chain(
                 provider_id=provider_id,
                 model=model,
                 credential_ref=credential_ref,
+                credential_tier=CredentialTier.BYOK,
                 priority=index,
             )
             for index, (provider_id, model, credential_ref) in enumerate(
@@ -129,6 +132,8 @@ def test_compiler_builds_deterministic_immutable_secret_free_plan() -> None:
     assert len(first.plan_hash) == 64
     assert first.allowed_languages == ("en", "ur")
     assert first.primary_route("llm", "ur").provider_id == "groq"
+    assert first.primary_route("llm", "ur").credential_tier == "byok"
+    assert SESSION_PLAN_SCHEMA_VERSION == "1.1.0"
     assert first.voice_for_language("ur") == "voice-ur"
     assert first.credential_references == (
         "cred/llm-primary",
@@ -238,3 +243,45 @@ def test_session_selection_is_limited_to_published_languages_and_voice_mapping()
         plan.select(language="fr")
     with pytest.raises(ValueError, match="voice"):
         plan.select(language="ur", voice_id="other-voice")
+
+
+@pytest.mark.parametrize("tier", ["byok", "both"])
+def test_compiler_requires_reference_for_tenant_credential_tiers(tier: str) -> None:
+    repo = AgentConfigRepo()
+    config = make_config(uuid4(), uuid4())
+    route = config.providers.llm[0].routes[0]
+    route.credential_tier = CredentialTier(tier)
+    route.credential_ref = None
+    publish(repo, config)
+
+    with pytest.raises(SessionPlanCompilationError) as error:
+        compile_agent_version(config.tenant_id, config.agent_id, 1, repo=repo)
+
+    assert error.value.code == "CREDENTIAL_REFERENCE_REQUIRED"
+
+
+def test_compiler_rejects_tenant_reference_for_platform_tier() -> None:
+    repo = AgentConfigRepo()
+    config = make_config(uuid4(), uuid4())
+    route = config.providers.stt[0].routes[0]
+    route.credential_tier = CredentialTier.PLATFORM
+    publish(repo, config)
+
+    with pytest.raises(SessionPlanCompilationError) as error:
+        compile_agent_version(config.tenant_id, config.agent_id, 1, repo=repo)
+
+    assert error.value.code == "PLATFORM_CREDENTIAL_REFERENCE_FORBIDDEN"
+
+
+def test_credential_tier_is_signed_into_plan_hash() -> None:
+    repo = AgentConfigRepo()
+    config = make_config(uuid4(), uuid4())
+    publish(repo, config)
+    byok_plan = compile_agent_version(
+        config.tenant_id, config.agent_id, 1, repo=repo
+    )
+
+    snapshot = byok_plan.to_snapshot()
+    snapshot["provider_chains"][0]["routes"][0]["credential_tier"] = "both"
+    with pytest.raises(SessionPlanIntegrityError, match="hash"):
+        RuntimeSessionPlan.from_snapshot(snapshot)

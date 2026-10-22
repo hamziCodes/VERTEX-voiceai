@@ -59,8 +59,10 @@ class _TranscriptSession(_FakeLiveSession):
 
 
 def test_live_stt_factory_follows_selected_provider() -> None:
-    assert isinstance(build_live_stt_session("gladia"), GladiaLiveSTTSession)
-    assert build_live_stt_session("deepgram") is None
+    assert isinstance(
+        build_live_stt_session("gladia", api_key=None), GladiaLiveSTTSession
+    )
+    assert build_live_stt_session("deepgram", api_key=None) is None
 
 
 @pytest.mark.asyncio

@@ -49,7 +49,7 @@ class ProviderSpec:
     default_models: tuple[str, ...] = ()
     regions: frozenset[str] = frozenset({"provider_managed"})
     compliance_tiers: frozenset[str] = frozenset({"standard"})
-    credential_policy: CredentialPolicyState = CredentialPolicyState.UNRESOLVED
+    credential_policy: CredentialPolicyState = CredentialPolicyState.BOTH
     rollout_state: ProviderRolloutState = ProviderRolloutState.OFFLINE_CONTRACT
 
     def __post_init__(self) -> None:
@@ -172,6 +172,33 @@ DEFAULT_PROVIDER_CATALOG = ProviderCatalog(
 )
 
 ADVERTISED_PROVIDER_IDS = DEFAULT_PROVIDER_CATALOG.provider_ids
+
+
+def _release_chains_for_language(
+    language: str,
+) -> Mapping[ProviderCategory, tuple[str, ...]]:
+    tts = (
+        ("uplift", "cartesia")
+        if language == "ur"
+        else ("cartesia", "elevenlabs")
+    )
+    return MappingProxyType(
+        {
+            ProviderCategory.STT: ("gladia", "deepgram"),
+            ProviderCategory.LLM: ("groq", "gemini"),
+            ProviderCategory.TTS: tts,
+        }
+    )
+
+
+DEFAULT_RELEASE_CHAINS: Mapping[
+    str, Mapping[ProviderCategory, tuple[str, ...]]
+] = MappingProxyType(
+    {
+        language: _release_chains_for_language(language)
+        for language in ("en", "ur", "ar", "ms")
+    }
+)
 
 
 def get_provider_spec(

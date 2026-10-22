@@ -73,6 +73,7 @@ from core.providers.interfaces.tts import (
     iterate_tts_stream,
 )
 from core.providers.live_stt_factory import build_live_stt_session
+from core.providers.mode import provider_runtime_status
 from core.providers.registry import ProviderRegistry
 from core.rag.retriever import PgVectorRetriever
 from core.rag.speculative import SpeculativeRetrieval
@@ -85,6 +86,10 @@ from post_call.models.call_record import CallRecord
 from post_call.models.diarized_turn import DiarizedTurn
 from post_call.pipeline.enqueue import PostCallPipeline
 from worker_raw.orchestration.latency_hooks import LatencyHooks
+from worker_raw.orchestration.provider_binding import (
+    BoundProviderChains,
+    ProviderSessionBinder,
+)
 from worker_raw.orchestration.session_config import PipelineSessionConfig
 from worker_raw.orchestration.tool_handler import PipelineToolHandler
 
@@ -121,6 +126,7 @@ class PipelineOrchestrator:
         latency_collector: LatencyCollector | None = None,
         rag_retriever: PgVectorRetriever | None = None,
         post_call_pipeline: PostCallPipeline | None = None,
+        provider_binder: ProviderSessionBinder | None = None,
     ) -> None:
         self.allow_testing_providers = allow_testing_providers
         self.on_audio_out = on_audio_out
@@ -131,6 +137,8 @@ class PipelineOrchestrator:
         self.rag_retriever = rag_retriever or PgVectorRetriever()
         self.speculative_rag = SpeculativeRetrieval(self.rag_retriever)
         self.post_call_pipeline = post_call_pipeline or PostCallPipeline()
+        self.provider_binder = provider_binder
+        self.bound_provider_chains: BoundProviderChains | None = None
         self.listening_config = ListeningPipelineConfig.from_env()
         self.speaking_config = SpeakingPipelineConfig.from_env()
         self.vad_adapter = SileroVADAdapter()
@@ -147,7 +155,10 @@ class PipelineOrchestrator:
         self._active_stt_id = "gladia"
         self._active_llm_id = "groq"
         self._active_tts_id = "uplift"
-        self.failover_router = FailoverRouter(priority=["primary", "secondary"])
+        self.stt_router = FailoverRouter(priority=["primary", "secondary"])
+        self.llm_router = FailoverRouter(priority=["primary", "secondary"])
+        self.tts_router = FailoverRouter(priority=["primary", "secondary"])
+        self.failover_router = self.llm_router
         self.language_router = LanguageRouter()
         self.normalizer = TextNormalizer()
         self.redis_store = RedisSessionStore()
@@ -275,23 +286,26 @@ class PipelineOrchestrator:
             self._vad_worker.shutdown()
             self._vad_worker = None
 
-        seen: set[int] = set()
-        for provider in (self.llm_provider, self.tts_provider, self.stt_provider):
-            if id(provider) in seen:
-                continue
-            seen.add(id(provider))
-            close_fn = getattr(provider, "aclose", None)
-            if close_fn:
-                try:
-                    result = close_fn()
-                    if asyncio.iscoroutine(result):
-                        await result
-                except Exception as exc:
-                    logger.warning(
-                        "Provider close failed during teardown",
-                        provider=type(provider).__name__,
-                        error_type=type(exc).__name__,
-                    )
+        if self.bound_provider_chains is not None:
+            await self.bound_provider_chains.aclose()
+        else:
+            seen: set[int] = set()
+            for provider in (self.llm_provider, self.tts_provider, self.stt_provider):
+                if id(provider) in seen:
+                    continue
+                seen.add(id(provider))
+                close_fn = getattr(provider, "aclose", None)
+                if close_fn:
+                    try:
+                        result = close_fn()
+                        if asyncio.iscoroutine(result):
+                            await result
+                    except Exception as exc:
+                        logger.warning(
+                            "Provider close failed during teardown",
+                            provider=type(provider).__name__,
+                            error_type=type(exc).__name__,
+                        )
         self._runtime_resources_closed = True
 
     async def apply_provider_selection(self, session_config: PipelineSessionConfig) -> None:
@@ -300,6 +314,35 @@ class PipelineOrchestrator:
         configure_tools = getattr(self.tool_handler, "set_allowed_tools", None)
         if callable(configure_tools):
             configure_tools(session_config.tool_allowlist)
+
+        if session_config.plan_authoritative:
+            binder = self.provider_binder or ProviderSessionBinder.default(
+                speaking_config=self.speaking_config,
+                stt_mock_text=self.listening_config.stt_mock_text,
+            )
+            bound = await binder.bind(session_config)
+            if self.bound_provider_chains is not None:
+                await self.bound_provider_chains.aclose()
+            self.bound_provider_chains = bound
+            self.stt_provider = bound.stt[0].adapter
+            self.llm_provider = bound.llm[0].adapter
+            self.tts_provider = bound.tts[0].adapter
+            self.stt_router = FailoverRouter(priority=list(bound.stt))
+            self.llm_router = FailoverRouter(priority=list(bound.llm))
+            self.tts_router = FailoverRouter(priority=list(bound.tts))
+            self.failover_router = self.llm_router
+            self._active_stt_id = bound.stt[0].identity.provider_id
+            self._active_llm_id = bound.llm[0].identity.provider_id
+            self._active_tts_id = bound.tts[0].identity.provider_id
+            self._active_llm_model = bound.llm[0].identity.model
+            logger.info(
+                "Published provider chains bound",
+                stt_routes=len(bound.stt),
+                llm_routes=len(bound.llm),
+                tts_routes=len(bound.tts),
+            )
+            return
+
         stt_id = normalize_stt_provider(session_config.stt_provider)
         llm_id = normalize_llm_provider(session_config.llm_provider)
         tts_id = normalize_tts_provider(session_config.tts_provider)
@@ -309,14 +352,18 @@ class PipelineOrchestrator:
 
         if stt_id != self._active_stt_id:
             self.stt_provider = build_stt_provider(
-                stt_id, mock_text=self.listening_config.stt_mock_text
+                stt_id,
+                api_key=None,
+                mock_text=self.listening_config.stt_mock_text,
             )
             self._active_stt_id = stt_id
 
         llm_model_choice = getattr(session_config, "llm_model", None)
         if llm_id != self._active_llm_id or getattr(self, "_active_llm_model", None) != llm_model_choice:
             old = self.llm_provider
-            self.llm_provider = build_llm_provider(llm_id, model=llm_model_choice)
+            self.llm_provider = build_llm_provider(
+                llm_id, api_key=None, model=llm_model_choice
+            )
             self._active_llm_id = llm_id
             self._active_llm_model = llm_model_choice
             close_fn = getattr(old, "aclose", None)
@@ -328,7 +375,7 @@ class PipelineOrchestrator:
         if tts_id != self._active_tts_id:
             old_tts = self.tts_provider
             self.tts_provider = build_tts_provider(
-                tts_id, speaking_config=self.speaking_config
+                tts_id, api_key=None, speaking_config=self.speaking_config
             )
             self._active_tts_id = tts_id
             close_fn = getattr(old_tts, "aclose", None)
@@ -356,6 +403,14 @@ class PipelineOrchestrator:
         elif lc.enable_quick_wins:
             # Phase 0 quick win: longer endpoint + onset debounce, no full retune.
             self.vad_adapter.configure(min_speech_frames=4, min_silence_frames=12)
+
+    @staticmethod
+    def _route_adapter(route: Any, fallback: Any) -> Any:
+        return getattr(route, "adapter", fallback)
+
+    @staticmethod
+    def _synthetic_provider_reply_allowed() -> bool:
+        return provider_runtime_status()["provider_mode"] == "mock"
 
     def _flush_egress_queue(self) -> None:
         """Drop any queued-but-unsent agent audio (three-point cancel: sender)."""
@@ -831,6 +886,12 @@ class PipelineOrchestrator:
             language = getattr(cfg, "language", "en") if cfg else "en"
             session = build_live_stt_session(
                 self._active_stt_id,
+                api_key=getattr(self.stt_provider, "api_key", None),
+                model=(
+                    self.bound_provider_chains.stt[0].identity.model
+                    if self.bound_provider_chains is not None
+                    else getattr(self.stt_provider, "model", None)
+                ),
                 language=language,
                 endpointing=self.listening_config.gladia_endpointing,
                 receive_partials=self.listening_config.gladia_receive_partials,
@@ -1074,10 +1135,20 @@ class PipelineOrchestrator:
             )
 
         cfg = STTConfig(language=session_config.language)
-        text = ""
-        async for transcript in self.stt_provider.transcribe_stream(_audio_iter(), cfg):
-            if transcript.text:
-                text = transcript.text
+        async def _transcribe(route: Any) -> str:
+            adapter = self._route_adapter(route, self.stt_provider)
+            result = ""
+            async for transcript in adapter.transcribe_stream(_audio_iter(), cfg):
+                if transcript.text:
+                    result = transcript.text
+            return result
+
+        if self.bound_provider_chains is not None:
+            text = await self.stt_router.call_with_failover(
+                "stt", session_config.language, _transcribe
+            )
+        else:
+            text = await _transcribe("primary")
         if text:
             self._last_stt_final_ms = self.latency_hooks.now_ms()
         return text.strip()
@@ -1148,7 +1219,7 @@ class PipelineOrchestrator:
             invoke_count = 0
 
             async def _invoke(
-                _pid: str,
+                route: Any,
                 sentence: str = sentence,
                 cfg: TTSConfig = cfg,
             ) -> bool:
@@ -1158,7 +1229,8 @@ class PipelineOrchestrator:
                 invoke_count += 1
                 source_rate: int | None = None
                 resampler: StreamingEgressResampler | None = None
-                provider_stream = self.tts_provider.synthesize_stream(
+                adapter = self._route_adapter(route, self.tts_provider)
+                provider_stream = adapter.synthesize_stream(
                     sentence, cfg, cancellation_token=self._tts_cancel
                 )
                 async for chunk in iterate_tts_stream(provider_stream, deadlines):
@@ -1217,7 +1289,7 @@ class PipelineOrchestrator:
                 return True
 
             try:
-                await self.failover_router.call_with_failover(
+                await self.tts_router.call_with_failover(
                     "tts",
                     session_config.language,
                     _invoke,
@@ -1464,9 +1536,10 @@ class PipelineOrchestrator:
                         tts_queue_high_water, tts_q.qsize()
                     )
 
-            async def _stream_llm(_pid: str) -> bool:
+            async def _stream_llm(route: Any) -> bool:
                 nonlocal ttft_recorded, pending_tool_calls
-                async for chunk in self.llm_provider.generate_stream(
+                adapter = self._route_adapter(route, self.llm_provider)
+                async for chunk in adapter.generate_stream(
                     messages, llm_cfg, cancellation_token=self._llm_cancel
                 ):
                     if self._llm_cancel.is_cancelled:
@@ -1488,11 +1561,22 @@ class PipelineOrchestrator:
             self.three_point_cancel.register_task(tts_consumer)
 
             try:
-                await self.failover_router.call_with_failover(
+                await self.llm_router.call_with_failover(
                     "llm", session_config.language, _stream_llm, first_chunk_timeout=20.0
                 )
             except Exception as exc:
-                logger.error("LLM provider chain failed; using offline mock", error=str(exc))
+                if not self._synthetic_provider_reply_allowed():
+                    await tts_q.put(None)
+                    await tts_consumer
+                    logger.error(
+                        "LLM provider chain exhausted",
+                        error_type=type(exc).__name__,
+                    )
+                    raise
+                logger.error(
+                    "LLM provider chain failed; using offline mock",
+                    error_type=type(exc).__name__,
+                )
                 user = next(
                     (m["content"] for m in reversed(messages) if m.get("role") == "user"),
                     "",

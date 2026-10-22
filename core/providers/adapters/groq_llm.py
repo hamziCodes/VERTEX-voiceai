@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -11,6 +10,11 @@ import httpx
 
 from core.buffers.cancellation import CancellationToken
 from core.observability.logging import get_logger
+from core.providers.exceptions import (
+    ProviderInvocationError,
+    classify_http_failure,
+    provider_invocation_error,
+)
 from core.providers.interfaces.llm import BaseLLMProvider, LLMConfig, LLMStreamChunk
 from core.providers.mode import should_use_mock_provider
 
@@ -60,12 +64,7 @@ class GroqLLMProvider(BaseLLMProvider):
     """Groq OpenAI-compatible chat API. Mocks when GROQ_API_KEY unset."""
 
     def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
-        self.api_key = (
-            api_key
-            or os.environ.get("PLATFORM_GROQ_API_KEY")
-            or os.environ.get("GROQ_API_KEY")
-            or ""
-        ).strip()
+        self.api_key = (api_key or "").strip()
         self.default_model = resolve_groq_model(model or _DEFAULT_MODEL)
         self._base = "https://api.groq.com/openai/v1"
         self._client: httpx.AsyncClient | None = None
@@ -145,13 +144,14 @@ class GroqLLMProvider(BaseLLMProvider):
                 json=request_body,
             ) as resp:
                 if resp.status_code != 200:
-                    err_body = await resp.aread()
+                    await resp.aread()
                     logger.error(
                         "Groq API call failed",
                         status_code=resp.status_code,
-                        error=err_body.decode(errors="ignore"),
                     )
-                    resp.raise_for_status()
+                    raise ProviderInvocationError(
+                        classify_http_failure("groq", resp.status_code)
+                    )
                 first = True
                 async for line in resp.aiter_lines():
                     if cancellation_token and cancellation_token.is_cancelled:
@@ -196,11 +196,10 @@ class GroqLLMProvider(BaseLLMProvider):
                             finish_reason="tool_calls",
                         )
                         tool_acc.clear()
-        except httpx.HTTPStatusError as exc:
-            logger.error(f"Groq HTTP Error: {exc}", error=str(exc))
+        except ProviderInvocationError:
             await self.aclose()
             raise
         except Exception as exc:
-            logger.error(f"Groq Stream Exception: {exc}", error=str(exc))
+            logger.error("Groq stream exception", error_type=type(exc).__name__)
             await self.aclose()
-            raise
+            raise provider_invocation_error("groq", exc) from exc

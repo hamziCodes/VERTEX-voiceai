@@ -26,9 +26,11 @@ def test_normalize_tts_provider_defaults_and_allows_vendors() -> None:
 
 
 def test_build_tts_provider_switches() -> None:
-    assert isinstance(build_tts_provider("uplift"), UpliftTTSProvider)
-    assert isinstance(build_tts_provider("elevenlabs"), ElevenLabsTTSProvider)
-    assert isinstance(build_tts_provider("cartesia"), CartesiaTTSProvider)
+    assert isinstance(build_tts_provider("uplift", api_key=""), UpliftTTSProvider)
+    assert isinstance(
+        build_tts_provider("elevenlabs", api_key=""), ElevenLabsTTSProvider
+    )
+    assert isinstance(build_tts_provider("cartesia", api_key=""), CartesiaTTSProvider)
 
 
 @pytest.mark.asyncio

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -11,7 +10,13 @@ import httpx
 
 from core.buffers.cancellation import CancellationToken
 from core.observability.logging import get_logger
+from core.providers.exceptions import (
+    ProviderInvocationError,
+    classify_http_failure,
+    provider_invocation_error,
+)
 from core.providers.interfaces.llm import BaseLLMProvider, LLMConfig, LLMStreamChunk
+from core.providers.mode import should_use_mock_provider
 
 logger = get_logger("ucve.providers.openai")
 
@@ -57,12 +62,7 @@ class OpenAILLMProvider(BaseLLMProvider):
     """OpenAI chat completions provider with streaming and cancellation."""
 
     def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
-        self.api_key = (
-            api_key
-            or os.environ.get("PLATFORM_OPENAI_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or ""
-        ).strip()
+        self.api_key = (api_key or "").strip()
         self.default_model = resolve_openai_model(model or _DEFAULT_MODEL)
         self.model = self.default_model
         self._url = "https://api.openai.com/v1/chat/completions"
@@ -87,10 +87,8 @@ class OpenAILLMProvider(BaseLLMProvider):
         config: LLMConfig,
         cancellation_token: CancellationToken | None = None,
     ) -> AsyncIterator[LLMStreamChunk]:
-        use_mock = (
-            not self.api_key
-            or os.environ.get("RUN_MOCK_PROVIDERS") == "1"
-            or os.environ.get("RUN_LIVE_PROVIDERS") != "1"
+        use_mock = should_use_mock_provider(
+            provider_id="openai", api_key=self.api_key
         )
         if use_mock:
             async for chunk in self._mock_stream(messages, cancellation_token):
@@ -121,11 +119,11 @@ class OpenAILLMProvider(BaseLLMProvider):
         try:
             async with client.stream("POST", self._url, json=payload, headers=headers) as resp:
                 if resp.status_code != 200:
-                    body = await resp.aread()
-                    logger.error("OpenAI stream error", status=resp.status_code, body=body.decode(errors="replace")[:300])
-                    async for chunk in self._mock_stream(messages, cancellation_token):
-                        yield chunk
-                    return
+                    await resp.aread()
+                    logger.error("OpenAI stream error", status=resp.status_code)
+                    raise ProviderInvocationError(
+                        classify_http_failure("openai", resp.status_code)
+                    )
 
                 async for line in resp.aiter_lines():
                     if cancellation_token and cancellation_token.is_cancelled:
@@ -173,10 +171,11 @@ class OpenAILLMProvider(BaseLLMProvider):
                 calls = _finalize_tool_calls(tool_acc)
                 yield LLMStreamChunk(tool_calls=calls, finish_reason="tool_calls")
 
+        except ProviderInvocationError:
+            raise
         except Exception as exc:
-            logger.error("OpenAI stream exception", error=str(exc))
-            async for chunk in self._mock_stream(messages, cancellation_token):
-                yield chunk
+            logger.error("OpenAI stream exception", error_type=type(exc).__name__)
+            raise provider_invocation_error("openai", exc) from exc
 
     async def _mock_stream(
         self,

@@ -9,7 +9,13 @@ import httpx
 
 from core.buffers.cancellation import CancellationToken
 from core.observability.logging import get_logger
+from core.providers.exceptions import (
+    ProviderInvocationError,
+    classify_http_failure,
+    provider_invocation_error,
+)
 from core.providers.interfaces.tts import BaseTTSProvider, TTSChunk, TTSConfig
+from core.providers.mode import should_use_mock_provider
 
 logger = get_logger("ucve.providers.cartesia")
 
@@ -38,16 +44,12 @@ class CartesiaTTSProvider(BaseTTSProvider):
         self,
         api_key: str | None = None,
         *,
+        model: str | None = None,
         chunk_size_bytes: int = 3200,
     ) -> None:
-        self.api_key = (
-            api_key
-            or os.environ.get("PLATFORM_CARTESIA_API_KEY")
-            or os.environ.get("CARTESIA_API_KEY")
-            or ""
-        ).strip()
+        self.api_key = (api_key or "").strip()
         self.chunk_size_bytes = max(320, int(chunk_size_bytes))
-        self._model = os.environ.get("CARTESIA_MODEL_ID", "sonic-2")
+        self._model = (model or os.environ.get("CARTESIA_MODEL_ID") or "sonic-2").strip()
         self._sample_rate = int(os.environ.get("CARTESIA_SAMPLE_RATE", "16000") or 16000)
         self._version = os.environ.get("CARTESIA_VERSION", _VERSION)
         self._client: httpx.AsyncClient | None = None
@@ -90,10 +92,8 @@ class CartesiaTTSProvider(BaseTTSProvider):
             logger.info("Skipping Cartesia TTS for empty/punctuation text", preview=cleaned[:20])
             return
 
-        use_mock = (
-            not self.api_key
-            or os.environ.get("RUN_MOCK_PROVIDERS") == "1"
-            or os.environ.get("RUN_LIVE_PROVIDERS") != "1"
+        use_mock = should_use_mock_provider(
+            provider_id="cartesia", api_key=self.api_key
         )
         if use_mock:
             if not self.api_key:
@@ -151,7 +151,9 @@ class CartesiaTTSProvider(BaseTTSProvider):
                         "Cartesia TTS API call failed",
                         status_code=resp.status_code,
                     )
-                    resp.raise_for_status()
+                    raise ProviderInvocationError(
+                        classify_http_failure("cartesia", resp.status_code)
+                    )
 
                 buf = bytearray()
                 emitted_first_audio = False
@@ -195,7 +197,10 @@ class CartesiaTTSProvider(BaseTTSProvider):
                         native_sample_rate=sample_rate,
                         is_final=True,
                     )
-        except Exception as exc:
-            logger.error(f"Cartesia TTS Exception: {exc}", error=str(exc))
+        except ProviderInvocationError:
             await self.aclose()
             raise
+        except Exception as exc:
+            logger.error("Cartesia TTS exception", error_type=type(exc).__name__)
+            await self.aclose()
+            raise provider_invocation_error("cartesia", exc) from exc

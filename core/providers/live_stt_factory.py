@@ -17,6 +17,8 @@ _LIVE_STT_BUILDERS: dict[str, LiveSTTBuilder] = {
 def build_live_stt_session(
     provider_id: str,
     *,
+    api_key: str | None,
+    model: str | None = None,
     language: str = "en",
     endpointing: float = 0.2,
     receive_partials: bool = True,
@@ -26,6 +28,8 @@ def build_live_stt_session(
     if builder is None:
         return None
     return builder(
+        api_key=api_key,
+        model=model or "solaria-1",
         language=language,
         endpointing=endpointing,
         receive_partials=receive_partials,

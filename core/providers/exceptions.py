@@ -43,6 +43,40 @@ class ProviderFailure:
     status_code: int | None = None
 
 
+class ProviderInvocationError(Exception):
+    """Carry sanitized failure metadata across the provider boundary."""
+
+    def __init__(self, failure: ProviderFailure) -> None:
+        self.failure = failure
+        super().__init__(f"{failure.provider_id}:{failure.category.value}")
+
+
+def provider_invocation_error(
+    provider_id: str, exc: BaseException
+) -> ProviderInvocationError:
+    """Convert an arbitrary adapter exception into secret-safe routing evidence."""
+    if isinstance(exc, ProviderInvocationError):
+        return exc
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    if isinstance(status_code, int):
+        return ProviderInvocationError(classify_http_failure(provider_id, status_code))
+    is_timeout = (
+        isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.lower()
+    )
+    return ProviderInvocationError(
+        ProviderFailure(
+            provider_id=provider_id.strip().lower(),
+            category=(
+                ProviderFailureCategory.TIMEOUT
+                if is_timeout
+                else ProviderFailureCategory.TRANSIENT_SERVER
+            ),
+            retryable=True,
+        )
+    )
+
+
 def classify_http_failure(provider_id: str, status_code: int) -> ProviderFailure:
     """Map an HTTP status to one deterministic, provider-neutral failure."""
 

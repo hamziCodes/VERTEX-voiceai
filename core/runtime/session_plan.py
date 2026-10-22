@@ -8,7 +8,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-SESSION_PLAN_SCHEMA_VERSION = "1.0.0"
+from core.secrets.policy import CredentialTier
+
+SESSION_PLAN_SCHEMA_VERSION = "1.1.0"
 
 
 class SessionPlanIntegrityError(ValueError):
@@ -24,6 +26,7 @@ class RuntimeProviderRoute(BaseModel):
     model: str | None = None
     priority: int = Field(ge=1)
     credential_ref: str | None = None
+    credential_tier: CredentialTier = CredentialTier.PLATFORM
 
 
 class RuntimeProviderChain(BaseModel):

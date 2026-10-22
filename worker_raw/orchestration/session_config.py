@@ -6,7 +6,11 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from core.runtime.session_plan import RuntimeSessionPlan, RuntimeSessionSelection
+from core.runtime.session_plan import (
+    RuntimeProviderRoute,
+    RuntimeSessionPlan,
+    RuntimeSessionSelection,
+)
 
 
 @dataclass
@@ -47,6 +51,15 @@ class PipelineSessionConfig:
     max_duration_sec: int = 3600
     max_turns: int = 500
     allow_unsafe_session_overrides: bool = False
+
+    def runtime_provider_routes(
+        self, category: str
+    ) -> tuple[RuntimeProviderRoute, ...]:
+        """Parse one authenticated category chain without accepting extras."""
+        raw_routes = self.provider_chain.get(category)
+        if not isinstance(raw_routes, list):
+            raise ValueError(f"Published provider chain {category!r} is missing.")
+        return tuple(RuntimeProviderRoute.model_validate(route) for route in raw_routes)
 
     @classmethod
     def from_runtime_plan(

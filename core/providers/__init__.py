@@ -12,12 +12,19 @@ from core.providers.exceptions import (
     ProviderCapabilityError,
     ProviderFailure,
     ProviderFailureCategory,
+    ProviderInvocationError,
     ProviderTimeoutError,
     UnknownProviderError,
     classify_http_failure,
+    provider_invocation_error,
 )
 from core.providers.failover import FailoverRouter, ProviderHealthState
 from core.providers.registry import ProviderRegistry
+from core.providers.routing import (
+    ProviderRouteBuilder,
+    ProviderRouteIdentity,
+    ResolvedProviderRoute,
+)
 from core.providers.spec import (
     ADVERTISED_PROVIDER_IDS,
     CredentialPolicyState,
@@ -41,6 +48,11 @@ __all__ = [
     "ProviderCapabilityError",
     "ProviderFailure",
     "ProviderFailureCategory",
+    "ProviderInvocationError",
+    "provider_invocation_error",
+    "ProviderRouteBuilder",
+    "ProviderRouteIdentity",
+    "ResolvedProviderRoute",
     "UnknownProviderError",
     "classify_http_failure",
     "ADVERTISED_PROVIDER_IDS",

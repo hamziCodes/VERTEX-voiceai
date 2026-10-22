@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from core.secrets.policy import CredentialTier
+
 
 class ProviderRoute(BaseModel):
     """Single vendor route in a priority chain."""
@@ -15,6 +17,10 @@ class ProviderRoute(BaseModel):
     credential_ref: str | None = Field(
         default=None,
         description="Tenant-vault reference; never a plaintext credential.",
+    )
+    credential_tier: CredentialTier = Field(
+        default=CredentialTier.PLATFORM,
+        description="Published credential source policy for this route.",
     )
     enabled: bool = Field(default=True, description="Whether this route is currently active.")
     priority: int = Field(default=1, description="Priority ranking in failover order (1 = primary, 2 = secondary).")
@@ -73,7 +79,7 @@ class AgentProvidersConfig(BaseModel):
                     language="en",
                     routes=[
                         ProviderRoute(provider_id="cartesia", model="sonic-2", priority=1, enabled=True),
-                        ProviderRoute(provider_id="uplift", model="orator", priority=2, enabled=True),
+                        ProviderRoute(provider_id="elevenlabs", model="eleven_multilingual_v2", priority=2, enabled=True),
                     ],
                 )
             ],

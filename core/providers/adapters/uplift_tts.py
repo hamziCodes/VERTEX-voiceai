@@ -9,6 +9,11 @@ import httpx
 
 from core.buffers.cancellation import CancellationToken
 from core.observability.logging import get_logger
+from core.providers.exceptions import (
+    ProviderInvocationError,
+    classify_http_failure,
+    provider_invocation_error,
+)
 from core.providers.interfaces.tts import BaseTTSProvider, TTSChunk, TTSConfig
 from core.providers.mode import should_use_mock_provider
 
@@ -104,12 +109,7 @@ class UpliftTTSProvider(BaseTTSProvider):
         *,
         chunk_size_bytes: int = 3200,
     ) -> None:
-        self.api_key = (
-            api_key
-            or os.environ.get("PLATFORM_UPLIFT_API_KEY")
-            or os.environ.get("UPLIFT_API_KEY")
-            or ""
-        ).strip()
+        self.api_key = (api_key or "").strip()
         self._base = os.environ.get("UPLIFT_API_BASE", "https://api.upliftai.org")
         self._synth_path = os.environ.get(
             "UPLIFT_TTS_PATH", "/v1/synthesis/text-to-speech"
@@ -203,7 +203,9 @@ class UpliftTTSProvider(BaseTTSProvider):
                         "Uplift TTS API call failed",
                         status_code=resp.status_code,
                     )
-                    resp.raise_for_status()
+                    raise ProviderInvocationError(
+                        classify_http_failure("uplift", resp.status_code)
+                    )
                 async for network_chunk in resp.aiter_bytes():
                     if cancellation_token and cancellation_token.is_cancelled:
                         return
@@ -243,7 +245,10 @@ class UpliftTTSProvider(BaseTTSProvider):
                     native_sample_rate=native_rate,
                     is_final=True,
                 )
-        except Exception as exc:
-            logger.error(f"Uplift TTS Exception: {exc}", error=str(exc))
+        except ProviderInvocationError:
             await self.aclose()
             raise
+        except Exception as exc:
+            logger.error("Uplift TTS exception", error_type=type(exc).__name__)
+            await self.aclose()
+            raise provider_invocation_error("uplift", exc) from exc

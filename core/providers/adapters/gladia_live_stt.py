@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -22,6 +21,7 @@ import httpx
 from core.observability.logging import get_logger
 from core.providers.interfaces.live_stt import BaseLiveSTTSession
 from core.providers.interfaces.stt import Transcript
+from core.providers.mode import should_use_mock_provider
 
 logger = get_logger("ucve.providers.gladia_live")
 
@@ -43,12 +43,7 @@ class GladiaLiveSTTSession(BaseLiveSTTSession):
         model: str = "solaria-1",
         connect_factory: Callable[[str], Any] | None = None,
     ) -> None:
-        self.api_key = (
-            api_key
-            or os.environ.get("PLATFORM_GLADIA_API_KEY")
-            or os.environ.get("GLADIA_API_KEY")
-            or ""
-        ).strip()
+        self.api_key = (api_key or "").strip()
         self._language = language
         self._endpointing = endpointing
         self._receive_partials = receive_partials
@@ -78,10 +73,8 @@ class GladiaLiveSTTSession(BaseLiveSTTSession):
         return self._transcript_q.maxsize
 
     def _use_mock(self) -> bool:
-        return (
-            not self.api_key
-            or os.environ.get("RUN_MOCK_PROVIDERS") == "1"
-            or os.environ.get("RUN_LIVE_PROVIDERS") != "1"
+        return should_use_mock_provider(
+            provider_id="gladia", api_key=self.api_key
         )
 
     async def start(self) -> bool:
@@ -102,7 +95,7 @@ class GladiaLiveSTTSession(BaseLiveSTTSession):
         except Exception as exc:  # pragma: no cover - network failure path
             logger.error(
                 "Gladia Live init failed; falling back to batch",
-                error=str(exc),
+                error_type=type(exc).__name__,
             )
             self._live = False
             return False

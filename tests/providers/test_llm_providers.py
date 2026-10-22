@@ -29,15 +29,19 @@ def test_normalize_llm_provider_defaults_and_allows_vendors() -> None:
 
 
 def test_build_llm_provider_switches() -> None:
-    groq = build_llm_provider("groq", model="openai/gpt-oss-120b")
+    groq = build_llm_provider(
+        "groq", api_key="", model="openai/gpt-oss-120b"
+    )
     assert isinstance(groq, GroqLLMProvider)
     assert groq.default_model == "openai/gpt-oss-120b"
 
-    gemini = build_llm_provider("gemini", model="gemini-2.5-flash")
+    gemini = build_llm_provider(
+        "gemini", api_key="", model="gemini-2.5-flash"
+    )
     assert isinstance(gemini, GeminiLLMProvider)
     assert gemini.default_model == "gemini-2.5-flash"
 
-    openai_p = build_llm_provider("openai", model="gpt-4o-mini")
+    openai_p = build_llm_provider("openai", api_key="", model="gpt-4o-mini")
     assert isinstance(openai_p, OpenAILLMProvider)
     assert openai_p.default_model == "gpt-4o-mini"
 
