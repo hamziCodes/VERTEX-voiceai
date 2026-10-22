@@ -16,7 +16,8 @@ from core.providers.exceptions import (
     provider_invocation_error,
 )
 from core.providers.interfaces.llm import BaseLLMProvider, LLMConfig, LLMStreamChunk
-from core.providers.mode import should_use_mock_provider
+from core.providers.mode import provider_is_locally_ready, should_use_mock_provider
+from core.providers.tool_calls import ToolCallAccumulator, serialize_tool_definitions
 
 logger = get_logger("ucve.providers.openai")
 
@@ -38,26 +39,6 @@ def resolve_openai_model(model: str | None) -> str:
     return _MODEL_ALIASES.get(raw, raw)
 
 
-def _finalize_tool_calls(tool_acc: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
-    """Build finalized tool-call dicts from accumulated stream fragments."""
-    calls: list[dict[str, Any]] = []
-    for _idx in sorted(tool_acc):
-        slot = tool_acc[_idx]
-        raw_args = slot.get("arguments") or ""
-        try:
-            parsed = json.loads(raw_args) if raw_args else {}
-        except json.JSONDecodeError:
-            parsed = {"_raw": raw_args}
-        calls.append(
-            {
-                "id": slot.get("id"),
-                "name": slot.get("name", ""),
-                "arguments": parsed,
-            }
-        )
-    return calls
-
-
 class OpenAILLMProvider(BaseLLMProvider):
     """OpenAI chat completions provider with streaming and cancellation."""
 
@@ -69,7 +50,7 @@ class OpenAILLMProvider(BaseLLMProvider):
         self._client: httpx.AsyncClient | None = None
 
     def health_check(self) -> bool:
-        return True
+        return provider_is_locally_ready(api_key=self.api_key)
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -103,9 +84,8 @@ class OpenAILLMProvider(BaseLLMProvider):
             "stream": True,
         }
         if config.tools:
-            payload["tools"] = config.tools
-            if config.tool_choice:
-                payload["tool_choice"] = config.tool_choice
+            payload["tools"] = serialize_tool_definitions(config.tools)
+            payload["tool_choice"] = "auto"
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -113,7 +93,7 @@ class OpenAILLMProvider(BaseLLMProvider):
         }
 
         client = self._get_client()
-        tool_acc: dict[int, dict[str, Any]] = {}
+        tool_acc = ToolCallAccumulator("openai")
 
         first = True
         try:
@@ -145,15 +125,7 @@ class OpenAILLMProvider(BaseLLMProvider):
                     delta = choices[0].get("delta") or {}
 
                     for tc in delta.get("tool_calls") or []:
-                        idx = int(tc.get("index", 0))
-                        slot = tool_acc.setdefault(idx, {})
-                        if tc.get("id"):
-                            slot["id"] = tc["id"]
-                        fn = tc.get("function") or {}
-                        if fn.get("name"):
-                            slot["name"] = (slot.get("name") or "") + fn["name"]
-                        if fn.get("arguments"):
-                            slot["arguments"] = (slot.get("arguments") or "") + fn["arguments"]
+                        tool_acc.add(tc)
 
                     text = delta.get("content")
                     finish = choices[0].get("finish_reason")
@@ -162,13 +134,13 @@ class OpenAILLMProvider(BaseLLMProvider):
                         first = False
 
                     if finish:
-                        calls = _finalize_tool_calls(tool_acc) if tool_acc else None
+                        calls = tool_acc.finalize() if tool_acc else None
                         if calls:
                             yield LLMStreamChunk(tool_calls=calls, finish_reason=finish)
                         return
 
             if tool_acc:
-                calls = _finalize_tool_calls(tool_acc)
+                calls = tool_acc.finalize()
                 yield LLMStreamChunk(tool_calls=calls, finish_reason="tool_calls")
 
         except ProviderInvocationError:

@@ -16,7 +16,8 @@ from core.providers.exceptions import (
     provider_invocation_error,
 )
 from core.providers.interfaces.llm import BaseLLMProvider, LLMConfig, LLMStreamChunk
-from core.providers.mode import should_use_mock_provider
+from core.providers.mode import provider_is_locally_ready, should_use_mock_provider
+from core.providers.tool_calls import ToolCallAccumulator, serialize_tool_definitions
 
 logger = get_logger("ucve.providers.groq")
 
@@ -40,26 +41,6 @@ def resolve_groq_model(model: str | None) -> str:
     return _MODEL_ALIASES.get(raw, raw)
 
 
-def _finalize_tool_calls(tool_acc: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
-    """Build finalized tool-call dicts from accumulated stream fragments."""
-    calls: list[dict[str, Any]] = []
-    for _idx in sorted(tool_acc):
-        slot = tool_acc[_idx]
-        raw_args = slot.get("arguments") or ""
-        try:
-            parsed = json.loads(raw_args) if raw_args else {}
-        except json.JSONDecodeError:
-            parsed = {"_raw": raw_args}
-        calls.append(
-            {
-                "id": slot.get("id"),
-                "name": slot.get("name", ""),
-                "arguments": parsed,
-            }
-        )
-    return calls
-
-
 class GroqLLMProvider(BaseLLMProvider):
     """Groq OpenAI-compatible chat API. Mocks when GROQ_API_KEY unset."""
 
@@ -80,7 +61,7 @@ class GroqLLMProvider(BaseLLMProvider):
             self._client = None
 
     def health_check(self) -> bool:
-        return True
+        return provider_is_locally_ready(api_key=self.api_key)
 
     async def generate_stream(
         self,
@@ -120,21 +101,10 @@ class GroqLLMProvider(BaseLLMProvider):
             "stream": True,
         }
         if config.tools:
-            request_body["tools"] = [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.parameters
-                        or {"type": "object", "properties": {}},
-                    },
-                }
-                for t in config.tools
-            ]
+            request_body["tools"] = serialize_tool_definitions(config.tools)
             request_body["tool_choice"] = "auto"
         # Accumulates streamed tool-call fragments keyed by choice index.
-        tool_acc: dict[int, dict[str, Any]] = {}
+        tool_acc = ToolCallAccumulator("groq")
         try:
             logger.info("Initiating Groq LLM completion stream", model=model_name)
             async with client.stream(
@@ -169,17 +139,7 @@ class GroqLLMProvider(BaseLLMProvider):
 
                     # Accumulate streamed tool-call fragments.
                     for frag in delta.get("tool_calls", []) or []:
-                        idx = frag.get("index", 0)
-                        slot = tool_acc.setdefault(
-                            idx, {"id": None, "name": "", "arguments": ""}
-                        )
-                        if frag.get("id"):
-                            slot["id"] = frag["id"]
-                        fn = frag.get("function", {}) or {}
-                        if fn.get("name"):
-                            slot["name"] = fn["name"]
-                        if fn.get("arguments"):
-                            slot["arguments"] += fn["arguments"]
+                        tool_acc.add(frag)
 
                     text = delta.get("content") or ""
                     if text:
@@ -190,12 +150,17 @@ class GroqLLMProvider(BaseLLMProvider):
                         )
                         first = False
 
-                    if finish_reason == "tool_calls" and tool_acc:
+                    if finish_reason and tool_acc:
                         yield LLMStreamChunk(
-                            tool_calls=_finalize_tool_calls(tool_acc),
-                            finish_reason="tool_calls",
+                            tool_calls=tool_acc.finalize(),
+                            finish_reason=finish_reason,
                         )
                         tool_acc.clear()
+                if tool_acc:
+                    yield LLMStreamChunk(
+                        tool_calls=tool_acc.finalize(),
+                        finish_reason="tool_calls",
+                    )
         except ProviderInvocationError:
             await self.aclose()
             raise

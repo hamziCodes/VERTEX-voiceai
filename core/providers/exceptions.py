@@ -51,6 +51,26 @@ class ProviderInvocationError(Exception):
         super().__init__(f"{failure.provider_id}:{failure.category.value}")
 
 
+class ProviderStreamInterruptedError(Exception):
+    """A provider stream failed after externally meaningful output was emitted."""
+
+    def __init__(
+        self,
+        failure: ProviderFailure,
+        *,
+        committed_items: int,
+        stage: str | None = None,
+    ) -> None:
+        self.failure = failure
+        self.committed_items = committed_items
+        self.stage = stage
+        suffix = f":{stage}" if stage else ""
+        super().__init__(
+            f"{failure.provider_id}:{failure.category.value}:"
+            f"stream_interrupted_after_commit{suffix}"
+        )
+
+
 def provider_invocation_error(
     provider_id: str, exc: BaseException
 ) -> ProviderInvocationError:

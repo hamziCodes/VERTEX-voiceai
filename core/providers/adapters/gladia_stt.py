@@ -14,7 +14,7 @@ from core.providers.exceptions import (
     provider_invocation_error,
 )
 from core.providers.interfaces.stt import BaseSTTProvider, STTConfig, Transcript
-from core.providers.mode import should_use_mock_provider
+from core.providers.mode import provider_is_locally_ready, should_use_mock_provider
 from core.types.audio import AudioFrame, pcm16_to_wav
 
 logger = get_logger("ucve.providers.gladia")
@@ -31,7 +31,7 @@ class GladiaSTTProvider(BaseSTTProvider):
         self._base = "https://api.gladia.io"
 
     def health_check(self) -> bool:
-        return True
+        return provider_is_locally_ready(api_key=self.api_key)
 
     async def transcribe_stream(
         self,

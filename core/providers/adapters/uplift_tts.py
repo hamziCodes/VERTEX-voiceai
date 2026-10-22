@@ -15,7 +15,7 @@ from core.providers.exceptions import (
     provider_invocation_error,
 )
 from core.providers.interfaces.tts import BaseTTSProvider, TTSChunk, TTSConfig
-from core.providers.mode import should_use_mock_provider
+from core.providers.mode import provider_is_locally_ready, should_use_mock_provider
 
 logger = get_logger("ucve.providers.uplift")
 
@@ -132,7 +132,7 @@ class UpliftTTSProvider(BaseTTSProvider):
             self._client = None
 
     def health_check(self) -> bool:
-        return True
+        return provider_is_locally_ready(api_key=self.api_key)
 
     async def synthesize_stream(
         self,

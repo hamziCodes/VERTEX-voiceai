@@ -40,3 +40,11 @@ def should_use_mock_provider(*, provider_id: str, api_key: str) -> bool:
             f"{provider_id} credential is required in production/live provider mode"
         )
     return not live_mode
+
+
+def provider_is_locally_ready(*, api_key: str) -> bool:
+    """Report local route readiness without making a billable network request."""
+
+    if provider_runtime_status()["provider_mode"] == "mock":
+        return True
+    return bool(api_key.strip())

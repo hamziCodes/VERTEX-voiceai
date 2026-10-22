@@ -55,6 +55,7 @@ from core.providers.adapters.null_stt import NullSTTProvider
 from core.providers.adapters.null_tts import NullTTSProvider
 from core.providers.adapters.openai_llm import OpenAILLMProvider
 from core.providers.adapters.uplift_tts import UpliftTTSProvider
+from core.providers.exceptions import ProviderStreamInterruptedError
 from core.providers.factory import (
     build_llm_provider,
     build_stt_provider,
@@ -63,15 +64,11 @@ from core.providers.factory import (
     normalize_stt_provider,
     normalize_tts_provider,
 )
-from core.providers.failover import FailoverRouter
+from core.providers.failover import FailoverRouter, ProviderStreamDeadlines
 from core.providers.interfaces.live_stt import BaseLiveSTTSession
 from core.providers.interfaces.llm import LLMConfig
 from core.providers.interfaces.stt import STTConfig
-from core.providers.interfaces.tts import (
-    TTSConfig,
-    TTSStreamTimeouts,
-    iterate_tts_stream,
-)
+from core.providers.interfaces.tts import TTSConfig
 from core.providers.live_stt_factory import build_live_stt_session
 from core.providers.mode import provider_runtime_status
 from core.providers.registry import ProviderRegistry
@@ -1135,20 +1132,29 @@ class PipelineOrchestrator:
             )
 
         cfg = STTConfig(language=session_config.language)
-        async def _transcribe(route: Any) -> str:
+        def _transcribe(route: Any) -> AsyncIterator[Any]:
             adapter = self._route_adapter(route, self.stt_provider)
-            result = ""
-            async for transcript in adapter.transcribe_stream(_audio_iter(), cfg):
-                if transcript.text:
-                    result = transcript.text
-            return result
+            return adapter.transcribe_stream(_audio_iter(), cfg)
 
+        text = ""
         if self.bound_provider_chains is not None:
-            text = await self.stt_router.call_with_failover(
-                "stt", session_config.language, _transcribe
-            )
+            async for transcript in self.stt_router.stream_with_failover(
+                "stt",
+                session_config.language,
+                _transcribe,
+                deadlines=ProviderStreamDeadlines(
+                    first_item_seconds=15.0,
+                    idle_seconds=5.0,
+                    overall_seconds=30.0,
+                ),
+                is_committed=lambda item: bool(item.text),
+            ):
+                if transcript.text:
+                    text = transcript.text
         else:
-            text = await _transcribe("primary")
+            async for transcript in _transcribe("primary"):
+                if transcript.text:
+                    text = transcript.text
         if text:
             self._last_stt_final_ms = self.latency_hooks.now_ms()
         return text.strip()
@@ -1199,8 +1205,8 @@ class PipelineOrchestrator:
         generation = self._egress_generation
         ttfb_recorded = False
         audio_committed = False
-        deadlines = TTSStreamTimeouts(
-            first_chunk_seconds=max(
+        deadlines = ProviderStreamDeadlines(
+            first_item_seconds=max(
                 0.001, self.speaking_config.tts_first_chunk_timeout_ms / 1000
             ),
             idle_seconds=max(
@@ -1216,24 +1222,28 @@ class PipelineOrchestrator:
             if turn_id in self._pending_assistant_turns:
                 self._turn_commit_tracker.start_segment(turn_id, sentence)
             cfg = TTSConfig(voice_id=voice, sample_rate=16000)
-            invoke_count = 0
 
-            async def _invoke(
+            def _provider_stream(
                 route: Any,
                 sentence: str = sentence,
                 cfg: TTSConfig = cfg,
-            ) -> bool:
-                nonlocal audio_committed, invoke_count, ttfb_recorded
-                if invoke_count > 0 and audio_committed:
-                    raise RuntimeError("TTS failover blocked after audio commit.")
-                invoke_count += 1
-                source_rate: int | None = None
-                resampler: StreamingEgressResampler | None = None
+            ) -> AsyncIterator[Any]:
                 adapter = self._route_adapter(route, self.tts_provider)
-                provider_stream = adapter.synthesize_stream(
+                return adapter.synthesize_stream(
                     sentence, cfg, cancellation_token=self._tts_cancel
                 )
-                async for chunk in iterate_tts_stream(provider_stream, deadlines):
+
+            source_rate: int | None = None
+            resampler: StreamingEgressResampler | None = None
+            try:
+                provider_stream = self.tts_router.stream_with_failover(
+                    "tts",
+                    session_config.language,
+                    _provider_stream,
+                    deadlines=deadlines,
+                    is_committed=lambda item: bool(item.pcm_data),
+                )
+                async for chunk in provider_stream:
                     if self._tts_cancel.is_cancelled:
                         break
                     if chunk.pcm_data:
@@ -1286,15 +1296,6 @@ class PipelineOrchestrator:
                             generation=generation,
                         )
                         audio_committed = True
-                return True
-
-            try:
-                await self.tts_router.call_with_failover(
-                    "tts",
-                    session_config.language,
-                    _invoke,
-                    first_chunk_timeout=deadlines.overall_seconds + 0.1,
-                )
             except Exception as exc:
                 logger.error(
                     "TTS stream failed",
@@ -1447,7 +1448,29 @@ class PipelineOrchestrator:
                 messages.append({"role": role, "content": content})
         messages.append({"role": "user", "content": user_text})
 
-        async def _run_tool_with_filler(tool_name: str, arguments: dict[str, Any]) -> str:
+        executed_tool_calls: set[str] = set()
+
+        async def _run_tool_with_filler(
+            tool_name: str,
+            arguments: dict[str, Any],
+            *,
+            call_id: str | None = None,
+        ) -> str | None:
+            canonical_arguments = json.dumps(
+                arguments,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+            signature = f"signature:{tool_name}:{canonical_arguments}"
+            identities = {signature}
+            if call_id:
+                identities.add(f"id:{call_id}")
+            if executed_tool_calls.intersection(identities):
+                logger.warning("Duplicate tool call suppressed", tool=tool_name)
+                return None
+            executed_tool_calls.update(identities)
+
             filler_phrase: list[str] = []
 
             def _on_filler(phrase: str) -> None:
@@ -1476,7 +1499,8 @@ class PipelineOrchestrator:
         if user_text.startswith("tool:"):
             tool_name = user_text.split(":", 1)[1].strip()
             normalized = await _run_tool_with_filler(tool_name, {})
-            await self._finish_turn_tts([normalized], session_config, waterfall)
+            if normalized:
+                await self._finish_turn_tts([normalized], session_config, waterfall)
         else:
             default_m = "gemini-2.5-flash" if self._active_llm_id == "gemini" else "openai/gpt-oss-120b"
             model = getattr(session_config, "llm_model", None) or getattr(self, "_active_llm_model", None) or default_m
@@ -1536,12 +1560,26 @@ class PipelineOrchestrator:
                         tts_queue_high_water, tts_q.qsize()
                     )
 
-            async def _stream_llm(route: Any) -> bool:
-                nonlocal ttft_recorded, pending_tool_calls
+            def _stream_llm(route: Any) -> AsyncIterator[Any]:
                 adapter = self._route_adapter(route, self.llm_provider)
-                async for chunk in adapter.generate_stream(
+                return adapter.generate_stream(
                     messages, llm_cfg, cancellation_token=self._llm_cancel
-                ):
+                )
+
+            async def _consume_llm_stream() -> None:
+                nonlocal ttft_recorded, pending_tool_calls
+                stream = self.llm_router.stream_with_failover(
+                    "llm",
+                    session_config.language,
+                    _stream_llm,
+                    deadlines=ProviderStreamDeadlines(
+                        first_item_seconds=10.0,
+                        idle_seconds=10.0,
+                        overall_seconds=60.0,
+                    ),
+                    is_committed=lambda item: bool(item.text or item.tool_calls),
+                )
+                async for chunk in stream:
                     if self._llm_cancel.is_cancelled:
                         break
                     if not ttft_recorded:
@@ -1554,16 +1592,23 @@ class PipelineOrchestrator:
                     if chunk.text:
                         reply_parts.append(chunk.text)
                         await _enqueue_speech_chunks(speech_chunker.push(chunk.text))
-                return True
 
             tts_consumer = asyncio.create_task(_consume_tts_queue())
             self._tts_task = tts_consumer
             self.three_point_cancel.register_task(tts_consumer)
 
             try:
-                await self.llm_router.call_with_failover(
-                    "llm", session_config.language, _stream_llm, first_chunk_timeout=20.0
+                await _consume_llm_stream()
+            except ProviderStreamInterruptedError as exc:
+                await tts_q.put(None)
+                await tts_consumer
+                logger.error(
+                    "LLM stream interrupted after output commit",
+                    provider=exc.failure.provider_id,
+                    category=exc.failure.category.value,
+                    committed_items=exc.committed_items,
                 )
+                raise
             except Exception as exc:
                 if not self._synthetic_provider_reply_allowed():
                     await tts_q.put(None)
@@ -1598,7 +1643,13 @@ class PipelineOrchestrator:
                     else:
                         arguments = dict(raw_args) if raw_args else {}
                     if name:
-                        tool_text = await _run_tool_with_filler(name, arguments)
+                        tool_text = await _run_tool_with_filler(
+                            name,
+                            arguments,
+                            call_id=str(tc.get("id") or "").strip() or None,
+                        )
+                        if tool_text is None:
+                            continue
                         tool_delta = " " + tool_text
                         reply_parts.append(tool_delta)
                         await _enqueue_speech_chunks(speech_chunker.push(tool_delta))

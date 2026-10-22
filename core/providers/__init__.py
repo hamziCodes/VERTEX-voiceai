@@ -13,12 +13,17 @@ from core.providers.exceptions import (
     ProviderFailure,
     ProviderFailureCategory,
     ProviderInvocationError,
+    ProviderStreamInterruptedError,
     ProviderTimeoutError,
     UnknownProviderError,
     classify_http_failure,
     provider_invocation_error,
 )
-from core.providers.failover import FailoverRouter, ProviderHealthState
+from core.providers.failover import (
+    FailoverRouter,
+    ProviderHealthState,
+    ProviderStreamDeadlines,
+)
 from core.providers.registry import ProviderRegistry
 from core.providers.routing import (
     ProviderRouteBuilder,
@@ -49,6 +54,8 @@ __all__ = [
     "ProviderFailure",
     "ProviderFailureCategory",
     "ProviderInvocationError",
+    "ProviderStreamInterruptedError",
+    "ProviderStreamDeadlines",
     "provider_invocation_error",
     "ProviderRouteBuilder",
     "ProviderRouteIdentity",

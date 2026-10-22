@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from core.providers.circuit_breaker import CircuitBreakerConfig, CircuitState
@@ -14,9 +15,34 @@ from core.providers.exceptions import (
     ProviderFailure,
     ProviderFailureCategory,
     ProviderInvocationError,
+    ProviderStreamInterruptedError,
+    provider_invocation_error,
 )
 
 T = TypeVar("T")
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderStreamDeadlines:
+    """Independent deadlines for first output, stream progress, and completion."""
+
+    first_item_seconds: float = 10.0
+    idle_seconds: float = 10.0
+    overall_seconds: float = 60.0
+
+    def __post_init__(self) -> None:
+        if min(
+            self.first_item_seconds,
+            self.idle_seconds,
+            self.overall_seconds,
+        ) <= 0:
+            raise ValueError("Provider stream deadlines must be positive.")
+
+
+class _StreamDeadlineError(TimeoutError):
+    def __init__(self, stage: str) -> None:
+        self.stage = stage
+        super().__init__(stage)
 
 
 class ProviderHealthState:
@@ -250,3 +276,113 @@ class FailoverRouter:
             f"Failures: {evidence or 'circuits_open'}"
         )
         raise NoProviderAvailableError(err_msg)
+
+    async def stream_with_failover(
+        self,
+        category: str,
+        language: str,
+        invoke_fn: Callable[[Any], AsyncIterator[T]],
+        *,
+        deadlines: ProviderStreamDeadlines | None = None,
+        is_committed: Callable[[T], bool] | None = None,
+    ) -> AsyncIterator[T]:
+        """Yield one provider stream and switch only before meaningful output."""
+
+        limits = deadlines or ProviderStreamDeadlines()
+        commit_predicate = is_committed or (lambda _item: True)
+        errors: list[tuple[str, ProviderFailureCategory]] = []
+        for route in self.priority:
+            if not self.is_route_available(route, now_ts=time.time()):
+                continue
+
+            identity = self._identity(route)
+            provider_id = getattr(identity, "provider_id", str(route))
+            iterator: AsyncIterator[T] | None = None
+            committed_items = 0
+            started_at = time.monotonic()
+            completed = False
+            try:
+                iterator = invoke_fn(route).__aiter__()
+                while True:
+                    elapsed = time.monotonic() - started_at
+                    remaining = limits.overall_seconds - elapsed
+                    if remaining <= 0:
+                        raise _StreamDeadlineError("overall")
+                    item_limit = (
+                        limits.first_item_seconds
+                        if committed_items == 0
+                        else limits.idle_seconds
+                    )
+                    timeout = min(item_limit, remaining)
+                    try:
+                        item = await asyncio.wait_for(anext(iterator), timeout=timeout)
+                    except StopAsyncIteration:
+                        if committed_items == 0:
+                            raise ProviderInvocationError(
+                                ProviderFailure(
+                                    provider_id=provider_id,
+                                    category=ProviderFailureCategory.INVALID_OUTPUT,
+                                    retryable=True,
+                                )
+                            ) from None
+                        latency_ms = (time.monotonic() - started_at) * 1000.0
+                        self._record_success(route, latency_ms)
+                        completed = True
+                        return
+                    except TimeoutError as exc:
+                        stage = (
+                            "overall"
+                            if remaining <= item_limit
+                            else (
+                                "first_item"
+                                if committed_items == 0
+                                else "inter_item_idle"
+                            )
+                        )
+                        raise _StreamDeadlineError(stage) from exc
+
+                    if commit_predicate(item):
+                        committed_items += 1
+                    yield item
+            except asyncio.CancelledError:
+                self._release_probes(route)
+                raise
+            except Exception as exc:
+                stage = exc.stage if isinstance(exc, _StreamDeadlineError) else None
+                if isinstance(exc, ProviderInvocationError):
+                    failure = exc.failure
+                elif isinstance(exc, _StreamDeadlineError):
+                    failure = ProviderFailure(
+                        provider_id=provider_id,
+                        category=ProviderFailureCategory.TIMEOUT,
+                        retryable=True,
+                    )
+                else:
+                    failure = provider_invocation_error(provider_id, exc).failure
+                self.record_route_failure(route, failure, now_ts=time.time())
+                self._release_probes(route)
+                if committed_items:
+                    raise ProviderStreamInterruptedError(
+                        failure,
+                        committed_items=committed_items,
+                        stage=stage,
+                    ) from exc
+                errors.append((failure.provider_id, failure.category))
+            finally:
+                if iterator is not None:
+                    close = getattr(iterator, "aclose", None)
+                    if close is not None:
+                        try:
+                            await close()
+                        except (RuntimeError, StopAsyncIteration):
+                            pass
+                if not completed:
+                    self._release_probes(route)
+
+        evidence = ", ".join(
+            f"{provider}:{failure.value}" for provider, failure in errors
+        )
+        raise NoProviderAvailableError(
+            f"All providers for {category}/{language} failed or are unavailable. "
+            f"Failures: {evidence or 'circuits_open'}"
+        )
