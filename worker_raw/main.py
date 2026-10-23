@@ -20,7 +20,11 @@ from core.redis.nonce_store import ReplayStoreUnavailableError
 from core.redis.token_store import SessionTokenStore
 from core.db.async_pg import get_default_database
 from core.db.pg import use_memory_repos
-from core.runtime.admission import CapacityExceededError, SessionAdmissionController
+from core.runtime.admission import (
+    AdmissionStoreUnavailableError,
+    CapacityExceededError,
+    SessionAdmissionController,
+)
 from core.runtime.env import require_production_secrets
 from core.runtime.session_plan import RuntimeSessionPlan, SessionPlanIntegrityError
 from core.transport.native_websocket import NativeWebSocketTransport
@@ -246,8 +250,8 @@ async def ws_audio(websocket: WebSocket) -> None:
         on_transcript=_on_transcript,
     )
     try:
-        await session_admission.acquire(config.session_id)
-    except CapacityExceededError:
+        await session_admission.acquire(config.session_id, config.tenant_id)
+    except (AdmissionStoreUnavailableError, CapacityExceededError):
         await transport.close(websocket)
         return
 
@@ -267,7 +271,12 @@ async def ws_audio(websocket: WebSocket) -> None:
         orchestrator,
         config,
         client_sample_rate=client_rate,
-        release_admission=lambda: session_admission.release(config.session_id),
+        release_admission=lambda: session_admission.release(
+            config.session_id, config.tenant_id
+        ),
+        heartbeat_admission=lambda: session_admission.heartbeat(
+            config.session_id, config.tenant_id
+        ),
         token_expires_at=(float(payload["exp"]) if payload.get("exp") else None),
     )
     try:

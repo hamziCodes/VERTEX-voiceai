@@ -26,7 +26,11 @@ from core.db.repos.pg_repos import (
 from core.metering.quota_enforcer import QuotaEnforcer
 from core.redis.nonce_store import NonceStore, ReplayStoreUnavailableError
 from core.redis.token_store import SessionTokenStore
-from core.runtime.admission import CapacityExceededError, SessionAdmissionController
+from core.runtime.admission import (
+    AdmissionStoreUnavailableError,
+    CapacityExceededError,
+    SessionAdmissionController,
+)
 from core.types.ids import generate_session_id
 
 
@@ -233,10 +237,17 @@ async def handle_session_mint(
 
     session_id = str(generate_session_id())
     try:
-        mint_ctx.admission.acquire_sync(session_id)
+        await mint_ctx.admission.acquire(
+            session_id,
+            tenant_id,
+            max_tenant_sessions=mint_ctx.quota.limits.max_concurrent,
+        )
     except CapacityExceededError as exc:
         _record_rejection(mint_ctx, tenant_id, 503, str(exc))
         return 503, {"error": "Worker capacity limit reached. Please retry shortly."}
+    except AdmissionStoreUnavailableError:
+        _record_rejection(mint_ctx, tenant_id, 503, "admission unavailable")
+        return 503, {"error": "Session admission is temporarily unavailable."}
 
     session = Session(
         id=session_id,
@@ -253,22 +264,21 @@ async def handle_session_mint(
     )
     try:
         await mint_ctx.session_repo.create_session(tenant_id, session)
+        token = issue_session_jwt(
+            tenant_id,
+            session_id,
+            agent_id,
+            secret=jwt_secret,
+            session_plan_ref=plan.plan_id,
+            session_plan_hash=plan.plan_hash,
+            agent_config_version=plan.agent_version,
+            session_language=selection.language,
+            session_voice_id=selection.voice_id,
+            unsafe_demo=plan.unsafe_demo,
+        )
     except Exception:
-        mint_ctx.admission.release_sync(session_id)
+        await mint_ctx.admission.release(session_id, tenant_id)
         raise
-
-    token = issue_session_jwt(
-        tenant_id,
-        session_id,
-        agent_id,
-        secret=jwt_secret,
-        session_plan_ref=plan.plan_id,
-        session_plan_hash=plan.plan_hash,
-        agent_config_version=plan.agent_version,
-        session_language=selection.language,
-        session_voice_id=selection.voice_id,
-        unsafe_demo=plan.unsafe_demo,
-    )
     mint_ctx.quota.acquire(tenant_id, session_id)
     ws_url = os.environ.get("UCVE_WS_PUBLIC_URL", "ws://localhost:8081/ws/audio")
 

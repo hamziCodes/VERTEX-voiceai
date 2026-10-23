@@ -51,6 +51,7 @@ class WebSocketSessionRunner:
         config: PipelineSessionConfig,
         client_sample_rate: int = 16000,
         release_admission: Callable[[], Awaitable[None]] | None = None,
+        heartbeat_admission: Callable[[], Awaitable[bool]] | None = None,
         token_expires_at: float | None = None,
         token_refresh_url: str = "/v1/session/refresh",
         token_expiry_notice_sec: float = 30.0,
@@ -61,6 +62,7 @@ class WebSocketSessionRunner:
         self.config = config
         self.client_sample_rate = client_sample_rate
         self._release_admission = release_admission
+        self._heartbeat_admission = heartbeat_admission
         self.token_expires_at = token_expires_at
         self.token_refresh_url = token_refresh_url
         self.token_expiry_notice_sec = max(0.0, token_expiry_notice_sec)
@@ -582,6 +584,17 @@ class WebSocketSessionRunner:
                 pass
             if not self.transport.is_connected:
                 break
+            if self._heartbeat_admission is not None:
+                try:
+                    refreshed = await self._heartbeat_admission()
+                except Exception:
+                    refreshed = False
+                if not refreshed:
+                    self.stop.set()
+                    await self.websocket.close(
+                        code=1013, reason="session admission lease unavailable"
+                    )
+                    break
             if time.monotonic() - self.last_pong_monotonic > deadline:
                 try:
                     await self.transport.send_control_event(
