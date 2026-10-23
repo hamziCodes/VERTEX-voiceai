@@ -181,7 +181,7 @@ No CRM, calendar, email, inventory, payment, webhook, or custom business action 
 
 Each part ends with a focused commit and tracker update. Do not start the next part while its verification is red.
 
-### 10A — Durable knowledge domain and wizard API
+### 10A — Durable knowledge domain and wizard API — COMPLETE 2026-10-24 (`b2b75a7`)
 
 **Create/modify:**
 
@@ -198,6 +198,8 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 **Verification:** focused API/RLS tests plus fresh-install and upgrade migration tests against disposable pgvector PostgreSQL.
 
 **Suggested commit:** `feat: add durable tenant knowledge workflow`
+
+**Evidence:** [`../evidence/phase-10a/VERIFICATION.md`](../evidence/phase-10a/VERIFICATION.md). Migration 022, tenant-scoped repositories, truthful APIs, revision activation, idempotent retry, and new-version agent binding are implemented. Common-file upload/parsing remains 10B.
 
 ### 10B — Safe common-file ingestion
 
