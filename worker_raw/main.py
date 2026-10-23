@@ -18,6 +18,8 @@ from control_plane.routes.session import (
 )
 from core.redis.nonce_store import ReplayStoreUnavailableError
 from core.redis.token_store import SessionTokenStore
+from core.db.async_pg import get_default_database
+from core.db.pg import use_memory_repos
 from core.runtime.admission import CapacityExceededError, SessionAdmissionController
 from core.runtime.env import require_production_secrets
 from core.runtime.session_plan import RuntimeSessionPlan, SessionPlanIntegrityError
@@ -35,8 +37,17 @@ from worker_raw.ws_session import ProtocolSessionError, WebSocketSessionRunner
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     require_production_secrets()
+    database = None
+    if not use_memory_repos():
+        database = get_default_database()
+        await database.open()
+    _app.state.database = database
     _app.state.token_store = SessionTokenStore()
-    yield
+    try:
+        yield
+    finally:
+        if database is not None:
+            await database.close()
 
 
 app = FastAPI(title="Wavia Worker Raw", version="0.1.0", lifespan=lifespan)

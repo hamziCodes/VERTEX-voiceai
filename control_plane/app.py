@@ -7,6 +7,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from inspect import isawaitable
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
@@ -15,7 +16,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from control_plane.audit_routes import handle_get_audit_logs
-from control_plane.auth.api_keys import APIKeyManager
+from control_plane.auth.api_keys_async import build_api_key_manager
 from control_plane.auth.hmac_mint import expected_signature
 from control_plane.auth.rate_limit import RateLimiter
 from control_plane.auth.context import AuthContext
@@ -35,6 +36,8 @@ from control_plane.routes.telephony import router as telephony_router
 from control_plane.routes.usage import handle_get_usage
 from control_plane.secrets_routes import handle_rotate_secret
 from core.runtime.env import get_ucve_env, require_production_secrets
+from core.db.async_pg import get_default_database
+from core.db.pg import use_memory_repos
 
 
 class QuickMintBody(BaseModel):
@@ -64,9 +67,7 @@ class RefreshBody(BaseModel):
 
 UsageReader = Annotated[AuthContext, Depends(require_permission("usage:read"))]
 AuditReader = Annotated[AuthContext, Depends(require_permission("audit:read"))]
-SecretRotator = Annotated[
-    AuthContext, Depends(require_permission("secret:rotate"))
-]
+SecretRotator = Annotated[AuthContext, Depends(require_permission("secret:rotate"))]
 
 
 def _mint_secret() -> str:
@@ -106,19 +107,30 @@ def _allowed_origins() -> list[str]:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     require_production_secrets()
+    database = None
+    if not use_memory_repos():
+        database = get_default_database()
+        await database.open()
     app.state.mint_ctx = get_default_mint_context()
     app.state.auth_endpoint_limiter = RateLimiter(limit_per_min=60)
     if not hasattr(app.state, "api_keys"):
-        app.state.api_keys = APIKeyManager()
+        app.state.api_keys = build_api_key_manager()
     app.state.api_keys.assert_runtime_ready(get_ucve_env())
-    app.state.db_pool = None
+    app.state.database = database
+    app.state.db_pool = database.pool if database is not None else None
     app.state.redis = None
-    yield
+    try:
+        yield
+    finally:
+        if database is not None:
+            await database.close()
 
 
 from control_plane.middleware.security_headers import SecurityHeadersMiddleware
 
-app = FastAPI(title="Wavia Voice AI — Control Plane", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="Wavia Voice AI — Control Plane", version="0.1.0", lifespan=lifespan
+)
 
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -137,6 +149,7 @@ app.include_router(alerts_router, prefix="/v1")
 app.include_router(agents_router)
 
 from control_plane.openapi_serve import register_self_hosted_docs
+
 register_self_hosted_docs(app)
 
 from pathlib import Path
@@ -144,8 +157,9 @@ from fastapi.staticfiles import StaticFiles
 
 web_client_path = Path(__file__).resolve().parent.parent / "examples" / "web-client"
 if web_client_path.exists():
-    app.mount("/demo", StaticFiles(directory=str(web_client_path), html=True), name="demo")
-
+    app.mount(
+        "/demo", StaticFiles(directory=str(web_client_path), html=True), name="demo"
+    )
 
 
 @app.middleware("http")
@@ -214,36 +228,32 @@ async def json_version() -> dict[str, str]:
         "note": "Not a Chrome DevTools endpoint",
     }
 
+
 @app.post("/v1/session")
 async def mint_session(
     request: Request,
-    x_tenant_id: str = Header(
-        ..., alias="X-Tenant-Id", min_length=1, max_length=128
-    ),
-    x_timestamp: str = Header(
-        ..., alias="X-Timestamp", min_length=1, max_length=32
-    ),
+    x_tenant_id: str = Header(..., alias="X-Tenant-Id", min_length=1, max_length=128),
+    x_timestamp: str = Header(..., alias="X-Timestamp", min_length=1, max_length=32),
     x_nonce: str = Header(..., alias="X-Nonce", min_length=8, max_length=255),
-    x_agent_id: str = Header(
-        ..., alias="X-Agent-Id", min_length=1, max_length=128
-    ),
-    x_signature: str = Header(
-        ..., alias="X-Signature", min_length=64, max_length=128
-    ),
+    x_agent_id: str = Header(..., alias="X-Agent-Id", min_length=1, max_length=128),
+    x_signature: str = Header(..., alias="X-Signature", min_length=64, max_length=128),
     origin: str | None = Header(None, alias="Origin"),
     referer: str | None = Header(None, alias="Referer"),
     authorization: str | None = Header(None, alias="Authorization"),
     x_language: str | None = Header(None, alias="X-Language"),
     x_voice_id: str | None = Header(None, alias="X-Voice-Id"),
 ) -> JSONResponse:
-    ctx: MintContext = getattr(request.app.state, "mint_ctx", None) or get_default_mint_context()
+    ctx: MintContext = (
+        getattr(request.app.state, "mint_ctx", None) or get_default_mint_context()
+    )
     api_key_mint = False
     if authorization and authorization.lower().startswith("bearer "):
         raw = authorization.split(" ", 1)[1].strip()
         try:
-            record = request.app.state.api_keys.verify_api_key(
+            verified = request.app.state.api_keys.verify_api_key(
                 raw, required_scope="session:mint"
             )
+            record = await verified if isawaitable(verified) else verified
             if str(record["tenant_id"]) != x_tenant_id:
                 raise HTTPException(status_code=403, detail="Tenant context mismatch.")
             api_key_mint = True
@@ -285,9 +295,10 @@ async def quick_mint_session(
     elif authorization and authorization.lower().startswith("bearer "):
         raw = authorization.split(" ", 1)[1].strip()
         try:
-            record = request.app.state.api_keys.verify_api_key(
+            verified = request.app.state.api_keys.verify_api_key(
                 raw, required_scope="session:mint"
             )
+            record = await verified if isawaitable(verified) else verified
             if str(record["tenant_id"]) != body.tenant_id:
                 raise HTTPException(status_code=403, detail="Tenant context mismatch.")
             api_key_mint = True
@@ -300,7 +311,9 @@ async def quick_mint_session(
     nonce = uuid.uuid4().hex
     secret = _mint_secret()
     sig = expected_signature(secret, body.tenant_id, ts, nonce, body.agent_id)
-    ctx: MintContext = getattr(request.app.state, "mint_ctx", None) or get_default_mint_context()
+    ctx: MintContext = (
+        getattr(request.app.state, "mint_ctx", None) or get_default_mint_context()
+    )
     status, res_body = await handle_session_mint(
         body.tenant_id,
         ts,
@@ -314,7 +327,9 @@ async def quick_mint_session(
         requested_voice_id=body.voice_id,
     )
     if status != 200:
-        raise HTTPException(status_code=status, detail=res_body.get("error", "mint failed"))
+        raise HTTPException(
+            status_code=status, detail=res_body.get("error", "mint failed")
+        )
     extra_headers = res_body.pop("_headers", {}) or {}
     return JSONResponse(content=res_body, headers=extra_headers)
 
@@ -326,7 +341,9 @@ async def refresh_session(body: RefreshBody, request: Request) -> dict[str, Any]
     )
     status, payload = await handle_session_refresh(body.token, ctx=ctx)
     if status != 200:
-        raise HTTPException(status_code=status, detail=payload.get("error", "refresh failed"))
+        raise HTTPException(
+            status_code=status, detail=payload.get("error", "refresh failed")
+        )
     return payload
 
 
@@ -346,7 +363,9 @@ async def get_audit(
     auth: AuditReader,
 ) -> dict[str, Any]:
     tenant_id = auth.tenant_id
-    status, body = handle_get_audit_logs(tenant_id, tenant_id, actor_role=auth.primary_role)
+    status, body = await handle_get_audit_logs(
+        tenant_id, tenant_id, actor_role=auth.primary_role
+    )
     if status != 200:
         raise HTTPException(status_code=status, detail=body.get("error"))
     return body
@@ -358,7 +377,9 @@ async def rotate_secret(
     auth: SecretRotator,
 ) -> dict[str, Any]:
     enforce_tenant_access(auth, body.tenant_id)
-    status, payload = handle_rotate_secret(body.tenant_id, body.provider_id, body.new_secret)
+    status, payload = await handle_rotate_secret(
+        body.tenant_id, body.provider_id, body.new_secret
+    )
     if status != 200:
         raise HTTPException(status_code=status, detail=payload.get("error"))
     return payload
@@ -370,7 +391,9 @@ async def metrics(
 ) -> PlainTextResponse:
     expected = _metrics_bearer()
     if not expected:
-        raise HTTPException(status_code=503, detail="UCVE_METRICS_BEARER not configured.")
+        raise HTTPException(
+            status_code=503, detail="UCVE_METRICS_BEARER not configured."
+        )
     if not authorization or authorization != f"Bearer {expected}":
         raise HTTPException(status_code=401, detail="Unauthorized")
     code, headers, body = handle_metrics_request()

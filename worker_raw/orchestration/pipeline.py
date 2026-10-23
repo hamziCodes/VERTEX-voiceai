@@ -100,6 +100,7 @@ def _metric_session_uuid(session_id: str) -> UUID:
     except ValueError:
         return uuid5(NAMESPACE_DNS, f"ucve-session:{session_id}")
 
+
 ProviderRegistry.register_provider_class("gladia", GladiaSTTProvider)
 ProviderRegistry.register_provider_class("deepgram", DeepgramSTTProvider)
 ProviderRegistry.register_provider_class("groq", GroqLLMProvider)
@@ -140,7 +141,9 @@ class PipelineOrchestrator:
         self.speaking_config = SpeakingPipelineConfig.from_env()
         self.vad_adapter = SileroVADAdapter()
         self._apply_vad_timing()
-        self.stt_provider = GladiaSTTProvider(mock_text=self.listening_config.stt_mock_text)
+        self.stt_provider = GladiaSTTProvider(
+            mock_text=self.listening_config.stt_mock_text
+        )
         self.llm_provider = GroqLLMProvider()
         self.tts_provider = UpliftTTSProvider(
             chunk_size_bytes=(
@@ -305,7 +308,9 @@ class PipelineOrchestrator:
                         )
         self._runtime_resources_closed = True
 
-    async def apply_provider_selection(self, session_config: PipelineSessionConfig) -> None:
+    async def apply_provider_selection(
+        self, session_config: PipelineSessionConfig
+    ) -> None:
         """Swap STT/LLM/TTS adapters from session config (call at session start only)."""
         self.language_router.set_supported_languages(session_config.allowed_languages)
         configure_tools = getattr(self.tool_handler, "set_allowed_tools", None)
@@ -356,7 +361,10 @@ class PipelineOrchestrator:
             self._active_stt_id = stt_id
 
         llm_model_choice = getattr(session_config, "llm_model", None)
-        if llm_id != self._active_llm_id or getattr(self, "_active_llm_model", None) != llm_model_choice:
+        if (
+            llm_id != self._active_llm_id
+            or getattr(self, "_active_llm_model", None) != llm_model_choice
+        ):
             old = self.llm_provider
             self.llm_provider = build_llm_provider(
                 llm_id, api_key=None, model=llm_model_choice
@@ -420,7 +428,9 @@ class PipelineOrchestrator:
             except Exception:
                 break
         if dropped > 0:
-            logger.info("Flushed egress audio queue on barge-in", dropped_chunks=dropped)
+            logger.info(
+                "Flushed egress audio queue on barge-in", dropped_chunks=dropped
+            )
 
     def attach_ws_session(self, session: Any) -> None:
         self._ws_session = session
@@ -708,13 +718,13 @@ class PipelineOrchestrator:
             "audio.end",
             {
                 "turn_id": turn_id,
-                "generated_audio_ms": self._turn_commit_tracker.generated_audio_ms(turn_id),
+                "generated_audio_ms": self._turn_commit_tracker.generated_audio_ms(
+                    turn_id
+                ),
             },
         )
 
-    async def _emit_degraded_event(
-        self, kind: str, details: dict[str, Any]
-    ) -> None:
+    async def _emit_degraded_event(self, kind: str, details: dict[str, Any]) -> None:
         session = self._ws_session
         transport = getattr(session, "transport", None) if session is not None else None
         if transport is None:
@@ -811,7 +821,9 @@ class PipelineOrchestrator:
             is_speaking=lambda: bool(self.vad_adapter.is_speaking),
         )
 
-    async def execute_immediate_barge_in(self, reason: str = "VAD speech onset") -> None:
+    async def execute_immediate_barge_in(
+        self, reason: str = "VAD speech onset"
+    ) -> None:
         """Atomically invalidate audio, clear the client, and stop turn producers."""
         async with self._barge_lock:
             turn_id = self._active_playback_turn_id or ""
@@ -876,9 +888,7 @@ class PipelineOrchestrator:
                 self._live_stt_status = "failed"
                 return self._live_stt_status
             cfg = (
-                getattr(self._ws_session, "config", None)
-                if self._ws_session
-                else None
+                getattr(self._ws_session, "config", None) if self._ws_session else None
             )
             language = getattr(cfg, "language", "en") if cfg else "en"
             session = build_live_stt_session(
@@ -938,7 +948,10 @@ class PipelineOrchestrator:
     ) -> None:
         try:
             async for transcript in session.transcripts():
-                if session is not self._live_stt or generation != self._live_stt_generation:
+                if (
+                    session is not self._live_stt
+                    or generation != self._live_stt_generation
+                ):
                     return
                 text = (transcript.text or "").strip()
                 if not text:
@@ -955,7 +968,9 @@ class PipelineOrchestrator:
                     # Drive the turn immediately — do not wait for the next mic
                     # frame (silence/mute previously left finals stranded).
                     runner = self._ws_session
-                    enqueue = getattr(runner, "enqueue_voice_turn", None) if runner else None
+                    enqueue = (
+                        getattr(runner, "enqueue_voice_turn", None) if runner else None
+                    )
                     if enqueue is not None:
                         await enqueue(text)
                         self._live_final_text = ""
@@ -1031,14 +1046,19 @@ class PipelineOrchestrator:
         if self._barge_verify is not None and self._barge_verify.is_verifying:
             self._barge_verify.note_vad(evt.probability)
 
-        if evt.speech_start and self.fsm.state in (SessionState.AGENT_SPEAKING, SessionState.PROCESSING_INFERENCE):
+        if evt.speech_start and self.fsm.state in (
+            SessionState.AGENT_SPEAKING,
+            SessionState.PROCESSING_INFERENCE,
+        ):
             if self._barge_verify is not None:
                 if self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
                     self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
                 if not self._barge_verify.is_verifying and (
                     self._barge_verify_task is None or self._barge_verify_task.done()
                 ):
-                    self._barge_verify_task = asyncio.create_task(self._run_barge_verify())
+                    self._barge_verify_task = asyncio.create_task(
+                        self._run_barge_verify()
+                    )
                 await self._emit_debug_listening(evt, frame)
                 return evt
             await self.execute_immediate_barge_in(reason="VAD speech during agent TTS")
@@ -1050,7 +1070,10 @@ class PipelineOrchestrator:
                 self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
             if self._speech_capture is None:
                 # Phase 0 quick win: do not clear buffer on onset (preserves lookback).
-                if not self._capturing_speech and not self.listening_config.enable_quick_wins:
+                if (
+                    not self._capturing_speech
+                    and not self.listening_config.enable_quick_wins
+                ):
                     self._speech_buffer = bytearray()
                 self._capturing_speech = True
             else:
@@ -1058,11 +1081,14 @@ class PipelineOrchestrator:
             await self._emit_vad_state(speaking=True, probability=evt.probability)
             await self._maybe_start_live_stt()
 
-        capturing = self._capturing_speech or (
-            self._speech_capture is not None and self._speech_capture.capturing
-        ) or self.fsm.state in (
-            SessionState.USER_SPEAKING,
-            SessionState.BARGE_IN_INTERRUPTED,
+        capturing = (
+            self._capturing_speech
+            or (self._speech_capture is not None and self._speech_capture.capturing)
+            or self.fsm.state
+            in (
+                SessionState.USER_SPEAKING,
+                SessionState.BARGE_IN_INTERRUPTED,
+            )
         )
 
         if capturing and evt.probability > 0.5:
@@ -1107,7 +1133,9 @@ class PipelineOrchestrator:
         await self._emit_debug_listening(evt, frame)
         return evt
 
-    async def transcribe_speech_buffer(self, session_config: PipelineSessionConfig) -> str:
+    async def transcribe_speech_buffer(
+        self, session_config: PipelineSessionConfig
+    ) -> str:
         """Run STT on buffered mic audio after VAD speech_end (live final preferred)."""
         if self._live_final_text:
             text = self._live_final_text.strip()
@@ -1132,6 +1160,7 @@ class PipelineOrchestrator:
             )
 
         cfg = STTConfig(language=session_config.language)
+
         def _transcribe(route: Any) -> AsyncIterator[Any]:
             adapter = self._route_adapter(route, self.stt_provider)
             return adapter.transcribe_stream(_audio_iter(), cfg)
@@ -1326,7 +1355,9 @@ class PipelineOrchestrator:
         except Exception as exc:
             logger.debug("Client TTS interruption notify failed", error=str(exc))
 
-    async def run_turn(self, session_config: PipelineSessionConfig, user_text: str) -> str:
+    async def run_turn(
+        self, session_config: PipelineSessionConfig, user_text: str
+    ) -> str:
         """Execute one STT→RAG→LLM/Tool→norm→TTS turn with latency tracing."""
         await self._settle_pending_clear_acks()
         turn_start = time.monotonic()
@@ -1424,7 +1455,9 @@ class PipelineOrchestrator:
             tenant_uuid = None
         if tenant_uuid is not None:
             try:
-                rag_chunks = await self.speculative_rag.reconcile(user_text, tenant_uuid)
+                rag_chunks = await self.speculative_rag.reconcile(
+                    user_text, tenant_uuid
+                )
                 waterfall.rag_retrieve_ms = self.latency_hooks.now_ms()
                 if rag_chunks:
                     rag_context = "\n".join(
@@ -1485,7 +1518,9 @@ class PipelineOrchestrator:
             try:
                 if self.fsm.can_transition(SessionEvent.TOOL_CALL_START):
                     self.fsm.trigger(SessionEvent.TOOL_CALL_START)
-                tool_res = await self.tool_handler.handle_tool_call(tool_name, arguments)
+                tool_res = await self.tool_handler.handle_tool_call(
+                    tool_name, arguments
+                )
                 if self.fsm.can_transition(SessionEvent.TOOL_RESULT):
                     self.fsm.trigger(SessionEvent.TOOL_RESULT)
             finally:
@@ -1493,7 +1528,9 @@ class PipelineOrchestrator:
                     self._filler.cancel()
                     self._filler = None
             if filler_phrase:
-                await self._finish_turn_tts(filler_phrase[:1], session_config, waterfall)
+                await self._finish_turn_tts(
+                    filler_phrase[:1], session_config, waterfall
+                )
             return str(tool_res.get("content", "Tool executed."))
 
         if user_text.startswith("tool:"):
@@ -1502,8 +1539,16 @@ class PipelineOrchestrator:
             if normalized:
                 await self._finish_turn_tts([normalized], session_config, waterfall)
         else:
-            default_m = "gemini-2.5-flash" if self._active_llm_id == "gemini" else "openai/gpt-oss-120b"
-            model = getattr(session_config, "llm_model", None) or getattr(self, "_active_llm_model", None) or default_m
+            default_m = (
+                "gemini-2.5-flash"
+                if self._active_llm_id == "gemini"
+                else "openai/gpt-oss-120b"
+            )
+            model = (
+                getattr(session_config, "llm_model", None)
+                or getattr(self, "_active_llm_model", None)
+                or default_m
+            )
             llm_cfg = LLMConfig(model=model)
             reply_parts: list[str] = []
             ttft_recorded = False
@@ -1556,9 +1601,7 @@ class PipelineOrchestrator:
                         except TimeoutError:
                             if self._llm_cancel.is_cancelled:
                                 raise asyncio.CancelledError() from None
-                    tts_queue_high_water = max(
-                        tts_queue_high_water, tts_q.qsize()
-                    )
+                    tts_queue_high_water = max(tts_queue_high_water, tts_q.qsize())
 
             def _stream_llm(route: Any) -> AsyncIterator[Any]:
                 adapter = self._route_adapter(route, self.llm_provider)
@@ -1623,7 +1666,11 @@ class PipelineOrchestrator:
                     error_type=type(exc).__name__,
                 )
                 user = next(
-                    (m["content"] for m in reversed(messages) if m.get("role") == "user"),
+                    (
+                        m["content"]
+                        for m in reversed(messages)
+                        if m.get("role") == "user"
+                    ),
                     "",
                 )
                 fallback = f"I heard you say: {user}. How can I help you today?"
@@ -1633,8 +1680,14 @@ class PipelineOrchestrator:
 
             if pending_tool_calls and sc.enable_tool_loop:
                 for tc in pending_tool_calls:
-                    name = str(tc.get("function", {}).get("name") or tc.get("name") or "").strip()
-                    raw_args = tc.get("function", {}).get("arguments") or tc.get("arguments") or {}
+                    name = str(
+                        tc.get("function", {}).get("name") or tc.get("name") or ""
+                    ).strip()
+                    raw_args = (
+                        tc.get("function", {}).get("arguments")
+                        or tc.get("arguments")
+                        or {}
+                    )
                     if isinstance(raw_args, str):
                         try:
                             arguments = json.loads(raw_args) if raw_args else {}
@@ -1668,7 +1721,9 @@ class PipelineOrchestrator:
             )
 
             normalized = "".join(reply_parts) or "OK"
-            norm_result = self.normalizer.normalize(normalized, language=session_config.language)
+            norm_result = self.normalizer.normalize(
+                normalized, language=session_config.language
+            )
             normalized = getattr(norm_result, "text", None) or str(norm_result)
 
         if self._ws_session is None:
@@ -1684,7 +1739,9 @@ class PipelineOrchestrator:
         await self._emit_latency_telemetry(waterfall)
         if self._active_latency_turn_id == waterfall.turn_id:
             self._active_latency_turn_id = None
-        if self._ws_session is None and self.fsm.can_transition(SessionEvent.TTS_DRAINED):
+        if self._ws_session is None and self.fsm.can_transition(
+            SessionEvent.TTS_DRAINED
+        ):
             self.fsm.trigger(SessionEvent.TTS_DRAINED)
         self._turn_ends.append(time.monotonic())
         return normalized
@@ -1765,7 +1822,9 @@ class PipelineOrchestrator:
             )
             await self.post_call_pipeline.enqueue(record)
         except UCVEError as exc:
-            logger.warning("Skipped PostCallRecord (identity validation)", error=str(exc))
+            logger.warning(
+                "Skipped PostCallRecord (identity validation)", error=str(exc)
+            )
         except Exception as exc:
             logger.warning("Failed to enqueue PostCallRecord", error=str(exc))
 
@@ -1774,7 +1833,7 @@ class PipelineOrchestrator:
         if hasattr(self.latency_collector, "clear_session"):
             self.latency_collector.clear_session()
 
-        self.audit_writer.record(
+        await self.audit_writer.arecord(
             tenant_id=session_config.tenant_id,
             action="call_record_created",
             resource_type="session",
@@ -1785,15 +1844,15 @@ class PipelineOrchestrator:
             "Pipeline session terminated cleanly", session_id=session_config.session_id
         )
 
-    def _build_diarized_turns(
-        self, turns: list[dict[str, Any]]
-    ) -> list[DiarizedTurn]:
+    def _build_diarized_turns(self, turns: list[dict[str, Any]]) -> list[DiarizedTurn]:
         base_ms = int((self._session_start_monotonic - self._started_at) * 1000)
         out: list[DiarizedTurn] = []
         for i, t in enumerate(turns):
             start = base_ms
             if i < len(self._turn_starts):
-                start = int((self._turn_starts[i] - self._session_start_monotonic) * 1000)
+                start = int(
+                    (self._turn_starts[i] - self._session_start_monotonic) * 1000
+                )
             end = start + 1000
             if i < len(self._turn_ends):
                 end = int((self._turn_ends[i] - self._session_start_monotonic) * 1000)
@@ -1817,7 +1876,10 @@ class PipelineOrchestrator:
         self._started_at = time.monotonic()
         self._session_start_monotonic = self._started_at
 
-        if session_config.compliance_tier == "hipaa" and not session_config.hipaa_baa_acknowledged:
+        if (
+            session_config.compliance_tier == "hipaa"
+            and not session_config.hipaa_baa_acknowledged
+        ):
             raise PermissionError(
                 "HIPAA compliance requires signed BAA acknowledgment before cloud LLM execution."
             )

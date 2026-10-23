@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
+
+from core.db.async_pg import AsyncDatabase, get_default_database
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,3 +103,72 @@ class InMemorySecretRepository:
         existed = self.storage.pop(key, None) is not None
         self._rotation_versions.pop(key, None)
         return existed
+
+
+class PostgresSecretRepository:
+    """Async encrypted-credential persistence under tenant RLS."""
+
+    def __init__(self, database: AsyncDatabase | Any | None = None) -> None:
+        self.database = database or get_default_database()
+
+    async def get(
+        self,
+        tenant_id: str,
+        provider_id: str,
+        credential_type: str,
+        credential_ref: str,
+    ) -> CredentialRecord | None:
+        async with self.database.tenant_transaction(tenant_id) as connection:
+            cursor = await connection.execute(
+                "SELECT tenant_id::text, provider_id, credential_type, "
+                "credential_ref, encrypted_blob, key_version, rotation_version "
+                "FROM tenant_credentials WHERE tenant_id = %s::uuid "
+                "AND provider_id = %s AND credential_type = %s "
+                "AND credential_ref = %s",
+                (tenant_id, provider_id, credential_type, credential_ref),
+            )
+            row = await cursor.fetchone()
+        return CredentialRecord(*row) if row is not None else None
+
+    async def put(self, record: CredentialRecord) -> None:
+        async with self.database.tenant_transaction(record.tenant_id) as connection:
+            await connection.execute(
+                """
+                INSERT INTO tenant_credentials (
+                    tenant_id, provider_id, credential_type, credential_ref,
+                    encrypted_blob, key_version, rotation_version, rotated_at
+                ) VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (
+                    tenant_id, provider_id, credential_type, credential_ref
+                ) DO UPDATE SET
+                    encrypted_blob = EXCLUDED.encrypted_blob,
+                    key_version = EXCLUDED.key_version,
+                    rotation_version = EXCLUDED.rotation_version,
+                    rotated_at = NOW()
+                """,
+                (
+                    record.tenant_id,
+                    record.provider_id,
+                    record.credential_type,
+                    record.credential_ref,
+                    record.encrypted_blob,
+                    record.key_version,
+                    record.rotation_version,
+                ),
+            )
+
+    async def delete(
+        self,
+        tenant_id: str,
+        provider_id: str,
+        credential_type: str,
+        credential_ref: str,
+    ) -> bool:
+        async with self.database.tenant_transaction(tenant_id) as connection:
+            cursor = await connection.execute(
+                "DELETE FROM tenant_credentials WHERE tenant_id = %s::uuid "
+                "AND provider_id = %s AND credential_type = %s "
+                "AND credential_ref = %s RETURNING id",
+                (tenant_id, provider_id, credential_type, credential_ref),
+            )
+            return await cursor.fetchone() is not None

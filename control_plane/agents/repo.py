@@ -8,7 +8,10 @@ from typing import Any
 from uuid import UUID
 
 from control_plane.agents.models.agent_config import AgentConfig
-from control_plane.agents.validation.validator import AgentConfigValidator, ValidationResult
+from control_plane.agents.validation.validator import (
+    AgentConfigValidator,
+    ValidationResult,
+)
 
 
 class AgentNotFoundError(Exception):
@@ -47,7 +50,9 @@ class AgentConfigRepo:
         key = (tenant_id, agent_id)
         record = self._drafts.get(key)
         if not record:
-            raise AgentNotFoundError(f"Agent {agent_id} not found for tenant {tenant_id}.")
+            raise AgentNotFoundError(
+                f"Agent {agent_id} not found for tenant {tenant_id}."
+            )
         return AgentConfig.model_validate(record)
 
     def list_agents(self, tenant_id: UUID) -> list[AgentConfig]:
@@ -145,7 +150,9 @@ class AgentConfigRepo:
 
         entry = self._versions.get((tenant_id, agent_id, version))
         if not entry:
-            raise AgentNotFoundError(f"Version {version} of agent {agent_id} not found.")
+            raise AgentNotFoundError(
+                f"Version {version} of agent {agent_id} not found."
+            )
 
         return AgentConfig.model_validate(entry["snapshot"])
 
@@ -154,7 +161,9 @@ class AgentConfigRepo:
         # Verify agent belongs to tenant
         _ = self.get_draft(tenant_id, agent_id)
         results = []
-        for (t_id, a_id, v_num), entry in sorted(self._versions.items(), key=lambda x: x[0][2]):
+        for (t_id, a_id, v_num), entry in sorted(
+            self._versions.items(), key=lambda x: x[0][2]
+        ):
             if t_id == tenant_id and a_id == agent_id:
                 results.append(
                     {
@@ -166,14 +175,21 @@ class AgentConfigRepo:
         return results
 
 
-_default_agent_config_repo: AgentConfigRepo | None = None
+_default_agent_config_repo: Any | None = None
 
 
-def get_default_agent_config_repo() -> AgentConfigRepo:
+def get_default_agent_config_repo() -> Any:
     """Return the process-wide repository shared by publish and session mint."""
 
     global _default_agent_config_repo
     if _default_agent_config_repo is None:
+        from core.db.pg import use_memory_repos
+
+        if not use_memory_repos():
+            from control_plane.agents.pg_repo import PostgresAgentConfigRepo
+
+            _default_agent_config_repo = PostgresAgentConfigRepo()
+            return _default_agent_config_repo
         repo = AgentConfigRepo()
         tenant_id = UUID("00000000-0000-0000-0000-000000000001")
         agent_id = UUID("00000000-0000-0000-0000-0000000000a1")
@@ -189,7 +205,7 @@ def get_default_agent_config_repo() -> AgentConfigRepo:
     return _default_agent_config_repo
 
 
-def reset_default_agent_config_repo() -> AgentConfigRepo:
+def reset_default_agent_config_repo() -> Any:
     """Reset the shared repository for isolated tests and local process restarts."""
 
     global _default_agent_config_repo

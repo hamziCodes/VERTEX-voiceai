@@ -8,7 +8,7 @@ from typing import Protocol
 
 from core.listening.config import SpeakingPipelineConfig
 from core.providers.routing import ProviderRouteBuilder, ResolvedProviderRoute
-from core.secrets.vault import SecretVault
+from core.secrets.vault import build_secret_vault
 from worker_raw.orchestration.session_config import PipelineSessionConfig
 
 
@@ -62,7 +62,7 @@ class ProviderSessionBinder:
     ) -> ProviderSessionBinder:
         return cls(
             ProviderRouteBuilder(
-                SecretVault(),
+                build_secret_vault(),
                 speaking_config=speaking_config,
                 stt_mock_text=stt_mock_text,
             )
@@ -72,12 +72,21 @@ class ProviderSessionBinder:
         built: dict[str, tuple[ResolvedProviderRoute, ...]] = {}
         try:
             for category in ("stt", "llm", "tts"):
-                built[category] = self.route_builder.build_chain(
-                    config.tenant_id,
-                    category,
-                    config.language,
-                    config.runtime_provider_routes(category),
-                )
+                async_builder = getattr(self.route_builder, "build_chain_async", None)
+                if async_builder is None:
+                    built[category] = self.route_builder.build_chain(
+                        config.tenant_id,
+                        category,
+                        config.language,
+                        config.runtime_provider_routes(category),
+                    )
+                else:
+                    built[category] = await async_builder(
+                        config.tenant_id,
+                        category,
+                        config.language,
+                        config.runtime_provider_routes(category),
+                    )
         except Exception:
             partial = BoundProviderChains(
                 stt=built.get("stt", ()),

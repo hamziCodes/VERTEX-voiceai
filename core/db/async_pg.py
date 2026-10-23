@@ -64,6 +64,10 @@ class AsyncDatabase:
         )
         await self._pool.open()
 
+    async def ensure_open(self) -> None:
+        if self._pool is None:
+            await self.open()
+
     async def close(self) -> None:
         if self._pool is not None and hasattr(self._pool, "close"):
             await self._pool.close()
@@ -79,6 +83,7 @@ class AsyncDatabase:
         normalized = tenant_id.strip()
         if not normalized:
             raise PermissionError("tenant_id is required for tenant transaction.")
+        await self.ensure_open()
         pool = self._require_pool()
         async with pool.connection() as connection:
             async with connection.transaction():
@@ -89,7 +94,25 @@ class AsyncDatabase:
     async def platform_transaction(self) -> AsyncIterator[Any]:
         """Open a transaction for platform-global operations such as migrations."""
 
+        await self.ensure_open()
         pool = self._require_pool()
         async with pool.connection() as connection:
             async with connection.transaction():
                 yield connection
+
+
+_default_database: AsyncDatabase | None = None
+
+
+def get_default_database() -> AsyncDatabase:
+    global _default_database
+    if _default_database is None:
+        _default_database = AsyncDatabase.from_environment()
+    return _default_database
+
+
+def reset_default_database() -> None:
+    """Forget the process database handle; tests must close an open pool first."""
+
+    global _default_database
+    _default_database = None

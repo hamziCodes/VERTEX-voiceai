@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from inspect import isawaitable
+from typing import Any
 
 from core.secrets.cache import CredentialCacheKey, SecretCache
 from core.secrets.envelope import EnvelopeEncryption
@@ -18,6 +20,7 @@ from core.secrets.repository import (
     CredentialRecord,
     InMemorySecretRepository,
     SecretRepository,
+    PostgresSecretRepository,
 )
 
 
@@ -285,3 +288,148 @@ class SecretVault:
                 hook(tenant_id, provider_id, action)
             except Exception:
                 pass
+
+    async def astore(
+        self,
+        tenant_id: str,
+        provider_id: str,
+        secret: str,
+        credential_type: str = "api_key",
+        *,
+        credential_ref: str = "default",
+    ) -> CredentialRecord:
+        """Async durable equivalent of :meth:`store`."""
+
+        if not secret:
+            raise ValueError("Secret value cannot be empty.")
+        blob, key_version = self.envelope.encrypt_secret(secret)
+        pending = self.repository.get(
+            tenant_id, provider_id, credential_type, credential_ref
+        )
+        previous = await pending if isawaitable(pending) else pending
+        record = CredentialRecord(
+            tenant_id=tenant_id,
+            provider_id=provider_id,
+            credential_type=credential_type,
+            credential_ref=credential_ref,
+            encrypted_blob=blob,
+            key_version=key_version,
+            rotation_version=(previous.rotation_version + 1 if previous else 1),
+        )
+        result = self.repository.put(record)
+        if isawaitable(result):
+            await result
+        self.cache.invalidate(
+            tenant_id=tenant_id,
+            provider_id=provider_id,
+            credential_type=credential_type,
+            credential_ref=credential_ref,
+        )
+        return record
+
+    async def aresolve_credential(
+        self,
+        tenant_id: str,
+        provider_id: str,
+        *,
+        credential_ref: str | None,
+        credential_type: str = "api_key",
+        tier: CredentialTier | str = CredentialTier.PLATFORM,
+    ) -> ResolvedCredential:
+        """Resolve credentials without blocking the worker event loop."""
+
+        requested_tier = CredentialTier(tier)
+        normalized_provider = provider_id.strip().lower()
+        if requested_tier in {CredentialTier.BYOK, CredentialTier.BOTH}:
+            tenant_record = None
+            if credential_ref:
+                pending = self.repository.get(
+                    tenant_id,
+                    normalized_provider,
+                    credential_type,
+                    credential_ref,
+                )
+                tenant_record = await pending if isawaitable(pending) else pending
+            if tenant_record is not None:
+                key = CredentialCacheKey(
+                    tenant_id=tenant_id,
+                    provider_id=normalized_provider,
+                    credential_type=credential_type,
+                    requested_tier=requested_tier,
+                    credential_ref=credential_ref,
+                    rotation_version=tenant_record.rotation_version,
+                )
+                cached = self.cache.get(key)
+                if cached is not None:
+                    self._notify_audit_hooks(
+                        tenant_id, normalized_provider, "resolve_cached"
+                    )
+                    return cached
+                secret = self.envelope.decrypt_secret(
+                    tenant_record.encrypted_blob,
+                    key_version=tenant_record.key_version,
+                )
+                resolved = ResolvedCredential(
+                    tenant_id=tenant_id,
+                    provider_id=normalized_provider,
+                    credential_type=credential_type,
+                    requested_tier=requested_tier,
+                    source_tier=CredentialTier.BYOK,
+                    credential_ref=credential_ref,
+                    rotation_version=tenant_record.rotation_version,
+                    secret=secret,
+                )
+                self.cache.set(key, resolved)
+                self._notify_audit_hooks(
+                    tenant_id, normalized_provider, "resolve_decrypted"
+                )
+                return resolved
+            if requested_tier is CredentialTier.BYOK:
+                raise SecretNotFoundError(
+                    "No tenant credential found for "
+                    f"provider '{normalized_provider}' and reference "
+                    f"'{credential_ref or ''}'."
+                )
+        platform = self.platform_secrets.resolve(normalized_provider, credential_type)
+        if platform is None:
+            raise SecretNotFoundError(
+                "No platform credential found for "
+                f"provider '{normalized_provider}' and type '{credential_type}'."
+            )
+        return ResolvedCredential(
+            tenant_id=tenant_id,
+            provider_id=normalized_provider,
+            credential_type=credential_type,
+            requested_tier=requested_tier,
+            source_tier=CredentialTier.PLATFORM,
+            credential_ref=None,
+            rotation_version=platform.version,
+            secret=platform.secret,
+        )
+
+    async def arotate(
+        self,
+        tenant_id: str,
+        provider_id: str,
+        new_secret: str,
+        credential_type: str = "api_key",
+        *,
+        credential_ref: str = "default",
+    ) -> CredentialRecord:
+        return await self.astore(
+            tenant_id,
+            provider_id,
+            new_secret,
+            credential_type,
+            credential_ref=credential_ref,
+        )
+
+
+def build_secret_vault(**kwargs: Any) -> SecretVault:
+    """Select memory only for test/local development and PostgreSQL otherwise."""
+
+    from core.db.pg import use_memory_repos
+
+    if use_memory_repos():
+        return SecretVault(**kwargs)
+    return SecretVault(repository=PostgresSecretRepository(), **kwargs)

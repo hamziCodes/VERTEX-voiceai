@@ -12,9 +12,9 @@ from urllib.parse import urlparse
 from control_plane.agents.compiler import (
     SessionPlanCompilationError,
     build_unsafe_demo_plan,
-    compile_agent_version,
+    compile_agent_version_async,
 )
-from control_plane.agents.repo import AgentConfigRepo, get_default_agent_config_repo
+from control_plane.agents.repo import get_default_agent_config_repo
 from control_plane.auth.hmac_mint import verify_mint_signature
 from control_plane.auth.jwt import issue_session_jwt, verify_session_jwt
 from control_plane.auth.rate_limit import RateLimiter
@@ -38,9 +38,7 @@ class MintContext:
     token_store: SessionTokenStore = field(default_factory=SessionTokenStore)
     tenant_repo: Any = field(default_factory=build_tenant_repository)
     session_repo: Any = field(default_factory=build_session_repository)
-    agent_config_repo: AgentConfigRepo = field(
-        default_factory=get_default_agent_config_repo
-    )
+    agent_config_repo: Any = field(default_factory=get_default_agent_config_repo)
     quota: QuotaEnforcer = field(default_factory=QuotaEnforcer)
     rate_limiter: RateLimiter = field(
         default_factory=lambda: RateLimiter(limit_per_min=120)
@@ -187,7 +185,7 @@ async def handle_session_mint(
         return 403, {"error": "Origin not allowed."}
 
     try:
-        plan = compile_agent_version(
+        plan = await compile_agent_version_async(
             tenant_id,
             agent_id,
             None,

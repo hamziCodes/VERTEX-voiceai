@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from inspect import isawaitable
 from typing import Annotated, Any
 
 from fastapi import Header, HTTPException, Request
@@ -25,7 +26,8 @@ async def resolve_auth_context(
         raise HTTPException(status_code=401, detail="Authentication required.")
     try:
         if token.startswith("ucve_live_"):
-            record = request.app.state.api_keys.verify_api_key(token)
+            verified = request.app.state.api_keys.verify_api_key(token)
+            record = await verified if isawaitable(verified) else verified
             context = AuthContext(
                 subject_id=str(record["subject_id"]),
                 tenant_id=str(record["tenant_id"]),

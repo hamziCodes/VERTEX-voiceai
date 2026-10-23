@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from inspect import isawaitable
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -328,6 +329,37 @@ def compile_agent_version(
     except (AgentNotFoundError, TypeError, ValueError) as exc:
         if isinstance(exc, SessionPlanCompilationError):
             raise
+        raise SessionPlanCompilationError(
+            "PUBLISHED_CONFIG_NOT_FOUND",
+            "Published agent version was not found for this tenant.",
+        ) from exc
+    try:
+        source.validator.validate(config).raise_if_invalid()
+    except ValueError as exc:
+        raise SessionPlanCompilationError("PUBLISHED_CONFIG_INVALID", str(exc)) from exc
+    return _compile_published(config)
+
+
+async def compile_agent_version_async(
+    tenant_id: UUID | str,
+    agent_id: UUID | str,
+    version: int | None,
+    *,
+    repo: Any | None = None,
+) -> RuntimeSessionPlan:
+    """Compile a published snapshot from either async durable or memory storage."""
+
+    source = repo or get_default_agent_config_repo()
+    try:
+        tenant_uuid = tenant_id if isinstance(tenant_id, UUID) else UUID(str(tenant_id))
+        agent_uuid = agent_id if isinstance(agent_id, UUID) else UUID(str(agent_id))
+        loaded = source.get_published_version(
+            tenant_uuid,
+            agent_uuid,
+            version=version,
+        )
+        config = await loaded if isawaitable(loaded) else loaded
+    except (AgentNotFoundError, TypeError, ValueError) as exc:
         raise SessionPlanCompilationError(
             "PUBLISHED_CONFIG_NOT_FOUND",
             "Published agent version was not found for this tenant.",

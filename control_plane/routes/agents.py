@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from inspect import isawaitable
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -10,7 +11,6 @@ from pydantic import BaseModel, Field
 
 from control_plane.agents import (
     AgentConfig,
-    AgentConfigRepo,
     AgentNotFoundError,
     SessionConfigPin,
 )
@@ -27,7 +27,7 @@ _agent_repo = get_default_agent_config_repo()
 _pin_engine = SessionConfigPin(_agent_repo)
 
 
-def get_agent_repo() -> AgentConfigRepo:
+def get_agent_repo() -> Any:
     return _agent_repo
 
 
@@ -55,6 +55,10 @@ class PinSessionBody(BaseModel):
     version: int | None = None
 
 
+async def _resolve(value: Any) -> Any:
+    return await value if isawaitable(value) else value
+
+
 @router.post("", status_code=201)
 async def create_agent(
     body: CreateAgentBody,
@@ -76,7 +80,7 @@ async def create_agent(
         config_dict["compliance"] = body.compliance
 
     config = AgentConfig.model_validate(config_dict)
-    saved = _agent_repo.create_agent(config)
+    saved = await _resolve(_agent_repo.create_agent(config))
     return saved.model_dump(mode="json")
 
 
@@ -86,7 +90,7 @@ async def list_agents(
 ) -> list[dict[str, Any]]:
     """List all agents for the tenant."""
     tenant_uuid = UUID(auth.tenant_id)
-    agents = _agent_repo.list_agents(tenant_uuid)
+    agents = await _resolve(_agent_repo.list_agents(tenant_uuid))
     return [a.model_dump(mode="json") for a in agents]
 
 
@@ -98,7 +102,7 @@ async def get_agent_draft(
     """Retrieve the editable draft of an agent."""
     tenant_uuid = UUID(auth.tenant_id)
     try:
-        draft = _agent_repo.get_draft(tenant_uuid, agent_id)
+        draft = await _resolve(_agent_repo.get_draft(tenant_uuid, agent_id))
         return draft.model_dump(mode="json")
     except AgentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -113,12 +117,14 @@ async def autosave_draft(
     """Apply debounced updates to the agent draft."""
     tenant_uuid = UUID(auth.tenant_id)
     try:
-        config, did_save = _agent_repo.save_draft_autosave(
-            tenant_uuid,
-            agent_id,
-            body.patch,
-            debounce_seconds=body.debounce_seconds,
-            force=body.force,
+        config, did_save = await _resolve(
+            _agent_repo.save_draft_autosave(
+                tenant_uuid,
+                agent_id,
+                body.patch,
+                debounce_seconds=body.debounce_seconds,
+                force=body.force,
+            )
         )
         return {
             "saved": did_save,
@@ -136,8 +142,8 @@ async def publish_agent(
     """Validate and publish an agent draft into an immutable version snapshot."""
     tenant_uuid = UUID(auth.tenant_id)
     try:
-        published, val_res = _agent_repo.publish(
-            tenant_uuid, agent_id, published_by=auth.subject_id
+        published, val_res = await _resolve(
+            _agent_repo.publish(tenant_uuid, agent_id, published_by=auth.subject_id)
         )
         return {
             "version": published.version,
@@ -160,7 +166,7 @@ async def list_agent_versions(
     """List published version metadata."""
     tenant_uuid = UUID(auth.tenant_id)
     try:
-        return _agent_repo.list_versions(tenant_uuid, agent_id)
+        return await _resolve(_agent_repo.list_versions(tenant_uuid, agent_id))
     except AgentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -174,7 +180,9 @@ async def get_agent_version_snapshot(
     """Get an immutable published snapshot by version."""
     tenant_uuid = UUID(auth.tenant_id)
     try:
-        cfg = _agent_repo.get_published_version(tenant_uuid, agent_id, version=version)
+        cfg = await _resolve(
+            _agent_repo.get_published_version(tenant_uuid, agent_id, version=version)
+        )
         return cfg.model_dump(mode="json")
     except AgentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -189,9 +197,20 @@ async def pin_session_config(
     """Pin an active session to a published agent version snapshot."""
     tenant_uuid = UUID(auth.tenant_id)
     try:
-        pinned = _pin_engine.pin_session(
-            body.session_id, tenant_uuid, agent_id, version=body.version
-        )
+        durable_pin = getattr(_agent_repo, "pin_session", None)
+        if durable_pin is None:
+            pinned = _pin_engine.pin_session(
+                body.session_id, tenant_uuid, agent_id, version=body.version
+            )
+        else:
+            pinned = await _resolve(
+                durable_pin(
+                    body.session_id,
+                    tenant_uuid,
+                    agent_id,
+                    version=body.version,
+                )
+            )
         return {
             "session_id": str(body.session_id),
             "agent_id": str(agent_id),

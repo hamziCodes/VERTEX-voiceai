@@ -1,6 +1,6 @@
 # Phase 09 — Durable Data, Migrations, Quotas, and Usage
 
-**Status:** IN PROGRESS — 09A VERIFIED; 09B NEXT
+**Status:** IN PROGRESS — 09A/09B VERIFIED; 09C NEXT
 
 **Goal:** Replace process-local production state with one consistent PostgreSQL/pgvector and Redis architecture, correct RLS, atomic admission, and an idempotent usage ledger.
 

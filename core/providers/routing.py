@@ -183,3 +183,89 @@ class ProviderRouteBuilder:
                 )
             )
         return tuple(built)
+
+    async def build_chain_async(
+        self,
+        tenant_id: str,
+        category: str | ProviderCategory,
+        language: str,
+        routes: tuple[RuntimeProviderRoute, ...],
+    ) -> tuple[ResolvedProviderRoute, ...]:
+        """Build a chain with an async durable credential resolver when present."""
+
+        resolver = getattr(self.credential_resolver, "aresolve_credential", None)
+        if resolver is None:
+            return self.build_chain(tenant_id, category, language, routes)
+        normalized_category = ProviderCategory(category)
+        ordered = tuple(sorted(routes, key=lambda route: route.priority))
+        if len(ordered) < 2:
+            raise ConfigurationError(
+                f"A production {normalized_category.value} chain requires "
+                "at least two routes."
+            )
+        for route in ordered:
+            get_provider_spec(
+                route.provider_id,
+                category=normalized_category,
+                language=language,
+            )
+        built: list[ResolvedProviderRoute] = []
+        for route in ordered:
+            try:
+                credential = await resolver(
+                    tenant_id,
+                    route.provider_id,
+                    credential_ref=route.credential_ref,
+                    credential_type="api_key",
+                    tier=route.credential_tier,
+                )
+            except SecretNotFoundError:
+                if (
+                    route.credential_tier is CredentialTier.BYOK
+                    or provider_runtime_status()["provider_mode"] != "mock"
+                ):
+                    raise
+                credential = ResolvedCredential(
+                    tenant_id=tenant_id,
+                    provider_id=route.provider_id,
+                    credential_type="api_key",
+                    requested_tier=route.credential_tier,
+                    source_tier=CredentialTier.PLATFORM,
+                    credential_ref=None,
+                    rotation_version="explicit-mock",
+                    secret="",
+                )
+            if normalized_category is ProviderCategory.STT:
+                adapter = build_stt_provider(
+                    route.provider_id,
+                    api_key=credential.secret,
+                    model=route.model,
+                    mock_text=self.stt_mock_text,
+                )
+            elif normalized_category is ProviderCategory.LLM:
+                adapter = build_llm_provider(
+                    route.provider_id,
+                    api_key=credential.secret,
+                    model=route.model,
+                )
+            else:
+                adapter = build_tts_provider(
+                    route.provider_id,
+                    api_key=credential.secret,
+                    model=route.model,
+                    speaking_config=self.speaking_config,
+                )
+            built.append(
+                ResolvedProviderRoute(
+                    identity=ProviderRouteIdentity(
+                        category=normalized_category.value,
+                        provider_id=route.provider_id,
+                        model=route.model,
+                        region="provider_managed",
+                        tenant_id=tenant_id,
+                        credential_scope=_credential_scope(credential),
+                    ),
+                    adapter=adapter,
+                )
+            )
+        return tuple(built)
