@@ -22,4 +22,4 @@ ALTER TABLE knowledge_chunks FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY knowledge_chunks_tenant_isolation ON knowledge_chunks
     FOR ALL
-    USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);

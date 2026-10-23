@@ -34,14 +34,14 @@ CREATE INDEX IF NOT EXISTS idx_human_review_queue_tenant ON human_review_queue(t
 ALTER TABLE extraction_schemas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE extraction_schemas FORCE ROW LEVEL SECURITY;
 CREATE POLICY extraction_schemas_tenant_isolation ON extraction_schemas
-    FOR ALL USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
+    FOR ALL USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 
 ALTER TABLE webhook_targets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE webhook_targets FORCE ROW LEVEL SECURITY;
 CREATE POLICY webhook_targets_tenant_isolation ON webhook_targets
-    FOR ALL USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
+    FOR ALL USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 
 ALTER TABLE human_review_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE human_review_queue FORCE ROW LEVEL SECURITY;
 CREATE POLICY human_review_queue_tenant_isolation ON human_review_queue
-    FOR ALL USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
+    FOR ALL USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);

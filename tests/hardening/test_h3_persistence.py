@@ -6,8 +6,12 @@ import os
 
 import pytest
 
-from core.compliance.audit.writer import AuditWriter, clear_shared_audit_logs, shared_audit_logs
 from core.compliance.audit.queries import AuditQueries
+from core.compliance.audit.writer import (
+    AuditWriter,
+    clear_shared_audit_logs,
+    shared_audit_logs,
+)
 from core.db.session import TenantScopedDBSession
 from core.secrets.kms.aws_kms import AWSKMSBackend, KMSNotConfigured
 from core.session.redis_store import RedisSessionStore
@@ -45,7 +49,9 @@ def test_audit_writer_shared_with_queries() -> None:
 
 
 @pytest.mark.asyncio
-async def test_redis_session_store_memory_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_redis_session_store_memory_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("UCVE_ENV", "test")
     monkeypatch.delenv("REDIS_URL", raising=False)
     store = RedisSessionStore()
@@ -62,11 +68,11 @@ def test_aws_kms_no_fernet_fallback() -> None:
         AWSKMSBackend(key_id="alias/does-not-matter")
 
 
-def test_migration_009_exists() -> None:
+def test_foundation_hardening_migration_exists() -> None:
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[2]
-    path = root / "infra" / "db" / "migrations" / "009_foundation_hardening.sql"
+    path = root / "infra" / "db" / "migrations" / "017_foundation_hardening.sql"
     assert path.is_file()
     text = path.read_text(encoding="utf-8")
     assert "FORCE ROW LEVEL SECURITY" in text
@@ -79,7 +85,7 @@ def test_migrate_module_importable() -> None:
 
     names = [p.name for p in list_migrations()]
     assert "001_core_tenant_schema.sql" in names
-    assert "009_foundation_hardening.sql" in names
+    assert "017_foundation_hardening.sql" in names
 
 
 @pytest.mark.skipif(

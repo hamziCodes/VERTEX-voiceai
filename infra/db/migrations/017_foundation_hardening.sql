@@ -1,5 +1,5 @@
 -- UCVE Foundation Hardening schema fixes (H3)
--- Migration: 009_foundation_hardening.sql
+-- Migration: 017_foundation_hardening.sql
 
 -- Force RLS on tenant-scoped tables
 ALTER TABLE IF EXISTS tenants FORCE ROW LEVEL SECURITY;

@@ -1,6 +1,6 @@
 # Phase 09 — Durable Data, Migrations, Quotas, and Usage
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — 09A VERIFIED; 09B NEXT
 
 **Goal:** Replace process-local production state with one consistent PostgreSQL/pgvector and Redis architecture, correct RLS, atomic admission, and an idempotent usage ledger.
 
@@ -10,7 +10,9 @@
 
 ## Human gate before implementation
 
-Resolve H09. Never run migrations against a shared database without a separate explicit approval naming that target.
+H09 was resolved on 2026-10-23: use async Psycopg 3 with `psycopg_pool`.
+Never run migrations against a shared database without a separate explicit
+approval naming that target.
 
 ## Files and interfaces
 
@@ -20,10 +22,10 @@ Resolve H09. Never run migrations against a shared database without a separate e
 
 ## Tasks
 
-- [ ] Choose async psycopg or asyncpg and refactor hot async paths away from synchronous connections.
-- [ ] Standardize RLS variable to one name and set it transaction-locally for every tenant transaction; use an unprivileged application role.
-- [ ] Use a pgvector-capable image/extension and correct vector query/column types.
-- [ ] Renumber duplicate migration IDs; add lock, checksum, one transaction per migration, crash-safe bookkeeping and non-destructive upgrade path.
+- [x] Choose async psycopg or asyncpg and refactor hot async paths away from synchronous connections.
+- [x] Standardize RLS variable to one name and set it transaction-locally for every tenant transaction; use an unprivileged application role.
+- [x] Use a pgvector-capable image/extension and correct migration column types.
+- [x] Renumber duplicate migration IDs; add lock, checksum, one transaction per migration, crash-safe bookkeeping and non-destructive upgrade path.
 - [ ] Move agent versions/pins, API keys, encrypted credentials, sessions, audit and usage from local dictionaries to repositories; retain in-memory implementations only as explicit tests.
 - [ ] Implement atomic Redis admission lease with TTL/heartbeat/release/reconciliation; acquisition rolls back on mint failure.
 - [ ] Enforce concurrent/monthly limits from durable counts at worker admission, not caller-supplied zeros.
