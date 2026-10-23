@@ -1,16 +1,15 @@
-"""Inbound Telephony Session Handler — Connects DirectSIPTransport to PipelineOrchestrator."""
+"""Connect DirectSIPTransport to the voice pipeline."""
 
 from __future__ import annotations
 
 import time
-from typing import Any
 from uuid import UUID
 
-from core.types.audio import AudioFrame
 from core.metering.kinds import TELEPHONY_SEC
 from core.metering.usage_meter import UsageMeter
 from core.transport.caller_id import CallerIdContext
 from core.transport.direct_sip import DirectSIPTransport
+from core.types.audio import AudioFrame
 from worker_raw.orchestration.pipeline import PipelineOrchestrator
 from worker_raw.orchestration.session_config import PipelineSessionConfig
 
@@ -48,11 +47,11 @@ class InboundTelephonySessionHandler:
         self.duration_sec = 0.0
 
     async def _send_outbound_audio(self, pcm_bytes: bytes) -> None:
-        """Pipeline TTS egress -> DirectSIP μ-law encode (RTP send hooks on transport)."""
+        """Encode pipeline TTS egress for the DirectSIP transport."""
         await self.transport.send_pcm16_frame(pcm_bytes)
 
     async def handle_inbound_audio(self, mulaw_payload: bytes) -> list[bytes]:
-        """Ingest μ-law RTP payload, wrap as AudioFrame, and feed to PipelineOrchestrator."""
+        """Ingest an RTP payload and feed canonical audio into the pipeline."""
         pcm_chunks = await self.transport.receive_mulaw_frame(mulaw_payload)
         for chunk in pcm_chunks:
             frame = AudioFrame(
@@ -65,14 +64,16 @@ class InboundTelephonySessionHandler:
         return pcm_chunks
 
     async def close(self) -> float:
-        """Close session, record TELEPHONY_SEC metering, and return call duration in seconds."""
+        """Close the session and meter its telephony duration."""
         await self.transport.close()
         self.duration_sec = max(0.0, time.time() - self.start_time)
         if self.duration_sec > 0:
-            self.meter.record(
+            await self.meter.arecord(
                 str(self.tenant_id),
                 str(self.session_id),
                 TELEPHONY_SEC,
-                int(self.duration_sec),
+                self.duration_sec,
+                event_key=f"{self.session_id}:telephony_sec:final",
+                unit="seconds",
             )
         return self.duration_sec

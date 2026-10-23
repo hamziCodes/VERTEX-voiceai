@@ -105,7 +105,12 @@ class UsageEvent:
     tenant_id: str
     usage_kind: str
     quantity: float
+    event_key: str | None = None
     session_id: str | None = None
+    unit: str = "units"
+    provider_id: str | None = None
+    provider_request_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
     recorded_at: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
 
 

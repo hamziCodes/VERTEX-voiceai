@@ -42,6 +42,15 @@ async def test_admission_reacquire_and_double_release_are_idempotent() -> None:
 
 
 @pytest.mark.asyncio
+async def test_current_tenant_count_excludes_other_tenants() -> None:
+    controller = SessionAdmissionController(max_sessions=5, force_memory=True)
+    await controller.acquire("session-a", "tenant-a")
+    await controller.acquire("session-b", "tenant-b")
+
+    assert await controller.current_tenant_count("tenant-a") == 1
+
+
+@pytest.mark.asyncio
 async def test_expired_memory_lease_is_reconciled() -> None:
     now = [100.0]
     controller = SessionAdmissionController(

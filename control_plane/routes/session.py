@@ -224,9 +224,14 @@ async def handle_session_mint(
             "code": "SESSION_SELECTION_INVALID",
         }
 
+    try:
+        durable_concurrent = await mint_ctx.admission.current_tenant_count(tenant_id)
+    except AdmissionStoreUnavailableError:
+        _record_rejection(mint_ctx, tenant_id, 503, "admission unavailable")
+        return 503, {"error": "Session admission is temporarily unavailable."}
     quota_result = await mint_ctx.quota.check_mint(
         tenant_id,
-        current_concurrent=current_concurrent,
+        current_concurrent=durable_concurrent,
         current_monthly_minutes=current_monthly_minutes,
     )
     if not quota_result.allowed:
@@ -240,7 +245,7 @@ async def handle_session_mint(
         await mint_ctx.admission.acquire(
             session_id,
             tenant_id,
-            max_tenant_sessions=mint_ctx.quota.limits.max_concurrent,
+            max_tenant_sessions=quota_result.max_concurrent,
         )
     except CapacityExceededError as exc:
         _record_rejection(mint_ctx, tenant_id, 503, str(exc))

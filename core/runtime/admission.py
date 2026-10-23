@@ -46,6 +46,11 @@ redis.call('ZADD', KEYS[3], tonumber(ARGV[2]), ARGV[1])
 return 1
 """
 
+_COUNT_LUA = """
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', tonumber(ARGV[1]))
+return redis.call('ZCARD', KEYS[1])
+"""
+
 
 class CapacityExceededError(Exception):
     """Raised when worker or tenant concurrency has reached its limit."""
@@ -252,6 +257,30 @@ class SessionAdmissionController:
             return max(int(removed), local_removed)
         async with self._lock:
             return self._purge_memory_expired()
+
+    async def current_tenant_count(self, tenant_id: str) -> int:
+        """Return the current tenant lease count after removing expired leases."""
+        tenant = tenant_id.strip()
+        if self._redis is not None:
+            try:
+                count = await self._redis.eval(
+                    _COUNT_LUA,
+                    1,
+                    f"{self.key_prefix}:tenant:{tenant}",
+                    int(self.clock() * 1000),
+                )
+            except Exception as exc:
+                raise AdmissionStoreUnavailableError(
+                    "Admission state is unavailable."
+                ) from exc
+            return int(count)
+        async with self._lock:
+            self._purge_memory_expired()
+            return sum(
+                1
+                for current_tenant, _expiry in self._leases.values()
+                if current_tenant == tenant
+            )
 
     def acquire_sync(self, session_id: str) -> bool:
         """Local compatibility method; durable callers must use ``acquire``."""

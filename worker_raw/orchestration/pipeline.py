@@ -41,6 +41,7 @@ from core.listening.config import (
 from core.listening.speech_capture import SpeechCaptureEngine
 from core.listening.vad_worker import VADWorker
 from core.mcp.filler import ConversationalFillerSynth, FillerConfig
+from core.metering.kinds import AGENT_SEC, STT_SEC, TTS_SEC
 from core.metering.usage_meter import UsageMeter
 from core.observability.logging import get_logger
 from core.playback.turn_commit import PlayedTextCommit, TurnCommitTracker
@@ -171,6 +172,8 @@ class PipelineOrchestrator:
         self._tts_task: asyncio.Task[None] | None = None
         self._llm_task: asyncio.Task[None] | None = None
         self._started_at = time.monotonic()
+        self._stt_audio_sec = 0.0
+        self._tts_audio_sec = 0.0
         self._session_start_monotonic = time.monotonic()
         self._turn_starts: list[float] = []
         self._turn_ends: list[float] = []
@@ -1097,15 +1100,21 @@ class PipelineOrchestrator:
         # Always stream mic audio into the live Gladia session while it is up.
         # Legacy agents keep one live socket for the whole call; gating only on
         # "capturing" dropped frames around VAD edges and starved STT.
+        sent_to_stt = False
         if frame.pcm16 and self._live_stt is not None and self._live_stt.is_live:
             if capturing or not agent_speaking:
                 await self._live_stt.send_audio(frame.pcm16)
+                sent_to_stt = True
 
         if capturing and frame.pcm16:
+            sent_to_stt = True
             if self._speech_capture is None:
                 max_buf = 512 * 1024
                 if len(self._speech_buffer) + len(frame.pcm16) <= max_buf:
                     self._speech_buffer.extend(frame.pcm16)
+
+        if sent_to_stt:
+            self._stt_audio_sec += frame.duration_ms / 1000.0
 
         if evt.speech_end:
             self._last_vad_speech_end_ms = time.monotonic() * 1000.0
@@ -1308,6 +1317,7 @@ class PipelineOrchestrator:
                                 getattr(self, "_tts_pcm_logged", 0) + 1
                             )
                         if pcm:
+                            self._tts_audio_sec += len(pcm) / (2 * 16000)
                             await self._emit_audio(
                                 pcm,
                                 waterfall,
@@ -1319,6 +1329,7 @@ class PipelineOrchestrator:
                 if resampler is not None and not self._tts_cancel.is_cancelled:
                     tail = resampler.flush()
                     if tail:
+                        self._tts_audio_sec += len(tail) / (2 * 16000)
                         await self._emit_audio(
                             tail,
                             waterfall,
@@ -1793,11 +1804,31 @@ class PipelineOrchestrator:
             raw_turns, RedactionPolicy(redact_pii_in_transcript=True)
         )
         duration = max(0.01, time.monotonic() - self._started_at)
-        self.usage_meter.record(
+        await self.usage_meter.arecord(
             session_config.tenant_id,
             session_config.session_id,
-            "agent_sec",
+            AGENT_SEC,
             duration,
+            event_key=f"{session_config.session_id}:agent_sec:final",
+            unit="seconds",
+        )
+        await self.usage_meter.arecord(
+            session_config.tenant_id,
+            session_config.session_id,
+            STT_SEC,
+            self._stt_audio_sec,
+            event_key=f"{session_config.session_id}:stt_sec:final",
+            unit="seconds",
+            provider_id=self._active_stt_id,
+        )
+        await self.usage_meter.arecord(
+            session_config.tenant_id,
+            session_config.session_id,
+            TTS_SEC,
+            self._tts_audio_sec,
+            event_key=f"{session_config.session_id}:tts_sec:final",
+            unit="seconds",
+            provider_id=self._active_tts_id,
         )
 
         try:

@@ -33,7 +33,7 @@ from control_plane.routes.session import (
     handle_session_refresh,
 )
 from control_plane.routes.telephony import router as telephony_router
-from control_plane.routes.usage import handle_get_usage
+from control_plane.routes.usage import query_usage
 from control_plane.secrets_routes import handle_rotate_secret
 from core.runtime.env import get_ucve_env, require_production_secrets
 from core.db.async_pg import get_default_database
@@ -349,10 +349,17 @@ async def refresh_session(body: RefreshBody, request: Request) -> dict[str, Any]
 
 @app.get("/v1/usage")
 async def get_usage(
+    request: Request,
     auth: UsageReader,
 ) -> dict[str, Any]:
     tenant_id = auth.tenant_id
-    status, body = handle_get_usage(tenant_id, tenant_id)
+    mint_ctx: MintContext = request.app.state.mint_ctx
+    status, body = await query_usage(
+        tenant_id,
+        tenant_id,
+        repository=mint_ctx.quota.repository,
+        admission=mint_ctx.admission,
+    )
     if status != 200:
         raise HTTPException(status_code=status, detail=body.get("error"))
     return body
