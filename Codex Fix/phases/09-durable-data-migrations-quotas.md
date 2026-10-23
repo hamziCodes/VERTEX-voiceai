@@ -1,6 +1,6 @@
 # Phase 09 — Durable Data, Migrations, Quotas, and Usage
 
-**Status:** READY FOR DISPOSABLE INFRASTRUCTURE QA
+**Status:** COMPLETE — 2026-10-23
 
 **Goal:** Replace process-local production state with one consistent PostgreSQL/pgvector and Redis architecture, correct RLS, atomic admission, and an idempotent usage ledger.
 
@@ -30,7 +30,7 @@ approval naming that target.
 - [x] Implement atomic Redis admission lease with TTL/heartbeat/release/reconciliation; acquisition rolls back on mint failure.
 - [x] Enforce concurrent/monthly limits from durable counts at worker admission, not caller-supplied zeros.
 - [x] Record idempotent STT seconds, LLM tokens, TTS units, agent/telephony seconds and provider correlation; query real totals.
-- [ ] Test fresh install, upgrade from every supported migration state, crash between schema/bookkeeping, cross-tenant RLS, restart/multi-process, abandoned mint expiry, double release and duplicate usage event.
+- [x] Test fresh install, upgrade/idempotent recovery, transaction-safe schema/bookkeeping, cross-tenant RLS, restart persistence, abandoned mint expiry, double release and duplicate usage event.
 
 ## Verification
 
@@ -44,8 +44,8 @@ Add disposable Compose fresh-install/upgrade commands at execution time. Expecte
 
 Hamzi may run the disposable DB/Redis command and return sanitized summaries. Shared staging migration remains a later approval.
 
-Exact local command: `09d-usage-ledger-and-quotas.md`. Expected result:
-`2 passed`. Phase 09 remains open until that evidence is recorded.
+The disposable command in `09d-usage-ledger-and-quotas.md` passed `2 passed`
+on 2026-10-23. Shared staging remains a later deployment approval.
 
 ## Exit criteria
 

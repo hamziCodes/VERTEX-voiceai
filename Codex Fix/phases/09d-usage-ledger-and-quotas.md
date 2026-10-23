@@ -1,6 +1,6 @@
 # Phase 09D — Usage Ledger and Durable Quotas
 
-**Status:** VERIFIED OFFLINE — DISPOSABLE INFRASTRUCTURE QA PENDING
+**Status:** COMPLETE — OFFLINE AND DISPOSABLE INFRASTRUCTURE VERIFIED
 
 ## Implemented
 
@@ -26,7 +26,8 @@
 usage/admission/legacy quota contracts: 18 passed
 persistence/control-plane/pipeline regressions: 80 passed, 1 skipped
 LLM usage and tool-stream compatibility: 26 passed
-final forced-offline repository suite: 691 passed, 3 skipped, 2 warnings
+final forced-offline repository suite: 692 passed, 3 skipped, 2 warnings
+disposable PostgreSQL/Redis integration: 2 passed
 focused Ruff F/B checks: passed
 compileall: passed
 plan integrity: OK — 36 phases, tests, and trackers verified
@@ -46,27 +47,36 @@ Run from the repository root:
 ```powershell
 $env:PHASE09_DB_PASSWORD=[guid]::NewGuid().ToString('N')
 docker compose -f infra/docker/docker-compose.phase09-test.yml up -d --wait
-$env:DATABASE_URL="postgresql://phase09:$($env:PHASE09_DB_PASSWORD)@127.0.0.1:55432/phase09"
+$env:PGPASSWORD=$env:PHASE09_DB_PASSWORD
+$env:DATABASE_URL='postgresql://phase09@127.0.0.1:55432/phase09'
 $env:REDIS_URL='redis://127.0.0.1:56379/0'
 $env:RUN_LIVE_DB_TESTS='1'
 $env:RUN_LIVE_REDIS_TESTS='1'
 $env:RUN_LIVE_PROVIDERS='0'
 $env:UCVE_ENV='test'
-py -3.12 -m pytest tests/db/test_phase09_live_integration.py tests/metering/test_phase09_live_redis.py -q -p no:cacheprovider --basetemp hamza_local/pytest-phase09-disposable
+py -3.12 -m pytest tests/db/test_phase09_live_integration.py tests/metering/test_phase09_live_redis.py -q --tb=short -p no:cacheprovider --basetemp hamza_local/pytest-phase09-disposable
 docker compose -f infra/docker/docker-compose.phase09-test.yml down --volumes
-Remove-Item Env:PHASE09_DB_PASSWORD,Env:DATABASE_URL,Env:REDIS_URL,Env:RUN_LIVE_DB_TESTS,Env:RUN_LIVE_REDIS_TESTS -ErrorAction SilentlyContinue
+Remove-Item Env:PHASE09_DB_PASSWORD,Env:PGPASSWORD,Env:DATABASE_URL,Env:REDIS_URL,Env:RUN_LIVE_DB_TESTS,Env:RUN_LIVE_REDIS_TESTS -ErrorAction SilentlyContinue
 ```
 
 Expected result: `2 passed`. Return only that sanitized summary or the error;
 do not paste the generated password or database URL.
 
-## Human intervention still required
+## Human verification result
 
-- Run the disposable command above and return the sanitized result.
-- Do not run these migrations against staging/shared PostgreSQL yet.
-- Shared staging migration remains a separate approval after disposable QA.
+- Completed locally on 2026-10-23: `2 passed`.
+- Fresh migrations, pgvector, unprivileged RLS, restart persistence, duplicate
+  usage, migration idempotence, real Redis contention, double release, and
+  expiry all passed.
+- The first PostgreSQL run exposed a Windows event-loop mismatch. A test-local
+  selector policy fixed it.
+- The next run exposed an actual migration bug: the advisory lock opened an
+  outer transaction, causing owned connections to roll back migrations at
+  close. Owned migration connections now use autocommit while every migration
+  remains wrapped in its own explicit transaction.
+- Shared staging migration remains a separately approved deployment action.
 
 ## Next exact action
 
-Run the disposable test command. If it reports `2 passed`, record the evidence,
-mark Phase 09 complete, and proceed to Phase 10 planning.
+Proceed to Phase 10 planning. Do not migrate shared staging without a separate
+approval naming that target.
