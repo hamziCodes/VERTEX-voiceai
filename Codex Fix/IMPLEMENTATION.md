@@ -53,7 +53,7 @@ Phase 00 records the baseline. Hamzi approves any contractual SLO.
 | 07 | Providers and credentials | Real chains, health, failover, typed errors | 06 | BYOK/platform vendors |
 | 08 | Authentication and tenancy | Authenticated management and bound mint | 06 | Identity/admin choice |
 | 09 | Persistence, migrations, quotas | Correct pgvector/RLS/admission/usage | 07–08 | Disposable DB/Redis |
-| 10 | RAG and tools | Durable knowledge and real MCP execution | 07,09 | Tool/data scope and hypercodes |
+| 10 | Business knowledge and safe actions | Guided common-file knowledge setup, agent-scoped retrieval, real lifecycle actions, and secure disabled-by-default MCP | 07,09 | RESOLVED — recommended safe scope approved; external systems remain disabled |
 | 11 | Post-call intelligence | Honest records/extraction/review/webhooks | 09 | Retention/residency/review |
 | 12 | Telephony | Offline carrier media lifecycle, staged live plan | 04,07,09 | Carrier/direction/live approval |
 | 13 | Self-serve Studio | Nontechnical onboarding to working publish | 05,06,08–12 | Product/UI scope |

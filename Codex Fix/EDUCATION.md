@@ -59,3 +59,19 @@ Reuse the patterns—warm streaming STT, language-aware early chunks, streaming 
 ## Tradeoffs
 
 Short endpointing can cut off thoughtful speakers. Two-word chunks can harm prosody or Urdu/Arabic pronunciation. Warm STT can bill silence. Tiny audio chunks add overhead/jitter. Warm resources need limits and cleanup. Every change is evaluated against latency, word retention, audio continuity, cost, and interruption together.
+
+## What Phase 10 Means in Plain English
+
+Phase 10 gives an agent reliable information about a business and a safe way to perform approved actions.
+
+The **Knowledge Setup** flow lets an operator upload common files such as PDF, DOCX, TXT, Markdown, CSV, and XLSX, or enter FAQs. Wavia extracts the text in a background job, splits it into useful passages, creates local search vectors, and records where each passage came from. The operator can test questions and see the matching source before attaching the knowledge base to an agent.
+
+During a conversation, Wavia searches only the knowledge bases attached to that exact published agent. It sends a few relevant passages to the language model as untrusted reference data, with citations. If search is slow or unavailable, the voice response continues without it instead of making the caller wait indefinitely.
+
+Actions are different from knowledge. Knowledge helps the agent answer a question. An action changes something, such as ending a conversation or asking for a human. Phase 10 makes those two built-in actions real and sends their result back to the language model before the agent speaks. Raw computer output is never read aloud directly.
+
+The MCP work creates a secure connection boundary for future CRM, calendar, email, inventory, payment, or other business systems. None of those systems is enabled automatically. Each future connection needs an explicit tool schema, credential reference, permission, timeout, replay protection, tests, and operator approval.
+
+The undefined “hypercodes” term has been removed from the product roadmap. There was no code or documented behavior behind it.
+
+Phase 10 is divided into eight checkpoints: durable knowledge records and APIs; safe file parsing; local embeddings and real vector search; fast runtime retrieval; real built-in actions; secure MCP foundations; a guided local setup screen; and final offline regression verification. The detailed plan is in [`phases/10-business-knowledge-and-safe-actions.md`](phases/10-business-knowledge-and-safe-actions.md).

@@ -101,7 +101,7 @@ Management/API capability inventory (actual registered source surface):
 
 Domain capability inventory beyond client SDK: AgentConfig covers persona/languages/provider chains/tools/MCP/knowledge/extraction/pronunciation/telephony/compliance; core supplies audio/transcript/chunk contracts, FSM/cancellation, queues, language routing/normalization, providers, compliance/redaction/legal hold/retention/erasure, tenant DB helpers, JWT/HMAC/replay, encrypted credential resolution/rotation, usage/quota/admission, latency/errors/alerts. These are internal library/service primitives with uneven wiring, not working client features by default.
 
-No hypercode/hyper-code reference found in searched current docs, schemas, SDKs, core, services, examples and plans. Clarify terminology/source. Inventory is complete for visible current client exports and registered management operations, not every internal helper or legacy package.
+No hypercode/hyper-code reference was found in searched current docs, schemas, SDKs, core, services, examples, or plans. Product decision on 2026-10-23: remove the undefined term from the remediation roadmap rather than inventing a feature. Inventory is complete for visible current client exports and registered management operations, not every internal helper or legacy package.
 
 ## Deployment-model gap analysis
 
@@ -299,7 +299,7 @@ Test evidence reviewed statically: phase 28 checks manifests/files and construct
 
 - Does “package, not source” mean a thin client library with the engine hosted by you, or a distributed engine binary? A Python wheel normally exposes Python code; these are different IP and deployment contracts.
 - Is outbound calling required for the first release, or is the documented inbound-only v1 boundary still current?
-- What exactly are hypercodes, and where is their implementation/documentation?
+- Resolved 2026-10-23: the undefined “hypercodes” term is removed from the roadmap; there is no implementation to preserve.
 - Which deployment model/languages/carriers are first-release requirements?
 - Must tenants supply provider credentials/BYOK, or use platform-paid keys? What provisioning/revocation happens outside this repo?
 - Does the working deployment include a separate Studio, SIP/RTP bridge, post-call worker or infrastructure definition absent here?

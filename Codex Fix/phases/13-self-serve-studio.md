@@ -18,7 +18,7 @@ Resolve H13. This is a separate product/design project. Before UI code, use the 
 2. Business identity, use case, language and compliance questions.
 3. Persona/prompt with safe structured fields and preview.
 4. Provider/voice choice limited to eligible capabilities.
-5. Knowledge and tools with status/errors.
+5. Knowledge and tools using the Phase 10 wizard API, durable states, preview results and citations.
 6. Web test using packaged realtime contract and test quota.
 7. Publish/version/rollback.
 8. Optional inbound number assignment after telephony qualification.
@@ -31,7 +31,7 @@ Resolve H13. This is a separate product/design project. Before UI code, use the 
 - [ ] Generate forms/validation from AgentConfig/runtime capability contracts where practical.
 - [ ] Surface draft/autosave/publish version, validation failures and immutable active version clearly.
 - [ ] Build voice test with honest test/live badge, latency panel, usage budget, interruption and error states.
-- [ ] Build knowledge/tool/credential flows without accepting provider secret values in browser logs or URLs.
+- [ ] Turn the Phase 10 local Knowledge Setup flow into the production Studio experience without changing its durable API/state contract; never accept provider secret values in browser logs or URLs.
 - [ ] Build telephony setup only for qualified scope; mark deferred outbound explicitly.
 - [ ] Build conversation/history/review/usage screens from durable APIs, including pending/degraded/failed states.
 - [ ] Add accessibility, responsive behavior, empty/loading/error states and audit-visible admin actions.
