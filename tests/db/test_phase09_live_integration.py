@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import sys
 from uuid import uuid4
 
 import pytest
-
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_LIVE_DB_TESTS") != "1",
     reason="RUN_LIVE_DB_TESTS!=1 - disposable PostgreSQL only",
 )
+
+
+@pytest.fixture(scope="module")
+def event_loop_policy() -> asyncio.AbstractEventLoopPolicy:
+    """Psycopg async requires a selector loop on Windows."""
+    if sys.platform == "win32":
+        return asyncio.WindowsSelectorEventLoopPolicy()
+    return asyncio.DefaultEventLoopPolicy()
 
 
 @pytest.mark.asyncio

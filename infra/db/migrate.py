@@ -124,7 +124,7 @@ async def apply_migrations_async(
         url = database_url or os.environ.get("DATABASE_URL")
         if not url:
             raise RuntimeError("DATABASE_URL is required to run migrations.")
-        connection = await psycopg.AsyncConnection.connect(url)
+        connection = await psycopg.AsyncConnection.connect(url, autocommit=True)
 
     applied_now: list[str] = []
     try:

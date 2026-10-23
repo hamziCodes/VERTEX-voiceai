@@ -8,7 +8,6 @@ import pytest
 
 from core.runtime.admission import CapacityExceededError, SessionAdmissionController
 
-
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_LIVE_REDIS_TESTS") != "1",
     reason="RUN_LIVE_REDIS_TESTS!=1 - disposable Redis only",
@@ -32,20 +31,23 @@ async def test_disposable_redis_atomic_limit_expiry_and_release() -> None:
         key_prefix=prefix,
     )
 
-    async def attempt(index: int) -> bool:
+    async def attempt(index: int) -> str | None:
+        session_id = f"session-{index}"
         try:
-            return await controller.acquire(
-                f"session-{index}", "tenant-a", max_tenant_sessions=3
+            await controller.acquire(
+                session_id, "tenant-a", max_tenant_sessions=3
             )
+            return session_id
         except CapacityExceededError:
-            return False
+            return None
 
     try:
         results = await asyncio.gather(*(attempt(index) for index in range(20)))
-        assert sum(results) == 3
+        admitted = [session_id for session_id in results if session_id is not None]
+        assert len(admitted) == 3
         assert await controller.current_tenant_count("tenant-a") == 3
-        await controller.release("session-0", "tenant-a")
-        await controller.release("session-0", "tenant-a")
+        await controller.release(admitted[0], "tenant-a")
+        await controller.release(admitted[0], "tenant-a")
         assert await controller.current_tenant_count("tenant-a") == 2
         now[0] = 111.0
         assert await controller.current_tenant_count("tenant-a") == 0

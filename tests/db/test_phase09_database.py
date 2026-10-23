@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -122,3 +124,44 @@ def test_rls_upgrade_migration_rebuilds_policies_for_unprivileged_role() -> None
     assert "FORCE ROW LEVEL SECURITY" in sql
     assert "DROP POLICY IF EXISTS" in sql
     assert "current_setting('app.tenant_id', true)" in sql
+
+
+@pytest.mark.asyncio
+async def test_owned_migration_connection_uses_autocommit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from infra.db import migrate
+
+    connect_kwargs: dict[str, object] = {}
+
+    class Cursor:
+        async def fetchall(self) -> list[tuple[str, str]]:
+            return []
+
+    class Connection:
+        def transaction(self) -> _Transaction:
+            return _Transaction([])
+
+        async def execute(
+            self, _sql: str, _params: tuple[object, ...] = ()
+        ) -> Cursor:
+            return Cursor()
+
+        async def close(self) -> None:
+            return None
+
+    class AsyncConnection:
+        @classmethod
+        async def connect(cls, _url: str, **kwargs: object) -> Connection:
+            connect_kwargs.update(kwargs)
+            return Connection()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "psycopg",
+        SimpleNamespace(AsyncConnection=AsyncConnection),
+    )
+    monkeypatch.setattr(migrate, "discover_migrations", lambda: [])
+
+    assert await migrate.apply_migrations_async("postgresql://disposable") == []
+    assert connect_kwargs == {"autocommit": True}
