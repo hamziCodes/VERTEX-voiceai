@@ -112,8 +112,10 @@ def test_control_plane_knowledge_base_status(cp_client: TestClient) -> None:
     )
     assert res.status_code == 200
     data = res.json()
-    assert data["status"] == "ready"
-    assert "total_chunks" in data
+    assert data["status"] == "empty"
+    assert data["knowledge_base_count"] == 0
+    assert data["ready_knowledge_base_count"] == 0
+    assert data["total_chunks"] == 0
 
 
 # ==============================================================================

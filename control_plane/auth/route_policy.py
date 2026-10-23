@@ -35,29 +35,21 @@ ROUTE_POLICIES: tuple[RoutePolicy, ...] = (
     RoutePolicy("POST", "/v1/agents", "management", "agent:write"),
     RoutePolicy("GET", "/v1/agents", "management", "agent:read"),
     RoutePolicy("GET", "/v1/agents/{agent_id}", "management", "agent:read"),
-    RoutePolicy(
-        "PATCH", "/v1/agents/{agent_id}/autosave", "management", "agent:write"
-    ),
-    RoutePolicy(
-        "POST", "/v1/agents/{agent_id}/publish", "management", "agent:write"
-    ),
-    RoutePolicy(
-        "GET", "/v1/agents/{agent_id}/versions", "management", "agent:read"
-    ),
+    RoutePolicy("PATCH", "/v1/agents/{agent_id}/autosave", "management", "agent:write"),
+    RoutePolicy("POST", "/v1/agents/{agent_id}/publish", "management", "agent:write"),
+    RoutePolicy("GET", "/v1/agents/{agent_id}/versions", "management", "agent:read"),
     RoutePolicy(
         "GET",
         "/v1/agents/{agent_id}/versions/{version}",
         "management",
         "agent:read",
     ),
+    RoutePolicy("POST", "/v1/agents/{agent_id}/pin", "management", "agent:write"),
     RoutePolicy(
-        "POST", "/v1/agents/{agent_id}/pin", "management", "agent:write"
+        "GET", "/v1/knowledge-bases", "management", "knowledge:read", exact=False
     ),
     RoutePolicy(
-        "GET",
-        "/v1/knowledge-bases/status/{tenant_id}",
-        "management",
-        "knowledge:read",
+        "POST", "/v1/knowledge-bases", "management", "knowledge:write", exact=False
     ),
     RoutePolicy(
         "POST",
@@ -73,7 +65,5 @@ ROUTE_POLICIES: tuple[RoutePolicy, ...] = (
     ),
     RoutePolicy("GET", "/v1/usage", "management", "usage:read"),
     RoutePolicy("GET", "/v1/audit", "management", "audit:read"),
-    RoutePolicy(
-        "POST", "/v1/secrets/rotate", "management", "secret:rotate"
-    ),
+    RoutePolicy("POST", "/v1/secrets/rotate", "management", "secret:rotate"),
 )
