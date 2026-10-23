@@ -24,7 +24,6 @@ admission/session lifecycle focused suite
 - staging/production cannot start admission without Redis;
 - control-plane mint and worker WebSocket lifecycle share the same lease.
 
-## Next exact action
+## Checkpoint
 
-Create the 09C checkpoint commit and proceed to 09D usage and quotas. Do not
-push Phase 09 without a separate instruction.
+Committed as `b439437`. Phase 09D followed; Phase 09 remains unpushed.

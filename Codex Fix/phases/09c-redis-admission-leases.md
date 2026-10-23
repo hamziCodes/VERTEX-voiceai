@@ -1,6 +1,6 @@
 # Phase 09C — Redis Admission Leases
 
-**Status:** VERIFIED — AWAITING CHECKPOINT COMMIT
+**Status:** VERIFIED AND COMMITTED — `b439437`
 
 ## Implemented
 

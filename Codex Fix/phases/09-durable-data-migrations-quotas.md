@@ -1,6 +1,6 @@
 # Phase 09 — Durable Data, Migrations, Quotas, and Usage
 
-**Status:** IN PROGRESS — 09A/09B/09C VERIFIED; 09D NEXT
+**Status:** READY FOR DISPOSABLE INFRASTRUCTURE QA
 
 **Goal:** Replace process-local production state with one consistent PostgreSQL/pgvector and Redis architecture, correct RLS, atomic admission, and an idempotent usage ledger.
 
@@ -26,10 +26,10 @@ approval naming that target.
 - [x] Standardize RLS variable to one name and set it transaction-locally for every tenant transaction; use an unprivileged application role.
 - [x] Use a pgvector-capable image/extension and correct migration column types.
 - [x] Renumber duplicate migration IDs; add lock, checksum, one transaction per migration, crash-safe bookkeeping and non-destructive upgrade path.
-- [ ] Move agent versions/pins, API keys, encrypted credentials, sessions, audit and usage from local dictionaries to repositories; retain in-memory implementations only as explicit tests.
+- [x] Move agent versions/pins, API keys, encrypted credentials, sessions, audit and usage from local dictionaries to repositories; retain in-memory implementations only as explicit tests.
 - [x] Implement atomic Redis admission lease with TTL/heartbeat/release/reconciliation; acquisition rolls back on mint failure.
-- [ ] Enforce concurrent/monthly limits from durable counts at worker admission, not caller-supplied zeros.
-- [ ] Record idempotent STT seconds, LLM tokens, TTS units, agent/telephony seconds and provider correlation; query real totals.
+- [x] Enforce concurrent/monthly limits from durable counts at worker admission, not caller-supplied zeros.
+- [x] Record idempotent STT seconds, LLM tokens, TTS units, agent/telephony seconds and provider correlation; query real totals.
 - [ ] Test fresh install, upgrade from every supported migration state, crash between schema/bookkeeping, cross-tenant RLS, restart/multi-process, abandoned mint expiry, double release and duplicate usage event.
 
 ## Verification
@@ -43,6 +43,9 @@ Add disposable Compose fresh-install/upgrade commands at execution time. Expecte
 ## Human intervention
 
 Hamzi may run the disposable DB/Redis command and return sanitized summaries. Shared staging migration remains a later approval.
+
+Exact local command: `09d-usage-ledger-and-quotas.md`. Expected result:
+`2 passed`. Phase 09 remains open until that evidence is recorded.
 
 ## Exit criteria
 
