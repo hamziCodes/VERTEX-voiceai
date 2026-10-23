@@ -99,6 +99,7 @@ class GroqLLMProvider(BaseLLMProvider):
             "temperature": config.temperature,
             "max_tokens": config.max_tokens,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if config.tools:
             request_body["tools"] = serialize_tool_definitions(config.tools)
@@ -133,7 +134,19 @@ class GroqLLMProvider(BaseLLMProvider):
                     if payload == "[DONE]":
                         break
                     data = json.loads(payload)
-                    choice = data.get("choices", [{}])[0]
+                    usage = data.get("usage") or {}
+                    if usage:
+                        yield LLMStreamChunk(
+                            prompt_tokens=usage.get("prompt_tokens"),
+                            completion_tokens=usage.get("completion_tokens"),
+                            total_tokens=usage.get("total_tokens"),
+                            provider_id="groq",
+                            provider_request_id=data.get("id"),
+                        )
+                    choices = data.get("choices") or []
+                    if not choices:
+                        continue
+                    choice = choices[0]
                     delta = choice.get("delta", {})
                     finish_reason = choice.get("finish_reason")
 

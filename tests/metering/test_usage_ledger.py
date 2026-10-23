@@ -11,6 +11,7 @@ from core.db.models import UsageEvent
 from core.db.repos.usage_pg import PostgresUsageRepository, UsageSnapshot
 from core.metering.quota_enforcer import QuotaEnforcer
 from core.metering.usage_meter import UsageMeter
+from core.providers.interfaces.llm import LLMStreamChunk
 
 
 class _Cursor:
@@ -127,6 +128,19 @@ async def test_memory_usage_meter_deduplicates_same_event_key() -> None:
 
     assert first is True
     assert duplicate is False
+
+
+def test_llm_stream_chunk_carries_exact_provider_usage() -> None:
+    chunk = LLMStreamChunk(
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+        provider_id="provider-a",
+        provider_request_id="request-a",
+    )
+
+    assert chunk.total_tokens == 15
+    assert chunk.provider_request_id == "request-a"
 
 
 @pytest.mark.asyncio

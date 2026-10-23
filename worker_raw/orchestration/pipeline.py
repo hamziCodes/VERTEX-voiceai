@@ -41,7 +41,7 @@ from core.listening.config import (
 from core.listening.speech_capture import SpeechCaptureEngine
 from core.listening.vad_worker import VADWorker
 from core.mcp.filler import ConversationalFillerSynth, FillerConfig
-from core.metering.kinds import AGENT_SEC, STT_SEC, TTS_SEC
+from core.metering.kinds import AGENT_SEC, LLM_TOKENS, STT_SEC, TTS_SEC
 from core.metering.usage_meter import UsageMeter
 from core.observability.logging import get_logger
 from core.playback.turn_commit import PlayedTextCommit, TurnCommitTracker
@@ -1636,6 +1636,24 @@ class PipelineOrchestrator:
                 async for chunk in stream:
                     if self._llm_cancel.is_cancelled:
                         break
+                    if chunk.total_tokens is not None:
+                        await self.usage_meter.arecord(
+                            session_config.tenant_id,
+                            session_config.session_id,
+                            LLM_TOKENS,
+                            float(chunk.total_tokens),
+                            event_key=(
+                                f"{session_config.session_id}:llm_tokens:"
+                                f"{waterfall.turn_id}"
+                            ),
+                            unit="tokens",
+                            provider_id=chunk.provider_id or self._active_llm_id,
+                            provider_request_id=chunk.provider_request_id,
+                            metadata={
+                                "prompt_tokens": chunk.prompt_tokens,
+                                "completion_tokens": chunk.completion_tokens,
+                            },
+                        )
                     if not ttft_recorded:
                         waterfall.llm_ttft_ms = self.latency_hooks.now_ms()
                         ttft_recorded = True

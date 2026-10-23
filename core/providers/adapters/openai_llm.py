@@ -82,6 +82,7 @@ class OpenAILLMProvider(BaseLLMProvider):
             "temperature": float(config.temperature),
             "max_tokens": int(config.max_tokens or 256),
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if config.tools:
             payload["tools"] = serialize_tool_definitions(config.tools)
@@ -119,6 +120,16 @@ class OpenAILLMProvider(BaseLLMProvider):
                     except json.JSONDecodeError:
                         continue
 
+                    usage = data.get("usage") or {}
+                    if usage:
+                        yield LLMStreamChunk(
+                            prompt_tokens=usage.get("prompt_tokens"),
+                            completion_tokens=usage.get("completion_tokens"),
+                            total_tokens=usage.get("total_tokens"),
+                            provider_id="openai",
+                            provider_request_id=data.get("id"),
+                        )
+
                     choices = data.get("choices") or []
                     if not choices:
                         continue
@@ -137,7 +148,7 @@ class OpenAILLMProvider(BaseLLMProvider):
                         calls = tool_acc.finalize() if tool_acc else None
                         if calls:
                             yield LLMStreamChunk(tool_calls=calls, finish_reason=finish)
-                        return
+                            tool_acc.clear()
 
             if tool_acc:
                 calls = tool_acc.finalize()

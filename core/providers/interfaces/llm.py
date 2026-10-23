@@ -38,6 +38,11 @@ class LLMStreamChunk:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     finish_reason: str | None = None
     is_first_token: bool = False
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    provider_id: str | None = None
+    provider_request_id: str | None = None
 
 
 class BaseLLMProvider(ABC):
