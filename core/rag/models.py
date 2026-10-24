@@ -38,6 +38,13 @@ class KnowledgeBaseChunk:
     source_document_id: UUID = field(default_factory=uuid4)
     embedding: list[float] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    knowledge_base_id: UUID | None = None
+    revision: int | None = None
+    ordinal: int | None = None
+    citation: dict[str, Any] = field(default_factory=dict)
+    score: float | None = None
+    embedding_model: str | None = None
+    embedding_version: str | None = None
 
 
 class KnowledgeBaseStatus(StrEnum):
@@ -113,6 +120,7 @@ class KnowledgeIngestionJob:
     attempt: int = 1
     lease_owner: str | None = None
     lease_expires_at: datetime | None = None
+    progress: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 

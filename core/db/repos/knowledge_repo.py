@@ -150,6 +150,8 @@ class InMemoryKnowledgeRepository:
                 continue
             if job.state not in {KnowledgeJobState.QUEUED, KnowledgeJobState.RUNNING}:
                 continue
+            if job.progress.get("stage") == "embedding":
+                continue
             job.state = KnowledgeJobState.RUNNING
             job.lease_owner = worker_id
             job.lease_expires_at = now + timedelta(seconds=max(1, lease_seconds))
@@ -176,9 +178,10 @@ class InMemoryKnowledgeRepository:
         source.chunk_count = len(chunks)
         source.updated_at = datetime.now(UTC)
         job = self._jobs[(tenant_id, source_id)]
-        job.state = KnowledgeJobState.SUCCEEDED
+        job.state = KnowledgeJobState.QUEUED
         job.lease_owner = None
         job.lease_expires_at = None
+        job.progress = {"stage": "embedding", "chunks": len(chunks)}
         job.updated_at = source.updated_at
 
     def fail_job(
@@ -265,7 +268,11 @@ class InMemoryKnowledgeRepository:
                 "source_not_retryable", "Only a failed source can be retried."
             )
         now = datetime.now(UTC)
-        source.status = KnowledgeSourceStatus.QUEUED
+        source.status = (
+            KnowledgeSourceStatus.EMBEDDING
+            if job.progress.get("stage") == "embedding"
+            else KnowledgeSourceStatus.QUEUED
+        )
         source.error_code = None
         source.error_message = None
         source.updated_at = now
@@ -578,6 +585,7 @@ class PostgresKnowledgeRepository:
                 "(j.state = 'queued' OR "
                 "(j.state = 'running' AND j.lease_expires_at < NOW())) "
                 "AND (j.retry_at IS NULL OR j.retry_at <= NOW()) "
+                "AND COALESCE(j.progress_jsonb->>'stage', 'parsing') <> 'embedding' "
                 "ORDER BY j.created_at FOR UPDATE SKIP LOCKED LIMIT 1"
             )
             row = await cursor.fetchone()
@@ -659,12 +667,12 @@ class PostgresKnowledgeRepository:
                 (len(chunks), str(tenant_id), str(source_id)),
             )
             await connection.execute(
-                "UPDATE knowledge_ingestion_jobs SET state = 'succeeded', "
+                "UPDATE knowledge_ingestion_jobs SET state = 'queued', "
                 "lease_owner = NULL, lease_expires_at = NULL, "
                 "progress_jsonb = %s::jsonb, updated_at = NOW() "
                 "WHERE tenant_id = %s::uuid AND source_id = %s::uuid",
                 (
-                    json.dumps({"chunks": len(chunks)}),
+                    json.dumps({"stage": "embedding", "chunks": len(chunks)}),
                     str(tenant_id),
                     str(source_id),
                 ),
@@ -718,8 +726,11 @@ class PostgresKnowledgeRepository:
     ) -> KnowledgeIngestionJob:
         async with self.database.tenant_transaction(str(tenant_id)) as connection:
             source_cursor = await connection.execute(
-                "SELECT status FROM knowledge_sources WHERE tenant_id = %s::uuid "
-                "AND knowledge_base_id = %s::uuid AND id = %s::uuid FOR UPDATE",
+                "SELECT s.status, j.progress_jsonb FROM knowledge_sources s "
+                "JOIN knowledge_ingestion_jobs j ON j.tenant_id = s.tenant_id "
+                "AND j.source_id = s.id WHERE s.tenant_id = %s::uuid "
+                "AND s.knowledge_base_id = %s::uuid AND s.id = %s::uuid "
+                "FOR UPDATE OF s, j",
                 (str(tenant_id), str(knowledge_base_id), str(source_id)),
             )
             source_row = await source_cursor.fetchone()
@@ -730,12 +741,22 @@ class PostgresKnowledgeRepository:
                     "source_not_retryable", "Only a failed source can be retried."
                 )
             if source_row[0] == "failed":
+                target_status = (
+                    "embedding"
+                    if (source_row[1] or {}).get("stage") == "embedding"
+                    else "queued"
+                )
                 await connection.execute(
-                    "UPDATE knowledge_sources SET status = 'queued', "
+                    "UPDATE knowledge_sources SET status = %s, "
                     "error_code = NULL, error_message = NULL, updated_at = NOW() "
                     "WHERE tenant_id = %s::uuid "
                     "AND knowledge_base_id = %s::uuid AND id = %s::uuid",
-                    (str(tenant_id), str(knowledge_base_id), str(source_id)),
+                    (
+                        target_status,
+                        str(tenant_id),
+                        str(knowledge_base_id),
+                        str(source_id),
+                    ),
                 )
                 await connection.execute(
                     "UPDATE knowledge_ingestion_jobs SET state = 'queued', "
@@ -745,7 +766,8 @@ class PostgresKnowledgeRepository:
                     (str(tenant_id), str(source_id)),
                 )
             cursor = await connection.execute(
-                "SELECT id, idempotency_key, state, attempt, created_at, updated_at "
+                "SELECT id, idempotency_key, state, attempt, progress_jsonb, "
+                "created_at, updated_at "
                 "FROM knowledge_ingestion_jobs WHERE tenant_id = %s::uuid "
                 "AND source_id = %s::uuid",
                 (str(tenant_id), str(source_id)),
@@ -759,8 +781,9 @@ class PostgresKnowledgeRepository:
             idempotency_key=row[1],
             state=KnowledgeJobState(row[2]),
             attempt=row[3],
-            created_at=row[4],
-            updated_at=row[5],
+            progress=row[4] or {},
+            created_at=row[5],
+            updated_at=row[6],
         )
 
     async def activate_knowledge_base(
