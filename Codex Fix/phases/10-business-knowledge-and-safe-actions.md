@@ -1,6 +1,6 @@
 # Phase 10 — Business Knowledge and Safe Actions
 
-**Status:** IN PROGRESS — 10A AND 10B COMPLETE; NEXT 10C
+**Status:** IN PROGRESS — 10A, 10B, AND 10C COMPLETE; NEXT 10D
 
 **Goal:** Let an operator give an agent approved business knowledge through a guided setup flow, retrieve that knowledge quickly and safely during a conversation, and execute only explicitly enabled lifecycle or external actions.
 
@@ -224,7 +224,7 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 
 **Evidence:** [`../evidence/phase-10b/VERIFICATION.md`](../evidence/phase-10b/VERIFICATION.md). Bounded PDF, DOCX, TXT, Markdown, CSV, XLSX, and FAQ parsing; tenant object storage; authenticated upload/delete APIs; leased durable jobs; typed failures; citations; duplicate suppression; retry/restart behavior; and dependency locking are implemented. Sources stop honestly at `embedding`; local embeddings and pgvector retrieval remain 10C.
 
-### 10C — Local embeddings and real pgvector retrieval
+### 10C — Local embeddings and real pgvector retrieval — COMPLETE 2026-10-24 (`5dc1c02`)
 
 **Create/modify:**
 
@@ -243,6 +243,8 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 **Verification:** deterministic test embedder for units; local production-adapter contract test without network; disposable pgvector similarity, cross-tenant denial, unbound-agent denial, revision switch, dimension mismatch, cache invalidation, failure, and restart tests.
 
 **Suggested commit:** `feat: add agent scoped pgvector retrieval`
+
+**Evidence:** [`../evidence/phase-10c/VERIFICATION.md`](../evidence/phase-10c/VERIFICATION.md). An offline-only ONNX embedding boundary, durable parse-to-embed handoff, 384-dimensional pgvector persistence, exact tenant/agent/base/revision filtering, citations/scores, model-version matching, restart/retry behavior, and revision-aware speculative retrieval are implemented. Runtime prompt framing and retrieval deadlines remain 10D.
 
 ### 10D — Runtime RAG safety and latency
 
