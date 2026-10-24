@@ -1,6 +1,6 @@
 # Phase 10 — Business Knowledge and Safe Actions
 
-**Status:** READY TO START — PLAN APPROVED; IMPLEMENTATION NOT STARTED
+**Status:** IN PROGRESS — 10A AND 10B COMPLETE; NEXT 10C
 
 **Goal:** Let an operator give an agent approved business knowledge through a guided setup flow, retrieve that knowledge quickly and safely during a conversation, and execute only explicitly enabled lifecycle or external actions.
 
@@ -201,7 +201,7 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 
 **Evidence:** [`../evidence/phase-10a/VERIFICATION.md`](../evidence/phase-10a/VERIFICATION.md). Migration 022, tenant-scoped repositories, truthful APIs, revision activation, idempotent retry, and new-version agent binding are implemented. Common-file upload/parsing remains 10B.
 
-### 10B — Safe common-file ingestion
+### 10B — Safe common-file ingestion — COMPLETE 2026-10-24 (`0c8ab9a`)
 
 **Create/modify:**
 
@@ -221,6 +221,8 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 **Verification:** fixtures for every supported/unsupported type; encrypted PDF, image-only PDF, MIME mismatch, traversal, malformed XML, archive bomb metadata, huge row/cell, parser timeout, duplicate, restart, retry, and cleanup.
 
 **Suggested commit:** `feat: ingest common business documents safely`
+
+**Evidence:** [`../evidence/phase-10b/VERIFICATION.md`](../evidence/phase-10b/VERIFICATION.md). Bounded PDF, DOCX, TXT, Markdown, CSV, XLSX, and FAQ parsing; tenant object storage; authenticated upload/delete APIs; leased durable jobs; typed failures; citations; duplicate suppression; retry/restart behavior; and dependency locking are implemented. Sources stop honestly at `embedding`; local embeddings and pgvector retrieval remain 10C.
 
 ### 10C — Local embeddings and real pgvector retrieval
 
