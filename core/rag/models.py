@@ -111,6 +111,8 @@ class KnowledgeIngestionJob:
     job_id: UUID = field(default_factory=uuid4)
     state: KnowledgeJobState = KnowledgeJobState.QUEUED
     attempt: int = 1
+    lease_owner: str | None = None
+    lease_expires_at: datetime | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 

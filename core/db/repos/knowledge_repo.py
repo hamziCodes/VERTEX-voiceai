@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -133,6 +135,79 @@ class InMemoryKnowledgeRepository:
             return self._sources[(tenant_id, knowledge_base_id, source_id)]
         except KeyError as exc:
             raise KnowledgeNotFoundError("Knowledge source not found.") from exc
+
+    def claim_next_job(
+        self, worker_id: str, *, lease_seconds: int = 60
+    ) -> tuple[KnowledgeIngestionJob, KnowledgeSourceRecord] | None:
+        now = datetime.now(UTC)
+        candidates = sorted(self._jobs.values(), key=lambda item: item.created_at)
+        for job in candidates:
+            if job.state == KnowledgeJobState.SUCCEEDED:
+                continue
+            if job.state == KnowledgeJobState.RUNNING and (
+                job.lease_expires_at is None or job.lease_expires_at > now
+            ):
+                continue
+            if job.state not in {KnowledgeJobState.QUEUED, KnowledgeJobState.RUNNING}:
+                continue
+            job.state = KnowledgeJobState.RUNNING
+            job.lease_owner = worker_id
+            job.lease_expires_at = now + timedelta(seconds=max(1, lease_seconds))
+            job.updated_at = now
+            source = next(
+                item
+                for (owner, _base, source_id), item in self._sources.items()
+                if owner == job.tenant_id and source_id == job.source_id
+            )
+            source.status = KnowledgeSourceStatus.PARSING
+            source.updated_at = now
+            return job, source
+        return None
+
+    def store_chunks(
+        self,
+        tenant_id: UUID,
+        knowledge_base_id: UUID,
+        source_id: UUID,
+        chunks: list[Any],
+    ) -> None:
+        source = self.get_source(tenant_id, knowledge_base_id, source_id)
+        source.status = KnowledgeSourceStatus.EMBEDDING
+        source.chunk_count = len(chunks)
+        source.updated_at = datetime.now(UTC)
+        job = self._jobs[(tenant_id, source_id)]
+        job.state = KnowledgeJobState.SUCCEEDED
+        job.lease_owner = None
+        job.lease_expires_at = None
+        job.updated_at = source.updated_at
+
+    def fail_job(
+        self,
+        tenant_id: UUID,
+        knowledge_base_id: UUID,
+        source_id: UUID,
+        *,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        self.mark_source_failed(
+            tenant_id,
+            knowledge_base_id,
+            source_id,
+            error_code=error_code,
+            error_message=error_message[:500],
+        )
+
+    def delete_source(
+        self, tenant_id: UUID, knowledge_base_id: UUID, source_id: UUID
+    ) -> str:
+        source = self.get_source(tenant_id, knowledge_base_id, source_id)
+        del self._sources[(tenant_id, knowledge_base_id, source_id)]
+        self._jobs.pop((tenant_id, source_id), None)
+        base = self._bases[(tenant_id, knowledge_base_id)]
+        base.updated_at = datetime.now(UTC)
+        self._refresh_counts(base)
+        return source.object_reference
 
     def mark_source_ready(
         self,
@@ -419,6 +494,224 @@ class PostgresKnowledgeRepository:
             created_at=row[11],
             updated_at=row[12],
         )
+
+    async def create_source(
+        self,
+        tenant_id: UUID,
+        knowledge_base_id: UUID,
+        *,
+        source_type: str,
+        display_name: str,
+        media_type: str,
+        byte_count: int,
+        checksum_sha256: str,
+        object_reference: str,
+    ) -> KnowledgeSourceRecord:
+        async with self.database.tenant_transaction(str(tenant_id)) as connection:
+            base_cursor = await connection.execute(
+                "SELECT active_revision FROM knowledge_bases "
+                "WHERE tenant_id = %s::uuid "
+                "AND id = %s::uuid FOR UPDATE",
+                (str(tenant_id), str(knowledge_base_id)),
+            )
+            base = await base_cursor.fetchone()
+            if base is None:
+                raise KnowledgeNotFoundError("Knowledge base not found.")
+            revision = int(base[0]) + 1
+            duplicate_cursor = await connection.execute(
+                "SELECT id FROM knowledge_sources WHERE tenant_id = %s::uuid "
+                "AND knowledge_base_id = %s::uuid AND checksum_sha256 = %s "
+                "AND revision = %s",
+                (str(tenant_id), str(knowledge_base_id), checksum_sha256, revision),
+            )
+            duplicate = await duplicate_cursor.fetchone()
+            if duplicate is not None:
+                duplicate_id = duplicate[0]
+            else:
+                cursor = await connection.execute(
+                    "INSERT INTO knowledge_sources (tenant_id, knowledge_base_id, "
+                    "source_type, display_name, media_type, byte_count, "
+                    "checksum_sha256, "
+                    "object_reference, revision, status) VALUES "
+                    "(%s::uuid, %s::uuid, %s, %s, %s, %s, %s, %s, %s, 'queued') "
+                    "RETURNING id",
+                    (
+                        str(tenant_id),
+                        str(knowledge_base_id),
+                        source_type,
+                        display_name,
+                        media_type,
+                        byte_count,
+                        checksum_sha256,
+                        object_reference,
+                        revision,
+                    ),
+                )
+                duplicate_id = (await cursor.fetchone())[0]
+                await connection.execute(
+                    "INSERT INTO knowledge_ingestion_jobs "
+                    "(tenant_id, knowledge_base_id, source_id, idempotency_key) "
+                    "VALUES (%s::uuid, %s::uuid, %s::uuid, %s)",
+                    (
+                        str(tenant_id),
+                        str(knowledge_base_id),
+                        str(duplicate_id),
+                        f"source:{duplicate_id}:revision:{revision}",
+                    ),
+                )
+                await connection.execute(
+                    "UPDATE knowledge_bases SET status = CASE WHEN active_revision > 0 "
+                    "THEN 'active' ELSE 'processing' END, updated_at = NOW() "
+                    "WHERE tenant_id = %s::uuid AND id = %s::uuid",
+                    (str(tenant_id), str(knowledge_base_id)),
+                )
+        return await self.get_source(tenant_id, knowledge_base_id, duplicate_id)
+
+    async def claim_next_job(
+        self, worker_id: str, *, lease_seconds: int = 60
+    ) -> tuple[KnowledgeIngestionJob, KnowledgeSourceRecord] | None:
+        async with self.database.platform_transaction() as connection:
+            cursor = await connection.execute(
+                "SELECT j.id, j.tenant_id, j.knowledge_base_id, j.source_id, "
+                "j.idempotency_key, j.attempt, j.created_at, j.updated_at "
+                "FROM knowledge_ingestion_jobs j WHERE "
+                "(j.state = 'queued' OR "
+                "(j.state = 'running' AND j.lease_expires_at < NOW())) "
+                "AND (j.retry_at IS NULL OR j.retry_at <= NOW()) "
+                "ORDER BY j.created_at FOR UPDATE SKIP LOCKED LIMIT 1"
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                return None
+            job_id, tenant_id, base_id, source_id = row[:4]
+            lease_cursor = await connection.execute(
+                "UPDATE knowledge_ingestion_jobs SET state = 'running', "
+                "lease_owner = %s, lease_expires_at = "
+                "NOW() + (%s * INTERVAL '1 second'), updated_at = NOW() "
+                "WHERE id = %s::uuid RETURNING lease_expires_at, updated_at",
+                (worker_id, max(1, lease_seconds), str(job_id)),
+            )
+            lease_expires_at, updated_at = await lease_cursor.fetchone()
+            await connection.execute(
+                "UPDATE knowledge_sources SET status = 'parsing', updated_at = NOW() "
+                "WHERE tenant_id = %s::uuid AND id = %s::uuid",
+                (str(tenant_id), str(source_id)),
+            )
+        source = await self.get_source(tenant_id, base_id, source_id)
+        return (
+            KnowledgeIngestionJob(
+                tenant_id=tenant_id,
+                knowledge_base_id=base_id,
+                source_id=source_id,
+                job_id=job_id,
+                idempotency_key=row[4],
+                state=KnowledgeJobState.RUNNING,
+                attempt=row[5],
+                lease_owner=worker_id,
+                lease_expires_at=lease_expires_at,
+                created_at=row[6],
+                updated_at=updated_at,
+            ),
+            source,
+        )
+
+    async def store_chunks(
+        self,
+        tenant_id: UUID,
+        knowledge_base_id: UUID,
+        source_id: UUID,
+        chunks: list[Any],
+    ) -> None:
+        source = await self.get_source(tenant_id, knowledge_base_id, source_id)
+        async with self.database.tenant_transaction(str(tenant_id)) as connection:
+            await connection.execute(
+                "DELETE FROM knowledge_chunks WHERE tenant_id = %s::uuid "
+                "AND knowledge_source_id = %s::uuid",
+                (str(tenant_id), str(source_id)),
+            )
+            for ordinal, chunk in enumerate(chunks):
+                await connection.execute(
+                    "INSERT INTO knowledge_chunks (id, tenant_id, source_document_id, "
+                    "text, metadata_jsonb, knowledge_base_id, knowledge_source_id, "
+                    "revision, ordinal, token_count, citation_jsonb, content_hash) "
+                    "VALUES (%s::uuid, %s::uuid, %s::uuid, %s, %s::jsonb, %s::uuid, "
+                    "%s::uuid, %s, %s, %s, %s::jsonb, %s)",
+                    (
+                        str(chunk.chunk_id),
+                        str(tenant_id),
+                        str(source_id),
+                        chunk.text,
+                        json.dumps(chunk.metadata),
+                        str(knowledge_base_id),
+                        str(source_id),
+                        source.revision,
+                        ordinal,
+                        len(chunk.text.split()),
+                        json.dumps(chunk.metadata.get("citation", {})),
+                        hashlib.sha256(chunk.text.encode()).hexdigest(),
+                    ),
+                )
+            await connection.execute(
+                "UPDATE knowledge_sources SET status = 'embedding', chunk_count = %s, "
+                "parser_version = 'phase10b-v1', error_code = NULL, "
+                "error_message = NULL, "
+                "updated_at = NOW() WHERE tenant_id = %s::uuid AND id = %s::uuid",
+                (len(chunks), str(tenant_id), str(source_id)),
+            )
+            await connection.execute(
+                "UPDATE knowledge_ingestion_jobs SET state = 'succeeded', "
+                "lease_owner = NULL, lease_expires_at = NULL, "
+                "progress_jsonb = %s::jsonb, updated_at = NOW() "
+                "WHERE tenant_id = %s::uuid AND source_id = %s::uuid",
+                (
+                    json.dumps({"chunks": len(chunks)}),
+                    str(tenant_id),
+                    str(source_id),
+                ),
+            )
+
+    async def fail_job(
+        self,
+        tenant_id: UUID,
+        knowledge_base_id: UUID,
+        source_id: UUID,
+        *,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        safe_message = error_message[:500]
+        async with self.database.tenant_transaction(str(tenant_id)) as connection:
+            await connection.execute(
+                "UPDATE knowledge_sources SET status = 'failed', error_code = %s, "
+                "error_message = %s, updated_at = NOW() WHERE tenant_id = %s::uuid "
+                "AND knowledge_base_id = %s::uuid AND id = %s::uuid",
+                (
+                    error_code,
+                    safe_message,
+                    str(tenant_id),
+                    str(knowledge_base_id),
+                    str(source_id),
+                ),
+            )
+            await connection.execute(
+                "UPDATE knowledge_ingestion_jobs SET state = 'failed', "
+                "lease_owner = NULL, lease_expires_at = NULL, "
+                "last_error_code = %s, last_error_message = %s, updated_at = NOW() "
+                "WHERE tenant_id = %s::uuid AND source_id = %s::uuid",
+                (error_code, safe_message, str(tenant_id), str(source_id)),
+            )
+
+    async def delete_source(
+        self, tenant_id: UUID, knowledge_base_id: UUID, source_id: UUID
+    ) -> str:
+        source = await self.get_source(tenant_id, knowledge_base_id, source_id)
+        async with self.database.tenant_transaction(str(tenant_id)) as connection:
+            await connection.execute(
+                "DELETE FROM knowledge_sources WHERE tenant_id = %s::uuid "
+                "AND knowledge_base_id = %s::uuid AND id = %s::uuid",
+                (str(tenant_id), str(knowledge_base_id), str(source_id)),
+            )
+        return source.object_reference
 
     async def retry_source(
         self, tenant_id: UUID, knowledge_base_id: UUID, source_id: UUID

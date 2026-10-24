@@ -7,21 +7,93 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def knowledge_client(monkeypatch: pytest.MonkeyPatch):
+def knowledge_client(monkeypatch: pytest.MonkeyPatch, tmp_path):
     monkeypatch.setenv("UCVE_ENV", "test")
     monkeypatch.setenv("UCVE_MINT_HMAC_SECRET", "test-mint-secret-value")
     monkeypatch.setenv("UCVE_JWT_SECRET", "test-jwt-secret-value-32-bytes-ok")
     monkeypatch.setenv("UCVE_METRICS_BEARER", "test-metrics-value")
 
     from control_plane.app import app
-    from control_plane.routes.knowledge_bases import get_knowledge_repo
+    from control_plane.routes.knowledge_bases import (
+        get_knowledge_object_store,
+        get_knowledge_repo,
+    )
     from core.db.repos.knowledge_repo import InMemoryKnowledgeRepository
+    from core.storage.knowledge_objects import LocalKnowledgeObjectStore
 
     repository = InMemoryKnowledgeRepository()
     app.dependency_overrides[get_knowledge_repo] = lambda: repository
+    app.dependency_overrides[get_knowledge_object_store] = lambda: (
+        LocalKnowledgeObjectStore(tmp_path)
+    )
     with TestClient(app) as client:
         yield client, repository
     app.dependency_overrides.pop(get_knowledge_repo, None)
+    app.dependency_overrides.pop(get_knowledge_object_store, None)
+
+
+def test_upload_duplicate_faq_and_delete_lifecycle(knowledge_client) -> None:
+    client, repository = knowledge_client
+    tenant_id = uuid4()
+    headers = _headers(client, tenant_id, "knowledge:read", "knowledge:write")
+    kb_id = client.post(
+        "/v1/knowledge-bases", headers=headers, json={"name": "Uploads"}
+    ).json()["knowledge_base_id"]
+
+    first = client.post(
+        f"/v1/knowledge-bases/{kb_id}/sources",
+        headers=headers,
+        files={"source": ("guide.txt", b"Safe setup guide", "text/plain")},
+    )
+    duplicate = client.post(
+        f"/v1/knowledge-bases/{kb_id}/sources",
+        headers=headers,
+        files={"source": ("guide.txt", b"Safe setup guide", "text/plain")},
+    )
+    faq = client.post(
+        f"/v1/knowledge-bases/{kb_id}/faqs",
+        headers=headers,
+        json={"name": "Support", "items": [{"question": "Open?", "answer": "Yes."}]},
+    )
+
+    assert first.status_code == 202
+    assert duplicate.status_code == 202
+    assert duplicate.json()["source_id"] == first.json()["source_id"]
+    assert faq.status_code == 202
+    source_id = first.json()["source_id"]
+    deleted = client.delete(
+        f"/v1/knowledge-bases/{kb_id}/sources/{source_id}", headers=headers
+    )
+    assert deleted.status_code == 204
+    assert (
+        client.get(
+            f"/v1/knowledge-bases/{kb_id}/sources/{source_id}", headers=headers
+        ).status_code
+        == 404
+    )
+
+
+def test_upload_rejects_mismatch_and_traversal(knowledge_client) -> None:
+    client, _repository = knowledge_client
+    tenant_id = uuid4()
+    headers = _headers(client, tenant_id, "knowledge:write")
+    kb_id = client.post(
+        "/v1/knowledge-bases", headers=headers, json={"name": "Validation"}
+    ).json()["knowledge_base_id"]
+    mismatch = client.post(
+        f"/v1/knowledge-bases/{kb_id}/sources",
+        headers=headers,
+        files={"source": ("fake.pdf", b"not pdf", "application/pdf")},
+    )
+    traversal = client.post(
+        f"/v1/knowledge-bases/{kb_id}/sources",
+        headers=headers,
+        files={"source": ("../notes.txt", b"notes", "text/plain")},
+    )
+    assert mismatch.status_code == 422
+    assert mismatch.json()["detail"]["code"] == "media_type_mismatch"
+    assert traversal.status_code == 422
+    assert traversal.json()["detail"]["code"] == "file_name_invalid"
 
 
 def _key(client: TestClient, tenant_id: UUID, *scopes: str) -> str:

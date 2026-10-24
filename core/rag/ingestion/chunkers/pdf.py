@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from uuid import UUID
+
 from core.rag.models import ChunkConfig, KnowledgeBaseChunk
 
 
-def chunk_pdf_text(text: str, tenant_id: UUID, config: ChunkConfig | None = None) -> list[KnowledgeBaseChunk]:
+def chunk_pdf_text(
+    text: str, tenant_id: UUID, config: ChunkConfig | None = None
+) -> list[KnowledgeBaseChunk]:
     """Chunk PDF document text using 400 token chunk size & 64 token overlap."""
     cfg = config or ChunkConfig()
     words = text.split()
