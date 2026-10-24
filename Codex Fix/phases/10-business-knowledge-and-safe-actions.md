@@ -1,6 +1,6 @@
 # Phase 10 — Business Knowledge and Safe Actions
 
-**Status:** IN PROGRESS — 10A, 10B, AND 10C COMPLETE; NEXT 10D
+**Status:** IN PROGRESS — 10A THROUGH 10D COMPLETE; NEXT 10E
 
 **Goal:** Let an operator give an agent approved business knowledge through a guided setup flow, retrieve that knowledge quickly and safely during a conversation, and execute only explicitly enabled lifecycle or external actions.
 
@@ -246,7 +246,7 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 
 **Evidence:** [`../evidence/phase-10c/VERIFICATION.md`](../evidence/phase-10c/VERIFICATION.md). An offline-only ONNX embedding boundary, durable parse-to-embed handoff, 384-dimensional pgvector persistence, exact tenant/agent/base/revision filtering, citations/scores, model-version matching, restart/retry behavior, and revision-aware speculative retrieval are implemented. Runtime prompt framing and retrieval deadlines remain 10D.
 
-### 10D — Runtime RAG safety and latency
+### 10D — Runtime RAG safety and latency — COMPLETE 2026-10-24 (`956c141`)
 
 **Create/modify:**
 
@@ -263,6 +263,8 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 **Verification:** adversarial documents, system-prompt imitation, fake tool instructions, tenant/agent scope, timeout, cancellation, cache/revision, no-result behavior, and latency-budget tests.
 
 **Suggested commit:** `feat: inject bounded untrusted knowledge context`
+
+**Evidence:** [`../evidence/phase-10d/VERIFICATION.md`](../evidence/phase-10d/VERIFICATION.md). Published agent-version scope, separate untrusted knowledge messages, bounded citations/context, 250/600 ms retrieval budgets, cancellation, revision-aware caching, degraded continuation, and content-free RAG latency telemetry are implemented. Lifecycle actions and tool continuation remain 10E.
 
 ### 10E — Real lifecycle actions and bounded LLM continuation
 
