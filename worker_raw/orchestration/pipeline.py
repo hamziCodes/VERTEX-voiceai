@@ -7,7 +7,7 @@ import json
 import time
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from core.buffers.cancellation import AsyncioCancellationToken
@@ -67,12 +67,17 @@ from core.providers.factory import (
 )
 from core.providers.failover import FailoverRouter, ProviderStreamDeadlines
 from core.providers.interfaces.live_stt import BaseLiveSTTSession
-from core.providers.interfaces.llm import LLMConfig
-from core.providers.interfaces.stt import STTConfig
-from core.providers.interfaces.tts import TTSConfig
+from core.providers.interfaces.llm import BaseLLMProvider, LLMConfig
+from core.providers.interfaces.stt import BaseSTTProvider, STTConfig
+from core.providers.interfaces.tts import BaseTTSProvider, TTSConfig
 from core.providers.live_stt_factory import build_live_stt_session
 from core.providers.mode import provider_runtime_status
 from core.providers.registry import ProviderRegistry
+from core.rag.prompt_context import (
+    KnowledgeContextService,
+    RetrievalOutcome,
+    build_prompt_messages,
+)
 from core.rag.retriever import PgVectorRetriever
 from core.rag.speculative import SpeculativeRetrieval
 from core.session.redis_store import RedisSessionStore
@@ -135,6 +140,9 @@ class PipelineOrchestrator:
         self.latency_hooks = LatencyHooks(self.latency_collector)
         self.rag_retriever = rag_retriever or PgVectorRetriever()
         self.speculative_rag = SpeculativeRetrieval(self.rag_retriever)
+        self.rag_context = KnowledgeContextService(
+            self.rag_retriever, speculative=self.speculative_rag
+        )
         self.post_call_pipeline = post_call_pipeline or PostCallPipeline()
         self.provider_binder = provider_binder
         self.bound_provider_chains: BoundProviderChains | None = None
@@ -142,11 +150,11 @@ class PipelineOrchestrator:
         self.speaking_config = SpeakingPipelineConfig.from_env()
         self.vad_adapter = SileroVADAdapter()
         self._apply_vad_timing()
-        self.stt_provider = GladiaSTTProvider(
+        self.stt_provider: BaseSTTProvider = GladiaSTTProvider(
             mock_text=self.listening_config.stt_mock_text
         )
-        self.llm_provider = GroqLLMProvider()
-        self.tts_provider = UpliftTTSProvider(
+        self.llm_provider: BaseLLMProvider = GroqLLMProvider()
+        self.tts_provider: BaseTTSProvider = UpliftTTSProvider(
             chunk_size_bytes=(
                 self.speaking_config.tts_chunk_size_bytes
                 if self.speaking_config.enable_speaking_hardening
@@ -314,7 +322,7 @@ class PipelineOrchestrator:
     async def apply_provider_selection(
         self, session_config: PipelineSessionConfig
     ) -> None:
-        """Swap STT/LLM/TTS adapters from session config (call at session start only)."""
+        """Swap providers from session config at session start only."""
         self.language_router.set_supported_languages(session_config.allowed_languages)
         configure_tools = getattr(self.tool_handler, "set_allowed_tools", None)
         if callable(configure_tools):
@@ -441,7 +449,7 @@ class PipelineOrchestrator:
             self._egress_sender_task = asyncio.create_task(self._egress_sender_loop())
 
     def apply_language_vad_overrides(self, language: str) -> None:
-        """Wire per-language VAD silence overrides from the language profile registry."""
+        """Wire per-language VAD silence overrides from the language registry."""
         try:
             from core.language.registry import LanguageRegistry
 
@@ -1000,14 +1008,30 @@ class PipelineOrchestrator:
         cfg = getattr(self._ws_session, "config", None) if self._ws_session else None
         if cfg is None:
             return
+        if (
+            len(cfg.knowledge_base_ids) != 1
+            or cfg.agent_config_version is None
+            or not cfg.session_plan_hash
+        ):
+            return
         try:
             tenant_uuid = parse_uuid(cfg.tenant_id, "tenant_id")
+            agent_uuid = parse_uuid(cfg.agent_id, "agent_id")
+            base_uuid = parse_uuid(cfg.knowledge_base_ids[0], "knowledge_base_id")
         except Exception:
             return
         try:
-            await self.speculative_rag.speculate(partial, tenant_uuid)
-        except Exception as exc:
-            logger.debug("RAG speculate skipped", error=str(exc))
+            await self.speculative_rag.speculate(
+                partial,
+                tenant_uuid,
+                agent_id=agent_uuid,
+                agent_config_version=cfg.agent_config_version,
+                knowledge_base_id=base_uuid,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("RAG speculation unavailable")
 
     async def _close_live_stt(self) -> None:
         task = self._live_stt_task
@@ -1172,7 +1196,9 @@ class PipelineOrchestrator:
 
         def _transcribe(route: Any) -> AsyncIterator[Any]:
             adapter = self._route_adapter(route, self.stt_provider)
-            return adapter.transcribe_stream(_audio_iter(), cfg)
+            return cast(
+                AsyncIterator[Any], adapter.transcribe_stream(_audio_iter(), cfg)
+            )
 
         text = ""
         if self.bound_provider_chains is not None:
@@ -1267,8 +1293,11 @@ class PipelineOrchestrator:
                 cfg: TTSConfig = cfg,
             ) -> AsyncIterator[Any]:
                 adapter = self._route_adapter(route, self.tts_provider)
-                return adapter.synthesize_stream(
-                    sentence, cfg, cancellation_token=self._tts_cancel
+                return cast(
+                    AsyncIterator[Any],
+                    adapter.synthesize_stream(
+                        sentence, cfg, cancellation_token=self._tts_cancel
+                    ),
                 )
 
             source_rate: int | None = None
@@ -1366,6 +1395,25 @@ class PipelineOrchestrator:
         except Exception as exc:
             logger.debug("Client TTS interruption notify failed", error=str(exc))
 
+    async def _emit_rag_degraded(self, outcome: RetrievalOutcome) -> None:
+        """Expose a safe retrieval status without document or query content."""
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is None:
+            return
+        try:
+            await transport.send_control_event(
+                ControlEventType.DEGRADED_MODE,
+                {
+                    "kind": "knowledge_retrieval",
+                    "recoverable": True,
+                    "status": outcome.status,
+                    "category": outcome.error_category,
+                },
+            )
+        except Exception:
+            logger.debug("Client RAG degradation notify failed")
+
     async def run_turn(
         self, session_config: PipelineSessionConfig, user_text: str
     ) -> str:
@@ -1448,7 +1496,7 @@ class PipelineOrchestrator:
         elif self.fsm.state == SessionState.AGENT_SPEAKING and self._ws_session is None:
             self.fsm.trigger(SessionEvent.TTS_DRAINED)
         elif self.fsm.state == SessionState.BARGE_IN_INTERRUPTED:
-            # Interrupted turn already in PROCESSING via VAD_SPEECH_END or stays until STT_FINAL.
+            # Interrupted turn is already processing or remains until STT final.
             pass
 
         if self.fsm.state == SessionState.LISTENING:
@@ -1457,40 +1505,55 @@ class PipelineOrchestrator:
             if self.fsm.can_transition(SessionEvent.STT_FINAL):
                 self.fsm.trigger(SessionEvent.STT_FINAL)
 
-        rag_context = ""
+        rag_chunks = []
         try:
             tenant_uuid = parse_uuid(session_config.tenant_id, "tenant_id")
         except UCVEError:
             if len(session_config.tenant_id) >= 35:
                 raise
             tenant_uuid = None
-        if tenant_uuid is not None:
+        if tenant_uuid is not None and session_config.knowledge_base_ids:
             try:
-                rag_chunks = await self.speculative_rag.reconcile(
-                    user_text, tenant_uuid
+                agent_uuid = parse_uuid(session_config.agent_id, "agent_id")
+                retrieval = await self.rag_context.retrieve(
+                    query=user_text,
+                    tenant_id=tenant_uuid,
+                    agent_id=agent_uuid,
+                    agent_config_version=session_config.agent_config_version or 0,
+                    plan_hash=session_config.session_plan_hash or "",
+                    knowledge_base_ids=session_config.knowledge_base_ids,
                 )
                 waterfall.rag_retrieve_ms = self.latency_hooks.now_ms()
-                if rag_chunks:
-                    rag_context = "\n".join(
-                        f"[Knowledge DATA]: {c.text}" for c in rag_chunks
+                waterfall.rag_status = retrieval.status
+                waterfall.rag_result_count = retrieval.result_count
+                waterfall.rag_cache_hit = retrieval.cache_hit
+                waterfall.rag_soft_budget_exceeded = retrieval.soft_budget_exceeded
+                waterfall.rag_error_category = retrieval.error_category
+                rag_chunks = retrieval.chunks
+                if retrieval.error_category is not None:
+                    logger.warning(
+                        "RAG retrieval degraded", category=retrieval.error_category
                     )
-            except Exception as exc:
-                logger.warning("RAG retrieval skipped", error=str(exc))
+                    await self._emit_rag_degraded(retrieval)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                waterfall.rag_retrieve_ms = self.latency_hooks.now_ms()
+                waterfall.rag_status = "error"
+                waterfall.rag_error_category = "runtime_retrieval_error"
+                logger.warning(
+                    "RAG retrieval degraded", category="runtime_retrieval_error"
+                )
 
         prompt_str = (
             getattr(session_config, "system_prompt", None) or ""
         ).strip() or "You are a helpful voice agent."
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": f"{prompt_str}\n{rag_context}".strip()},
-        ]
-        # Multi-turn Redis history (Phase 7) — last 12 speaker turns.
-        for turn in prior_turns[-12:]:
-            speaker = (turn.get("speaker") or "user").lower()
-            role = "assistant" if speaker in ("agent", "assistant") else "user"
-            content = (turn.get("text") or "").strip()
-            if content:
-                messages.append({"role": role, "content": content})
-        messages.append({"role": "user", "content": user_text})
+        messages = build_prompt_messages(
+            system_prompt=prompt_str,
+            prior_turns=prior_turns,
+            user_text=user_text,
+            chunks=rag_chunks,
+        )
 
         executed_tool_calls: set[str] = set()
 
@@ -1546,7 +1609,7 @@ class PipelineOrchestrator:
 
         if user_text.startswith("tool:"):
             tool_name = user_text.split(":", 1)[1].strip()
-            normalized = await _run_tool_with_filler(tool_name, {})
+            normalized = await _run_tool_with_filler(tool_name, {}) or ""
             if normalized:
                 await self._finish_turn_tts([normalized], session_config, waterfall)
         else:
@@ -1616,8 +1679,11 @@ class PipelineOrchestrator:
 
             def _stream_llm(route: Any) -> AsyncIterator[Any]:
                 adapter = self._route_adapter(route, self.llm_provider)
-                return adapter.generate_stream(
-                    messages, llm_cfg, cancellation_token=self._llm_cancel
+                return cast(
+                    AsyncIterator[Any],
+                    adapter.generate_stream(
+                        messages, llm_cfg, cancellation_token=self._llm_cancel
+                    ),
                 )
 
             async def _consume_llm_stream() -> None:
@@ -1930,7 +1996,8 @@ class PipelineOrchestrator:
             and not session_config.hipaa_baa_acknowledged
         ):
             raise PermissionError(
-                "HIPAA compliance requires signed BAA acknowledgment before cloud LLM execution."
+                "HIPAA compliance requires signed BAA acknowledgment before "
+                "cloud LLM execution."
             )
 
         turns = user_turns if user_turns is not None else ["Hello test call"]

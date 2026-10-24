@@ -38,6 +38,11 @@ class LatencyWaterfall(BaseModel):
     vad_end_of_speech_ms: float | None = None
     stt_final_ms: float | None = None
     rag_retrieve_ms: float | None = None
+    rag_status: str = "disabled"
+    rag_result_count: int = 0
+    rag_cache_hit: bool = False
+    rag_soft_budget_exceeded: bool = False
+    rag_error_category: str | None = None
     llm_ttft_ms: float | None = None
     chunker_ms: float | None = None
     tts_ttfb_ms: float | None = None
@@ -142,6 +147,13 @@ class LatencyWaterfall(BaseModel):
                 "dropped_output_chunks": self.dropped_output_chunks,
                 "prebuffer_ms": self.prebuffer_ms,
                 "underrun": self.playback_underrun,
+            },
+            "rag": {
+                "status": self.rag_status,
+                "result_count": self.rag_result_count,
+                "cache_hit": self.rag_cache_hit,
+                "soft_budget_exceeded": self.rag_soft_budget_exceeded,
+                "error_category": self.rag_error_category,
             },
             "missing_reasons": self.missing_reasons(),
             "excluded_reason": self.excluded_reason,

@@ -29,6 +29,7 @@ class RAGRetriever(ABC):
         top_k: int = 3,
         *,
         agent_id: UUID | None = None,
+        agent_config_version: int | None = None,
         knowledge_base_id: UUID | None = None,
         revision: int | None = None,
     ) -> list[KnowledgeBaseChunk]: ...
@@ -66,6 +67,7 @@ class PgVectorRetriever(RAGRetriever):
         top_k: int = 3,
         *,
         agent_id: UUID | None = None,
+        agent_config_version: int | None = None,
         knowledge_base_id: UUID | None = None,
         revision: int | None = None,
     ) -> list[KnowledgeBaseChunk]:
@@ -80,10 +82,14 @@ class PgVectorRetriever(RAGRetriever):
             return self._retrieve_test_chunks(normalized, tenant_id, top_k)
         if self.embedder is None:
             raise RuntimeError("Durable retrieval requires an embedding adapter.")
-        if agent_id is None or knowledge_base_id is None or revision is None:
+        if (
+            agent_id is None
+            or knowledge_base_id is None
+            or (revision is None and agent_config_version is None)
+        ):
             raise RetrievalScopeError(
                 "knowledge_scope_required",
-                "Agent, knowledge base, and revision are required.",
+                "Agent, knowledge base, and a pinned version are required.",
             )
         batch = await self.embedder.embed([normalized], purpose=EmbeddingPurpose.QUERY)
         if (
@@ -101,6 +107,7 @@ class PgVectorRetriever(RAGRetriever):
                 await self.repository.search(
                     tenant_id=tenant_id,
                     agent_id=agent_id,
+                    agent_config_version=agent_config_version,
                     knowledge_base_id=knowledge_base_id,
                     revision=revision,
                     query_vector=batch.vectors[0],

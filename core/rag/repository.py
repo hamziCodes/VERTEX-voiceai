@@ -56,15 +56,23 @@ class InMemoryKnowledgeVectorRepository:
         self.chunks: list[KnowledgeBaseChunk] = []
         self._jobs: dict[UUID, dict[str, Any]] = {}
         self._sources: dict[UUID, dict[str, Any]] = {}
-        self._bindings: set[tuple[UUID, UUID, UUID, int]] = set()
+        self._bindings: set[tuple[UUID, UUID, int | None, UUID, int]] = set()
 
     def add_chunk(self, chunk: KnowledgeBaseChunk) -> None:
         self.chunks.append(chunk)
 
     def bind(
-        self, tenant_id: UUID, agent_id: UUID, knowledge_base_id: UUID, *, revision: int
+        self,
+        tenant_id: UUID,
+        agent_id: UUID,
+        knowledge_base_id: UUID,
+        *,
+        revision: int,
+        agent_config_version: int | None = None,
     ) -> None:
-        self._bindings.add((tenant_id, agent_id, knowledge_base_id, revision))
+        self._bindings.add(
+            (tenant_id, agent_id, agent_config_version, knowledge_base_id, revision)
+        )
 
     def queue_source(
         self,
@@ -158,18 +166,35 @@ class InMemoryKnowledgeVectorRepository:
         *,
         tenant_id: UUID,
         agent_id: UUID,
+        agent_config_version: int | None = None,
         knowledge_base_id: UUID,
-        revision: int,
+        revision: int | None = None,
         query_vector: list[float],
         embedding_model: str,
         embedding_version: str,
         top_k: int,
     ) -> list[KnowledgeBaseChunk]:
-        if (tenant_id, agent_id, knowledge_base_id, revision) not in self._bindings:
+        matching_revisions = {
+            bound_revision
+            for (
+                bound_tenant,
+                bound_agent,
+                bound_version,
+                bound_base,
+                bound_revision,
+            ) in self._bindings
+            if bound_tenant == tenant_id
+            and bound_agent == agent_id
+            and bound_base == knowledge_base_id
+            and (agent_config_version is None or bound_version == agent_config_version)
+            and (revision is None or bound_revision == revision)
+        }
+        if len(matching_revisions) != 1:
             raise KnowledgeVectorError(
                 "knowledge_binding_required",
                 "Agent is not bound to this knowledge revision.",
             )
+        active_revision = next(iter(matching_revisions))
         if len(query_vector) != EXPECTED_EMBEDDING_DIMENSIONS:
             raise KnowledgeVectorError(
                 "embedding_dimension_mismatch", "Query embedding dimension is invalid."
@@ -179,7 +204,7 @@ class InMemoryKnowledgeVectorRepository:
             if (
                 chunk.tenant_id != tenant_id
                 or chunk.knowledge_base_id != knowledge_base_id
-                or chunk.revision != revision
+                or chunk.revision != active_revision
                 or len(chunk.embedding) != EXPECTED_EMBEDDING_DIMENSIONS
                 or chunk.embedding_model != embedding_model
                 or chunk.embedding_version != embedding_version
@@ -343,8 +368,9 @@ class PostgresKnowledgeVectorRepository:
         *,
         tenant_id: UUID,
         agent_id: UUID,
+        agent_config_version: int | None = None,
         knowledge_base_id: UUID,
-        revision: int,
+        revision: int | None = None,
         query_vector: list[float],
         embedding_model: str,
         embedding_version: str,
@@ -355,17 +381,39 @@ class PostgresKnowledgeVectorRepository:
                 "embedding_dimension_mismatch", "Query embedding dimension is invalid."
             )
         async with self.database.tenant_transaction(str(tenant_id)) as connection:
-            binding_cursor = await connection.execute(
-                "SELECT 1 FROM agent_knowledge_bindings WHERE tenant_id = %s::uuid "
-                "AND agent_id = %s::uuid AND knowledge_base_id = %s::uuid "
-                "AND knowledge_revision = %s LIMIT 1",
-                (str(tenant_id), str(agent_id), str(knowledge_base_id), revision),
-            )
-            if await binding_cursor.fetchone() is None:
+            if agent_config_version is not None:
+                binding_cursor = await connection.execute(
+                    "SELECT knowledge_revision FROM agent_knowledge_bindings "
+                    "WHERE tenant_id = %s::uuid AND agent_id = %s::uuid "
+                    "AND agent_config_version = %s AND knowledge_base_id = %s::uuid "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (
+                        str(tenant_id),
+                        str(agent_id),
+                        agent_config_version,
+                        str(knowledge_base_id),
+                    ),
+                )
+            elif revision is not None:
+                binding_cursor = await connection.execute(
+                    "SELECT knowledge_revision FROM agent_knowledge_bindings "
+                    "WHERE tenant_id = %s::uuid AND agent_id = %s::uuid "
+                    "AND knowledge_base_id = %s::uuid AND knowledge_revision = %s "
+                    "LIMIT 1",
+                    (str(tenant_id), str(agent_id), str(knowledge_base_id), revision),
+                )
+            else:
+                raise KnowledgeVectorError(
+                    "knowledge_scope_required",
+                    "Agent configuration version or knowledge revision is required.",
+                )
+            binding = await binding_cursor.fetchone()
+            if binding is None:
                 raise KnowledgeVectorError(
                     "knowledge_binding_required",
                     "Agent is not bound to this knowledge revision.",
                 )
+            active_revision = int(binding[0])
             cursor = await connection.execute(
                 "SELECT id, knowledge_source_id, text, metadata_jsonb, ordinal, "
                 "citation_jsonb, embedding_model, embedding_version, "
@@ -379,7 +427,7 @@ class PostgresKnowledgeVectorRepository:
                     _vector_literal(query_vector),
                     str(tenant_id),
                     str(knowledge_base_id),
-                    revision,
+                    active_revision,
                     embedding_model,
                     embedding_version,
                     _vector_literal(query_vector),
@@ -395,7 +443,7 @@ class PostgresKnowledgeVectorRepository:
                 text=row[2],
                 metadata=row[3] or {},
                 knowledge_base_id=knowledge_base_id,
-                revision=revision,
+                revision=active_revision,
                 ordinal=row[4],
                 citation=row[5] or {},
                 embedding_model=row[6],

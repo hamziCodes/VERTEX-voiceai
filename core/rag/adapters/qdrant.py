@@ -21,8 +21,17 @@ class QdrantRetrieverStub(RAGRetriever):
         top_k: int = 3,
         *,
         agent_id: UUID | None = None,
+        agent_config_version: int | None = None,
         knowledge_base_id: UUID | None = None,
         revision: int | None = None,
     ) -> list[KnowledgeBaseChunk]:
-        del query, tenant_id, top_k, agent_id, knowledge_base_id, revision
+        del (
+            query,
+            tenant_id,
+            top_k,
+            agent_id,
+            agent_config_version,
+            knowledge_base_id,
+            revision,
+        )
         return []

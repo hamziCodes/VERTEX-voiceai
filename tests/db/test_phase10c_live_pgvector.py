@@ -168,6 +168,14 @@ async def test_pgvector_agent_scope_revision_switch_and_restart(tmp_path) -> Non
         assert "fourteen days" in revision_one[0].text
         assert revision_one[0].score == pytest.approx(1.0)
         assert revision_one[0].citation
+        version_one = await retriever.retrieve(
+            "refund rules",
+            tenant_id,
+            agent_id=agent_id,
+            agent_config_version=1,
+            knowledge_base_id=base.knowledge_base_id,
+        )
+        assert "fourteen days" in version_one[0].text
 
         with pytest.raises(RetrievalScopeError):
             await retriever.retrieve(
@@ -209,6 +217,14 @@ async def test_pgvector_agent_scope_revision_switch_and_restart(tmp_path) -> Non
             revision=2,
         )
         assert "thirty days" in revision_two[0].text
+        version_two = await retriever.retrieve(
+            "refund rules",
+            tenant_id,
+            agent_id=agent_id,
+            agent_config_version=2,
+            knowledge_base_id=base.knowledge_base_id,
+        )
+        assert "thirty days" in version_two[0].text
         pinned_old = await retriever.retrieve(
             "refund rules",
             tenant_id,

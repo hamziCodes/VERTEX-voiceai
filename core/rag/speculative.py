@@ -45,7 +45,9 @@ class SpeculativeRetrieval:
         self.threshold = threshold
         self.speculative_query: str = ""
         self.speculative_results: list[KnowledgeBaseChunk] = []
-        self._scope: tuple[UUID, UUID | None, UUID | None, int | None] | None = None
+        self._scope: (
+            tuple[UUID, UUID | None, int | None, UUID | None, int | None] | None
+        ) = None
 
     async def speculate(
         self,
@@ -53,16 +55,24 @@ class SpeculativeRetrieval:
         tenant_id: UUID,
         *,
         agent_id: UUID | None = None,
+        agent_config_version: int | None = None,
         knowledge_base_id: UUID | None = None,
         revision: int | None = None,
     ) -> list[KnowledgeBaseChunk]:
         """Issue speculative retrieval on stabilizing STT partial."""
         self.speculative_query = partial_transcript.strip()
-        self._scope = (tenant_id, agent_id, knowledge_base_id, revision)
+        self._scope = (
+            tenant_id,
+            agent_id,
+            agent_config_version,
+            knowledge_base_id,
+            revision,
+        )
         self.speculative_results = await self.retriever.retrieve(
             self.speculative_query,
             tenant_id=tenant_id,
             agent_id=agent_id,
+            agent_config_version=agent_config_version,
             knowledge_base_id=knowledge_base_id,
             revision=revision,
         )
@@ -74,6 +84,7 @@ class SpeculativeRetrieval:
         tenant_id: UUID,
         *,
         agent_id: UUID | None = None,
+        agent_config_version: int | None = None,
         knowledge_base_id: UUID | None = None,
         revision: int | None = None,
     ) -> list[KnowledgeBaseChunk]:
@@ -83,7 +94,13 @@ class SpeculativeRetrieval:
         otherwise re-query retriever.
         """
         final_clean = final_transcript.strip()
-        scope = (tenant_id, agent_id, knowledge_base_id, revision)
+        scope = (
+            tenant_id,
+            agent_id,
+            agent_config_version,
+            knowledge_base_id,
+            revision,
+        )
         if (
             not self.speculative_query
             or not self.speculative_results
@@ -93,6 +110,7 @@ class SpeculativeRetrieval:
                 final_clean,
                 tenant_id=tenant_id,
                 agent_id=agent_id,
+                agent_config_version=agent_config_version,
                 knowledge_base_id=knowledge_base_id,
                 revision=revision,
             )
@@ -109,6 +127,7 @@ class SpeculativeRetrieval:
             final_clean,
             tenant_id=tenant_id,
             agent_id=agent_id,
+            agent_config_version=agent_config_version,
             knowledge_base_id=knowledge_base_id,
             revision=revision,
         )
