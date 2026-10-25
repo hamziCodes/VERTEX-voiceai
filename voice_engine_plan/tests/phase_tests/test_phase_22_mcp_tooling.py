@@ -4,18 +4,61 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 from uuid import uuid4
 
 import pytest
 
-from core.mcp.builtin_tools import BUILTIN_TOOLS, handle_end_conversation_summary
+from core.mcp.builtin_tools import BUILTIN_TOOLS
 from core.mcp.filler import ConversationalFillerSynth, FillerConfig
 from core.mcp.host import MCPHost, MCPServerConfig, MCPTransportType, ToolTimeoutConfig
 from core.mcp.orchestrator import ToolOrchestrator
-from core.mcp.timeout_fallback import ToolTimeoutFallback
 from core.mcp.transports.stdio import StdioMCPTransport
+from core.providers.interfaces.llm import ToolDefinition
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+class _FakeMCPTransport:
+    async def connect(self) -> bool:
+        return True
+
+    async def list_tools(self) -> list[ToolDefinition]:
+        return [
+            ToolDefinition(
+                name="query_inventory",
+                description="Query inventory",
+                parameters={
+                    "type": "object",
+                    "properties": {"item_id": {"type": "string"}},
+                    "required": ["item_id"],
+                },
+            )
+        ]
+
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        idempotency_key: str | None = None,
+    ) -> Any:
+        del name, idempotency_key
+        return SimpleNamespace(
+            content=f"inventory:{arguments['item_id']}", is_error=False
+        )
+
+    async def close(self) -> None:
+        return None
+
+
+def _enabled_config() -> MCPServerConfig:
+    return MCPServerConfig(
+        tenant_id=uuid4(),
+        enabled=True,
+        allowed_tools=("query_inventory",),
+    )
 
 
 def test_phase_plan_artifact_exists() -> None:
@@ -41,17 +84,19 @@ def test_default_transport_is_http_not_stdio() -> None:
 
 @pytest.mark.asyncio
 async def test_stdio_gated_by_env() -> None:
-    stdio = StdioMCPTransport("python script.py")
+    stdio = StdioMCPTransport(
+        "python", ("script.py",), allowed_executables=frozenset({"python"})
+    )
     assert stdio.enabled is False
     with pytest.raises(PermissionError) as exc_info:
         await stdio.connect()
-    assert "Stdio MCP transport disabled in production" in str(exc_info.value)
+    assert "disabled" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
 async def test_mcp_host_lists_and_calls_tools() -> None:
-    config = MCPServerConfig(tenant_id=uuid4())
-    host = MCPHost(config)
+    config = _enabled_config()
+    host = MCPHost(config, transport=_FakeMCPTransport())
     await host.connect()
     tools = await host.list_tools()
     assert len(tools) >= 1
@@ -64,19 +109,25 @@ async def test_mcp_host_lists_and_calls_tools() -> None:
 
 @pytest.mark.asyncio
 async def test_3s_timeout_triggers_fallback_and_error() -> None:
-    config = MCPServerConfig(tenant_id=uuid4())
+    config = _enabled_config()
     timeout_cfg = ToolTimeoutConfig(timeout_ms=50, fallback_utterance="Checking now")
-    host = MCPHost(config, timeout_config=timeout_cfg)
+    host = MCPHost(config, timeout_config=timeout_cfg, transport=_FakeMCPTransport())
     await host.connect()
 
     # Override internal execution to sleep past timeout
-    async def slow_exec(name: str, args: dict) -> any:
+    async def slow_exec(
+        name: str,
+        args: dict[str, Any],
+        *,
+        idempotency_key: str | None = None,
+    ) -> Any:
+        del name, args, idempotency_key
         await asyncio.sleep(0.2)
         return None
 
     host._exec_tool = slow_exec  # type: ignore
 
-    res = await host.call_tool("slow_tool", {})
+    res = await host.call_tool("query_inventory", {"item_id": "slow"})
     assert res.is_error is True
     assert "timed out after 50 ms" in res.content
     assert "Checking now" in res.content
@@ -84,8 +135,8 @@ async def test_3s_timeout_triggers_fallback_and_error() -> None:
 
 @pytest.mark.asyncio
 async def test_serial_tool_orchestrator_execution() -> None:
-    config = MCPServerConfig(tenant_id=uuid4())
-    host = MCPHost(config)
+    config = _enabled_config()
+    host = MCPHost(config, transport=_FakeMCPTransport())
     await host.connect()
 
     orchestrator = ToolOrchestrator(mcp_hosts=[host])
@@ -93,15 +144,22 @@ async def test_serial_tool_orchestrator_execution() -> None:
     assert len(tools) >= 3  # 2 builtin + 1 MCP
 
     # Execute multiple tools serially
-    res1 = await orchestrator.execute_tool_call_serially("end_conversation_summary", {"summary": "Call good"})
+    res1 = await orchestrator.execute_tool_call_serially(
+        "end_conversation_summary", {"summary": "Call good"}
+    )
     assert res1["role"] == "tool"
     assert res1["data_framed"] is True
 
-    res2 = await orchestrator.execute_tool_call_serially("query_inventory", {"item_id": "A1"})
+    res2 = await orchestrator.execute_tool_call_serially(
+        "query_inventory", {"item_id": "A1"}
+    )
     assert res2["role"] == "tool"
     assert res2["data_framed"] is True
 
-    assert orchestrator.executed_tools == ["end_conversation_summary", "query_inventory"]
+    assert orchestrator.executed_tools == [
+        "end_conversation_summary",
+        "query_inventory",
+    ]
 
 
 @pytest.mark.asyncio

@@ -6,7 +6,7 @@ import asyncio
 import json
 from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from core.mcp.builtin_tools import (
     LifecycleHooks,
@@ -62,12 +62,39 @@ class PipelineToolHandler:
         self._handoff_target = handoff_target.strip() if handoff_target else None
 
     def available_tools(self) -> list[ToolDefinition]:
-        return available_lifecycle_tools(
-            self._allowed_tools, self._lifecycle_hooks, self._handoff_target
+        return cast(
+            list[ToolDefinition],
+            available_lifecycle_tools(
+                self._allowed_tools, self._lifecycle_hooks, self._handoff_target
+            ),
         )
 
+    async def prepare_tools(self) -> list[ToolDefinition]:
+        tools = self.available_tools()
+        external_loader = getattr(self.orchestrator, "get_external_tools", None)
+        if not callable(external_loader):
+            return tools
+        reserved = {
+            "end_conversation",
+            "end_conversation_summary",
+            "escalate_to_human",
+        }
+        external = await external_loader()
+        tools.extend(
+            tool
+            for tool in external
+            if tool.name in self._allowed_tools and tool.name not in reserved
+        )
+        if len({tool.name for tool in tools}) != len(tools):
+            raise ValueError("Tool inventory contains duplicate names.")
+        return tools
+
     async def handle_tool_call(
-        self, tool_name: str, arguments: dict[str, Any]
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         if tool_name not in self._allowed_tools:
             return _tool_error(tool_name, "tool_not_allowed")
@@ -90,8 +117,15 @@ class PipelineToolHandler:
             return await self._run_lifecycle_call(tool_name, self._escalate(arguments))
 
         try:
+            execute = self.orchestrator.execute_tool_call_serially
+            if idempotency_key is None:
+                operation = execute(tool_name, arguments)
+            else:
+                operation = execute(
+                    tool_name, arguments, idempotency_key=idempotency_key
+                )
             result = await asyncio.wait_for(
-                self.orchestrator.execute_tool_call_serially(tool_name, arguments),
+                operation,
                 timeout=self.limits.timeout_ms / 1000.0,
             )
         except TimeoutError:
@@ -101,6 +135,11 @@ class PipelineToolHandler:
         except Exception:
             return _tool_error(tool_name, "tool_execution_failed")
         return self._bound_result(tool_name, result)
+
+    async def close(self) -> None:
+        closer = getattr(self.orchestrator, "close", None)
+        if callable(closer):
+            await closer()
 
     async def _run_lifecycle_call(
         self, tool_name: str, operation: Awaitable[dict[str, Any]]

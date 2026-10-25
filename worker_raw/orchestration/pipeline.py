@@ -328,6 +328,17 @@ class PipelineOrchestrator:
                             provider=type(provider).__name__,
                             error_type=type(exc).__name__,
                         )
+        close_tools = getattr(self.tool_handler, "close", None)
+        if callable(close_tools):
+            try:
+                result = close_tools()
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as exc:
+                logger.warning(
+                    "Tool handler close failed during teardown",
+                    error_type=type(exc).__name__,
+                )
         self._runtime_resources_closed = True
 
     async def apply_provider_selection(
@@ -479,7 +490,7 @@ class PipelineOrchestrator:
             self._session_disposition = "escalated_human"
             self._session_end_reason = "human_handoff"
 
-    def _configure_lifecycle_tools(
+    async def _configure_lifecycle_tools(
         self, session_config: PipelineSessionConfig
     ) -> list[ToolDefinition]:
         policy = session_config.telephony_policy or {}
@@ -492,6 +503,12 @@ class PipelineOrchestrator:
                 lifecycle_hooks=self,
                 handoff_target=self._handoff_target,
             )
+        prepare = getattr(self.tool_handler, "prepare_tools", None)
+        if callable(prepare):
+            prepared = prepare()
+            if asyncio.iscoroutine(prepared):
+                prepared = await prepared
+            return [item for item in prepared if isinstance(item, ToolDefinition)]
         available = getattr(self.tool_handler, "available_tools", None)
         if not callable(available):
             return []
@@ -1546,7 +1563,7 @@ class PipelineOrchestrator:
             self._last_stt_final_ms = 0.0
         sc = self.speaking_config
         self.apply_language_vad_overrides(session_config.language)
-        runtime_tools = self._configure_lifecycle_tools(session_config)
+        runtime_tools = await self._configure_lifecycle_tools(session_config)
 
         try:
             policy = TenantComplianceProfileLoader.load_effective_policy(
@@ -1681,8 +1698,17 @@ class PipelineOrchestrator:
                 if self.fsm.can_transition(SessionEvent.TOOL_CALL_START):
                     self.fsm.trigger(SessionEvent.TOOL_CALL_START)
                 remaining = max(0.001, tool_deadline - time.monotonic())
+                idempotency_key = (
+                    f"{session_config.session_id}:{waterfall.turn_id}:{call_id}"
+                    if call_id
+                    else None
+                )
                 tool_res = await asyncio.wait_for(
-                    self.tool_handler.handle_tool_call(tool_name, arguments),
+                    self.tool_handler.handle_tool_call(
+                        tool_name,
+                        arguments,
+                        idempotency_key=idempotency_key,
+                    ),
                     timeout=remaining,
                 )
                 if self.fsm.can_transition(SessionEvent.TOOL_RESULT):

@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 
+from core.providers.interfaces.llm import ToolDefinition
 from worker_raw.orchestration.tool_handler import (
     PipelineToolHandler,
     ToolExecutionLimits,
@@ -136,3 +137,42 @@ async def test_tool_failure_does_not_expose_arguments_or_exception_details(
     assert result["error_code"] == "tool_execution_failed"
     assert secret_marker not in result["content"]
     assert secret_marker not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_external_inventory_is_filtered_and_idempotency_is_forwarded() -> None:
+    class _ExternalDelegate:
+        def __init__(self) -> None:
+            self.key: str | None = None
+            self.closed = False
+
+        async def get_external_tools(self):
+            return [
+                ToolDefinition("allowed", "Allowed", {"type": "object"}),
+                ToolDefinition("blocked", "Blocked", {"type": "object"}),
+            ]
+
+        async def execute_tool_call_serially(
+            self, name, arguments, *, idempotency_key=None
+        ):
+            del arguments
+            self.key = idempotency_key
+            return {"role": "tool", "name": name, "content": "ok"}
+
+        async def close(self):
+            self.closed = True
+
+    delegate = _ExternalDelegate()
+    handler = PipelineToolHandler(delegate)  # type: ignore[arg-type]
+    handler.configure_session(allowed_tools=("allowed",))
+
+    tools = await handler.prepare_tools()
+    result = await handler.handle_tool_call(
+        "allowed", {}, idempotency_key="session:turn:call"
+    )
+    await handler.close()
+
+    assert [tool.name for tool in tools] == ["allowed"]
+    assert result["is_error"] is False
+    assert delegate.key == "session:turn:call"
+    assert delegate.closed is True

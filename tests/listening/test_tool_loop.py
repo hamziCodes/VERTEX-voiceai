@@ -32,13 +32,17 @@ class _ToolLLM:
 class _EchoTools:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.idempotency_keys: list[str | None] = []
 
     async def handle_tool_call(
         self,
         tool_name: str,
         arguments: dict[str, Any],
+        *,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         self.calls.append((tool_name, arguments))
+        self.idempotency_keys.append(idempotency_key)
         return {"content": f"tool:{tool_name}:{arguments.get('id', '')}"}
 
 
@@ -115,6 +119,8 @@ async def test_streamed_tool_calls_execute_without_speaking_raw_result(
     )
     reply = await orch.run_turn(config, "where is my order")
     assert tools.calls == [("lookup_order", {"id": "42"})]
+    assert tools.idempotency_keys[0] is not None
+    assert tools.idempotency_keys[0].startswith("tool-loop-1:")
     assert "tool:lookup_order:42" not in reply
     assert audio == []
 
