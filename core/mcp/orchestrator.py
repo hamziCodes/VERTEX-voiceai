@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 
 from core.mcp.builtin_tools import (
     BUILTIN_TOOLS,
@@ -30,7 +30,9 @@ class ToolOrchestrator:
                 combined.extend(tenant_tools)
         return combined
 
-    async def execute_tool_call_serially(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def execute_tool_call_serially(
+        self, name: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
         """Execute a tool call serially (v1 policy).
 
         Returns DATA-framed tool result dictionary with role='tool'.
@@ -40,15 +42,37 @@ class ToolOrchestrator:
         # 1. Check Builtin Tools
         if name == "end_conversation_summary":
             result = await handle_end_conversation_summary(arguments)
-            return {"role": "tool", "name": name, "content": str(result), "data_framed": True}
+            return {
+                "role": "tool",
+                "name": name,
+                "content": str(result),
+                "data_framed": True,
+            }
 
         if name == "escalate_to_human":
             result = await handle_escalate_to_human(arguments)
-            return {"role": "tool", "name": name, "content": str(result), "data_framed": True}
+            return {
+                "role": "tool",
+                "name": name,
+                "content": str(result),
+                "data_framed": True,
+            }
 
         # 2. Check MCP Hosts
         for host in self.mcp_hosts:
             mcp_res: MCPToolResult = await host.call_tool(name, arguments)
-            return {"role": "tool", "name": name, "content": mcp_res.content, "is_error": mcp_res.is_error, "data_framed": True}
+            return {
+                "role": "tool",
+                "name": name,
+                "content": mcp_res.content,
+                "is_error": mcp_res.is_error,
+                "data_framed": True,
+            }
 
-        return {"role": "tool", "name": name, "content": f"Error: Tool '{name}' not found", "is_error": True, "data_framed": True}
+        return {
+            "role": "tool",
+            "name": name,
+            "content": f"Error: Tool '{name}' not found",
+            "is_error": True,
+            "data_framed": True,
+        }

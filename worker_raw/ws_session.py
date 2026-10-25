@@ -106,6 +106,11 @@ class WebSocketSessionRunner:
             return
         await self._turn_queue.put((cleaned, None))
 
+    async def request_graceful_stop(self, reason: str) -> None:
+        """Stop intake and close the socket after the pipeline drains final audio."""
+        self.stop.set()
+        await self.transport.close(self.websocket)
+
     async def _apply_system_prompt_override(self, prompt: object) -> bool:
         """Apply a local-only prompt override or report a typed policy error."""
 
@@ -116,7 +121,9 @@ class WebSocketSessionRunner:
                 "error",
                 {
                     "code": "SESSION_OVERRIDE_FORBIDDEN",
-                    "message": "The system prompt is pinned by the published agent plan.",
+                    "message": (
+                        "The system prompt is pinned by the published agent plan."
+                    ),
                 },
             )
             return False

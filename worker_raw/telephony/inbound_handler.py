@@ -42,6 +42,7 @@ class InboundTelephonySessionHandler:
         )
         self.orchestrator = orchestrator or PipelineOrchestrator(
             on_audio_out=self._send_outbound_audio,
+            end_conversation_hook=self._end_from_tool,
         )
         self.start_time = time.time()
         self.duration_sec = 0.0
@@ -49,6 +50,10 @@ class InboundTelephonySessionHandler:
     async def _send_outbound_audio(self, pcm_bytes: bytes) -> None:
         """Encode pipeline TTS egress for the DirectSIP transport."""
         await self.transport.send_pcm16_frame(pcm_bytes)
+
+    async def _end_from_tool(self, _summary: str, _disposition: str) -> None:
+        """Close the SIP media leg after the agent's final audio drains."""
+        await self.transport.close()
 
     async def handle_inbound_audio(self, mulaw_payload: bytes) -> list[bytes]:
         """Ingest an RTP payload and feed canonical audio into the pipeline."""

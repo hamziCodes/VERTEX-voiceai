@@ -67,7 +67,7 @@ from core.providers.factory import (
 )
 from core.providers.failover import FailoverRouter, ProviderStreamDeadlines
 from core.providers.interfaces.live_stt import BaseLiveSTTSession
-from core.providers.interfaces.llm import BaseLLMProvider, LLMConfig
+from core.providers.interfaces.llm import BaseLLMProvider, LLMConfig, ToolDefinition
 from core.providers.interfaces.stt import BaseSTTProvider, STTConfig
 from core.providers.interfaces.tts import BaseTTSProvider, TTSConfig
 from core.providers.live_stt_factory import build_live_stt_session
@@ -87,6 +87,7 @@ from core.types.events import ControlEventType
 from core.vad.silero_adapter import SileroVADAdapter
 from post_call.models.call_record import CallRecord
 from post_call.models.diarized_turn import DiarizedTurn
+from post_call.models.disposition import CallDisposition
 from post_call.pipeline.enqueue import PostCallPipeline
 from worker_raw.orchestration.latency_hooks import LatencyHooks
 from worker_raw.orchestration.provider_binding import (
@@ -131,6 +132,8 @@ class PipelineOrchestrator:
         rag_retriever: PgVectorRetriever | None = None,
         post_call_pipeline: PostCallPipeline | None = None,
         provider_binder: ProviderSessionBinder | None = None,
+        end_conversation_hook: Callable[[str, str], Any] | None = None,
+        human_handoff_hook: Callable[[str, str], Any] | None = None,
     ) -> None:
         self.allow_testing_providers = allow_testing_providers
         self.on_audio_out = on_audio_out
@@ -145,6 +148,14 @@ class PipelineOrchestrator:
         )
         self.post_call_pipeline = post_call_pipeline or PostCallPipeline()
         self.provider_binder = provider_binder
+        self._end_conversation_hook = end_conversation_hook
+        self._human_handoff_hook = human_handoff_hook
+        self._handoff_target: str | None = None
+        self._pending_end: tuple[str, str] | None = None
+        self._pending_handoff: tuple[str, str] | None = None
+        self._lifecycle_completed = False
+        self._session_disposition = "completed"
+        self._session_end_reason = "user_hangup"
         self.bound_provider_chains: BoundProviderChains | None = None
         self.listening_config = ListeningPipelineConfig.from_env()
         self.speaking_config = SpeakingPipelineConfig.from_env()
@@ -426,7 +437,7 @@ class PipelineOrchestrator:
 
     @staticmethod
     def _synthetic_provider_reply_allowed() -> bool:
-        return provider_runtime_status()["provider_mode"] == "mock"
+        return str(provider_runtime_status().get("provider_mode", "")) == "mock"
 
     def _flush_egress_queue(self) -> None:
         """Drop any queued-but-unsent agent audio (three-point cancel: sender)."""
@@ -447,6 +458,75 @@ class PipelineOrchestrator:
         self._ws_session = session
         if self._egress_sender_task is None or self._egress_sender_task.done():
             self._egress_sender_task = asyncio.create_task(self._egress_sender_loop())
+
+    @property
+    def escalation_available(self) -> bool:
+        return self._human_handoff_hook is not None and bool(self._handoff_target)
+
+    async def request_end(self, *, summary: str, disposition: str) -> None:
+        """Record one graceful end request for completion after TTS drain."""
+        if self._pending_end is None and not self._lifecycle_completed:
+            self._pending_end = (summary, disposition)
+            self._session_disposition = disposition
+            self._session_end_reason = "agent_end_conversation"
+
+    async def request_escalation(self, *, reason: str, target: str) -> None:
+        """Record one validated handoff request for execution after TTS drain."""
+        if not self.escalation_available or target != self._handoff_target:
+            raise RuntimeError("Human handoff is unavailable.")
+        if self._pending_handoff is None and not self._lifecycle_completed:
+            self._pending_handoff = (reason, target)
+            self._session_disposition = "escalated_human"
+            self._session_end_reason = "human_handoff"
+
+    def _configure_lifecycle_tools(
+        self, session_config: PipelineSessionConfig
+    ) -> list[ToolDefinition]:
+        policy = session_config.telephony_policy or {}
+        target = policy.get("handoff_target") or policy.get("human_handoff_target")
+        self._handoff_target = str(target).strip() if target else None
+        configure = getattr(self.tool_handler, "configure_session", None)
+        if callable(configure):
+            configure(
+                allowed_tools=session_config.tool_allowlist,
+                lifecycle_hooks=self,
+                handoff_target=self._handoff_target,
+            )
+        available = getattr(self.tool_handler, "available_tools", None)
+        if not callable(available):
+            return []
+        return [item for item in available() if isinstance(item, ToolDefinition)]
+
+    async def _complete_pending_lifecycle(self) -> None:
+        if self._lifecycle_completed or not (
+            self._pending_end or self._pending_handoff
+        ):
+            return
+        self._lifecycle_completed = True
+        if self._pending_handoff is not None and self._human_handoff_hook is not None:
+            result = self._human_handoff_hook(*self._pending_handoff)
+            if asyncio.iscoroutine(result):
+                await result
+        elif self._pending_end is not None and self._end_conversation_hook is not None:
+            result = self._end_conversation_hook(*self._pending_end)
+            if asyncio.iscoroutine(result):
+                await result
+        if self.fsm.can_transition(SessionEvent.HANGUP):
+            self.fsm.trigger(SessionEvent.HANGUP)
+        session = self._ws_session
+        if session is not None:
+            transport = getattr(session, "transport", None)
+            if transport is not None:
+                await transport.send_control_event(
+                    "session.ending", {"reason": self._session_end_reason}
+                )
+            graceful_stop = getattr(session, "request_graceful_stop", None)
+            if callable(graceful_stop):
+                await graceful_stop(self._session_end_reason)
+            else:
+                stop = getattr(session, "stop", None)
+                if stop is not None:
+                    stop.set()
 
     def apply_language_vad_overrides(self, language: str) -> None:
         """Wire per-language VAD silence overrides from the language registry."""
@@ -997,8 +1077,9 @@ class PipelineOrchestrator:
         except Exception as exc:
             logger.warning("Live STT consumer ended", error=str(exc))
             # Mark session dead so the next speech_start reconnects.
-            if session is self._live_stt:
-                await session.close()
+            active_session = self._live_stt
+            if session is active_session and active_session is not None:
+                await active_session.close()
                 self._live_stt = None
                 self._live_stt_status = "failed"
 
@@ -1465,6 +1546,7 @@ class PipelineOrchestrator:
             self._last_stt_final_ms = 0.0
         sc = self.speaking_config
         self.apply_language_vad_overrides(session_config.language)
+        runtime_tools = self._configure_lifecycle_tools(session_config)
 
         try:
             policy = TenantComplianceProfileLoader.load_effective_policy(
@@ -1556,13 +1638,18 @@ class PipelineOrchestrator:
         )
 
         executed_tool_calls: set[str] = set()
+        tool_call_count = 0
+        tool_deadline = time.monotonic() + 12.0
 
         async def _run_tool_with_filler(
             tool_name: str,
             arguments: dict[str, Any],
             *,
             call_id: str | None = None,
-        ) -> str | None:
+        ) -> dict[str, Any] | None:
+            nonlocal tool_call_count
+            if tool_call_count >= 5 or time.monotonic() >= tool_deadline:
+                return None
             canonical_arguments = json.dumps(
                 arguments,
                 sort_keys=True,
@@ -1577,6 +1664,7 @@ class PipelineOrchestrator:
                 logger.warning("Duplicate tool call suppressed", tool=tool_name)
                 return None
             executed_tool_calls.update(identities)
+            tool_call_count += 1
 
             filler_phrase: list[str] = []
 
@@ -1592,8 +1680,10 @@ class PipelineOrchestrator:
             try:
                 if self.fsm.can_transition(SessionEvent.TOOL_CALL_START):
                     self.fsm.trigger(SessionEvent.TOOL_CALL_START)
-                tool_res = await self.tool_handler.handle_tool_call(
-                    tool_name, arguments
+                remaining = max(0.001, tool_deadline - time.monotonic())
+                tool_res = await asyncio.wait_for(
+                    self.tool_handler.handle_tool_call(tool_name, arguments),
+                    timeout=remaining,
                 )
                 if self.fsm.can_transition(SessionEvent.TOOL_RESULT):
                     self.fsm.trigger(SessionEvent.TOOL_RESULT)
@@ -1605,11 +1695,16 @@ class PipelineOrchestrator:
                 await self._finish_turn_tts(
                     filler_phrase[:1], session_config, waterfall
                 )
-            return str(tool_res.get("content", "Tool executed."))
+            return tool_res
 
         if user_text.startswith("tool:"):
             tool_name = user_text.split(":", 1)[1].strip()
-            normalized = await _run_tool_with_filler(tool_name, {}) or ""
+            direct_result = await _run_tool_with_filler(tool_name, {})
+            normalized = (
+                f"Tool {tool_name} completed."
+                if direct_result and not direct_result.get("is_error")
+                else f"Tool {tool_name} could not be completed."
+            )
             if normalized:
                 await self._finish_turn_tts([normalized], session_config, waterfall)
         else:
@@ -1623,7 +1718,7 @@ class PipelineOrchestrator:
                 or getattr(self, "_active_llm_model", None)
                 or default_m
             )
-            llm_cfg = LLMConfig(model=model)
+            llm_cfg = LLMConfig(model=model, tools=runtime_tools)
             reply_parts: list[str] = []
             ttft_recorded = False
             chunker_recorded = False
@@ -1773,34 +1868,68 @@ class PipelineOrchestrator:
                 reply_parts.append(fallback_delta)
                 await _enqueue_speech_chunks(speech_chunker.push(fallback_delta))
 
-            if pending_tool_calls and sc.enable_tool_loop:
-                for tc in pending_tool_calls:
-                    name = str(
-                        tc.get("function", {}).get("name") or tc.get("name") or ""
-                    ).strip()
-                    raw_args = (
-                        tc.get("function", {}).get("arguments")
-                        or tc.get("arguments")
-                        or {}
-                    )
+            tool_rounds = 0
+            while (
+                pending_tool_calls
+                and sc.enable_tool_loop
+                and tool_rounds < 3
+                and tool_call_count < 5
+                and time.monotonic() < tool_deadline
+            ):
+                tool_rounds += 1
+                current_calls = pending_tool_calls
+                pending_tool_calls = []
+                assistant_calls: list[dict[str, Any]] = []
+                tool_messages: list[dict[str, Any]] = []
+                for index, tc in enumerate(current_calls):
+                    if tool_call_count >= 5 or time.monotonic() >= tool_deadline:
+                        break
+                    function = tc.get("function") or {}
+                    name = str(function.get("name") or tc.get("name") or "").strip()
+                    raw_args = function.get("arguments") or tc.get("arguments") or {}
                     if isinstance(raw_args, str):
                         try:
-                            arguments = json.loads(raw_args) if raw_args else {}
-                        except Exception:
+                            parsed = json.loads(raw_args) if raw_args else {}
+                            arguments = parsed if isinstance(parsed, dict) else {}
+                        except (TypeError, ValueError, json.JSONDecodeError):
                             arguments = {}
                     else:
-                        arguments = dict(raw_args) if raw_args else {}
-                    if name:
-                        tool_text = await _run_tool_with_filler(
-                            name,
-                            arguments,
-                            call_id=str(tc.get("id") or "").strip() or None,
-                        )
-                        if tool_text is None:
-                            continue
-                        tool_delta = " " + tool_text
-                        reply_parts.append(tool_delta)
-                        await _enqueue_speech_chunks(speech_chunker.push(tool_delta))
+                        arguments = dict(raw_args) if isinstance(raw_args, dict) else {}
+                    if not name:
+                        continue
+                    call_id = str(tc.get("id") or f"tool-{tool_rounds}-{index}")
+                    tool_result = await _run_tool_with_filler(
+                        name, arguments, call_id=call_id
+                    )
+                    if tool_result is None:
+                        continue
+                    assistant_calls.append(
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": json.dumps(
+                                    arguments, separators=(",", ":"), sort_keys=True
+                                ),
+                            },
+                        }
+                    )
+                    tool_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "name": name,
+                            "content": str(tool_result.get("content", "")),
+                        }
+                    )
+                if not tool_messages:
+                    break
+                messages.append(
+                    {"role": "assistant", "content": "", "tool_calls": assistant_calls}
+                )
+                messages.extend(tool_messages)
+                await _consume_llm_stream()
 
             await _enqueue_speech_chunks(speech_chunker.flush())
             await tts_q.put(None)
@@ -1829,6 +1958,8 @@ class PipelineOrchestrator:
             )
         else:
             await self._notify_audio_end(turn_id)
+
+        await self._complete_pending_lifecycle()
 
         self.latency_collector.record_turn(waterfall)
         await self._emit_latency_telemetry(waterfall)
@@ -1928,6 +2059,9 @@ class PipelineOrchestrator:
                 compliance_tier=session_config.compliance_tier,
                 started_at=now_utc,
                 ended_at=now_utc,
+                end_reason=self._session_end_reason,
+                transport_type=session_config.transport_type,
+                disposition=CallDisposition(self._session_disposition),
                 turns=diarized,
                 recording=CallRecording(
                     recording_s3_uri=f"s3://ucve-recordings/{session_config.session_id}.wav",
