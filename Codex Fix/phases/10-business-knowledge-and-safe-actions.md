@@ -1,6 +1,6 @@
 # Phase 10 — Business Knowledge and Safe Actions
 
-**Status:** IN PROGRESS — 10A THROUGH 10D COMPLETE; NEXT 10E
+**Status:** IN PROGRESS — 10A THROUGH 10E COMPLETE; NEXT 10F
 
 **Goal:** Let an operator give an agent approved business knowledge through a guided setup flow, retrieve that knowledge quickly and safely during a conversation, and execute only explicitly enabled lifecycle or external actions.
 
@@ -266,7 +266,7 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 
 **Evidence:** [`../evidence/phase-10d/VERIFICATION.md`](../evidence/phase-10d/VERIFICATION.md). Published agent-version scope, separate untrusted knowledge messages, bounded citations/context, 250/600 ms retrieval budgets, cancellation, revision-aware caching, degraded continuation, and content-free RAG latency telemetry are implemented. Lifecycle actions and tool continuation remain 10E.
 
-### 10E — Real lifecycle actions and bounded LLM continuation
+### 10E — Real lifecycle actions and bounded LLM continuation — COMPLETE 2026-10-25 (`dace427`)
 
 **Create/modify:**
 
@@ -283,6 +283,8 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 **Verification:** graceful end once, configured/unconfigured escalation, wrong/duplicate call ID, invalid arguments, barge-in, timeout, model continuation, raw-output non-speech, resource cleanup, and audit redaction.
 
 **Suggested commit:** `feat: complete safe voice tool continuation`
+
+**Evidence:** [`../evidence/phase-10e/VERIFICATION.md`](../evidence/phase-10e/VERIFICATION.md). Runtime lifecycle tools are advertised only when allowed and available; graceful end drains the model's closing response before WebSocket or Direct SIP shutdown; human handoff uses only a server-pinned destination; tool calls have argument, timeout, round, call-count, total-budget, result-size, cancellation, replay, and error-redaction controls; and only the LLM continuation reaches TTS. External MCP registration and transport remain 10F.
 
 ### 10F — Secure MCP registry and Streamable HTTP
 
