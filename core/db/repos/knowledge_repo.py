@@ -136,6 +136,19 @@ class InMemoryKnowledgeRepository:
         except KeyError as exc:
             raise KnowledgeNotFoundError("Knowledge source not found.") from exc
 
+    def list_sources(
+        self, tenant_id: UUID, knowledge_base_id: UUID
+    ) -> list[KnowledgeSourceRecord]:
+        self.get_knowledge_base(tenant_id, knowledge_base_id)
+        return sorted(
+            (
+                source
+                for (owner, base_id, _source_id), source in self._sources.items()
+                if owner == tenant_id and base_id == knowledge_base_id
+            ),
+            key=lambda source: (source.created_at, str(source.source_id)),
+        )
+
     def claim_next_job(
         self, worker_id: str, *, lease_seconds: int = 60
     ) -> tuple[KnowledgeIngestionJob, KnowledgeSourceRecord] | None:
@@ -501,6 +514,42 @@ class PostgresKnowledgeRepository:
             created_at=row[11],
             updated_at=row[12],
         )
+
+    async def list_sources(
+        self, tenant_id: UUID, knowledge_base_id: UUID
+    ) -> list[KnowledgeSourceRecord]:
+        await self.get_knowledge_base(tenant_id, knowledge_base_id)
+        async with self.database.tenant_transaction(str(tenant_id)) as connection:
+            cursor = await connection.execute(
+                "SELECT id, source_type, display_name, media_type, byte_count, "
+                "checksum_sha256, object_reference, revision, status, chunk_count, "
+                "error_code, error_message, created_at, updated_at "
+                "FROM knowledge_sources WHERE tenant_id = %s::uuid "
+                "AND knowledge_base_id = %s::uuid ORDER BY created_at, id",
+                (str(tenant_id), str(knowledge_base_id)),
+            )
+            rows = await cursor.fetchall()
+        return [
+            KnowledgeSourceRecord(
+                tenant_id=tenant_id,
+                knowledge_base_id=knowledge_base_id,
+                source_id=row[0],
+                source_type=row[1],
+                display_name=row[2],
+                media_type=row[3],
+                byte_count=row[4],
+                checksum_sha256=row[5],
+                object_reference=row[6],
+                revision=row[7],
+                status=KnowledgeSourceStatus(row[8]),
+                chunk_count=row[9],
+                error_code=row[10],
+                error_message=row[11],
+                created_at=row[12],
+                updated_at=row[13],
+            )
+            for row in rows
+        ]
 
     async def create_source(
         self,

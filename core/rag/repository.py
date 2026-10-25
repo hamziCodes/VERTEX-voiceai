@@ -232,6 +232,53 @@ class InMemoryKnowledgeVectorRepository:
         scored.sort(key=lambda item: item[0], reverse=True)
         return [item[1] for item in scored[: max(1, min(top_k, 10))]]
 
+    async def preview_search(
+        self,
+        *,
+        tenant_id: UUID,
+        knowledge_base_id: UUID,
+        revision: int,
+        query_vector: list[float],
+        embedding_model: str,
+        embedding_version: str,
+        top_k: int,
+    ) -> list[KnowledgeBaseChunk]:
+        if len(query_vector) != EXPECTED_EMBEDDING_DIMENSIONS:
+            raise KnowledgeVectorError(
+                "embedding_dimension_mismatch", "Query embedding dimension is invalid."
+            )
+        scored: list[tuple[float, KnowledgeBaseChunk]] = []
+        for chunk in self.chunks:
+            if (
+                chunk.tenant_id != tenant_id
+                or chunk.knowledge_base_id != knowledge_base_id
+                or chunk.revision != revision
+                or chunk.embedding_model != embedding_model
+                or chunk.embedding_version != embedding_version
+                or len(chunk.embedding) != EXPECTED_EMBEDDING_DIMENSIONS
+            ):
+                continue
+            score = sum(
+                a * b for a, b in zip(query_vector, chunk.embedding, strict=True)
+            )
+            result = KnowledgeBaseChunk(
+                tenant_id=tenant_id,
+                knowledge_base_id=knowledge_base_id,
+                chunk_id=chunk.chunk_id,
+                source_document_id=chunk.source_document_id,
+                revision=revision,
+                ordinal=chunk.ordinal,
+                text=chunk.text,
+                metadata=chunk.metadata,
+                citation=chunk.citation or chunk.metadata.get("citation", {}),
+                score=float(score),
+                embedding_model=chunk.embedding_model,
+                embedding_version=chunk.embedding_version,
+            )
+            scored.append((float(score), result))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [item[1] for item in scored[: max(1, min(top_k, 8))]]
+
 
 class PostgresKnowledgeVectorRepository:
     def __init__(self, database: AsyncDatabase | Any | None = None) -> None:
@@ -444,6 +491,63 @@ class PostgresKnowledgeVectorRepository:
                 metadata=row[3] or {},
                 knowledge_base_id=knowledge_base_id,
                 revision=active_revision,
+                ordinal=row[4],
+                citation=row[5] or {},
+                embedding_model=row[6],
+                embedding_version=row[7],
+                score=float(row[8]),
+            )
+            for row in rows
+        ]
+
+    async def preview_search(
+        self,
+        *,
+        tenant_id: UUID,
+        knowledge_base_id: UUID,
+        revision: int,
+        query_vector: list[float],
+        embedding_model: str,
+        embedding_version: str,
+        top_k: int,
+    ) -> list[KnowledgeBaseChunk]:
+        if len(query_vector) != EXPECTED_EMBEDDING_DIMENSIONS:
+            raise KnowledgeVectorError(
+                "embedding_dimension_mismatch", "Query embedding dimension is invalid."
+            )
+        async with self.database.tenant_transaction(str(tenant_id)) as connection:
+            cursor = await connection.execute(
+                "SELECT c.id, c.knowledge_source_id, c.text, c.metadata_jsonb, "
+                "c.ordinal, c.citation_jsonb, c.embedding_model, "
+                "c.embedding_version, 1 - (c.embedding <=> %s::vector) AS score "
+                "FROM knowledge_chunks c JOIN knowledge_sources s "
+                "ON s.tenant_id = c.tenant_id AND s.id = c.knowledge_source_id "
+                "WHERE c.tenant_id = %s::uuid AND c.knowledge_base_id = %s::uuid "
+                "AND c.revision = %s AND s.status = 'ready' "
+                "AND c.embedding_model = %s AND c.embedding_version = %s "
+                "AND c.embedding IS NOT NULL ORDER BY c.embedding <=> %s::vector "
+                "LIMIT %s",
+                (
+                    _vector_literal(query_vector),
+                    str(tenant_id),
+                    str(knowledge_base_id),
+                    revision,
+                    embedding_model,
+                    embedding_version,
+                    _vector_literal(query_vector),
+                    max(1, min(top_k, 8)),
+                ),
+            )
+            rows = await cursor.fetchall()
+        return [
+            KnowledgeBaseChunk(
+                chunk_id=row[0],
+                tenant_id=tenant_id,
+                source_document_id=row[1],
+                text=row[2],
+                metadata=row[3] or {},
+                knowledge_base_id=knowledge_base_id,
+                revision=revision,
                 ordinal=row[4],
                 citation=row[5] or {},
                 embedding_model=row[6],

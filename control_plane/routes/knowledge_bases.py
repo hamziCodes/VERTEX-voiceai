@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 from inspect import isawaitable
 from pathlib import PurePath
 from typing import Annotated, Any, cast
@@ -19,9 +20,15 @@ from core.db.repos.knowledge_repo import (
     get_default_knowledge_repository,
     record_to_dict,
 )
+from core.rag.embedders.base import EmbeddingError
 from core.rag.ingestion.parsers.base import IngestionParseError
 from core.rag.ingestion.parsers.faq import parse_faq
 from core.rag.ingestion.validation import IngestionValidationError, validate_upload
+from core.rag.preview import KnowledgePreviewService
+from core.rag.repository import (
+    KnowledgeVectorError,
+    PostgresKnowledgeVectorRepository,
+)
 from core.storage.knowledge_objects import (
     KnowledgeObjectStore,
     get_default_knowledge_object_store,
@@ -47,6 +54,11 @@ class CreateFAQSourceBody(BaseModel):
     items: list[FAQItemBody] = Field(min_length=1, max_length=1_000)
 
 
+class PreviewQueryBody(BaseModel):
+    query: str = Field(min_length=1, max_length=2_000)
+    top_k: int = Field(default=4, ge=1, le=8)
+
+
 def get_knowledge_repo() -> Any:
     return get_default_knowledge_repository()
 
@@ -57,6 +69,11 @@ def get_agent_repo() -> Any:
 
 def get_knowledge_object_store() -> KnowledgeObjectStore:
     return get_default_knowledge_object_store()
+
+
+@lru_cache(maxsize=1)
+def get_knowledge_preview_service() -> KnowledgePreviewService:
+    return KnowledgePreviewService(PostgresKnowledgeVectorRepository())
 
 
 async def _resolve(value: Any) -> Any:
@@ -269,6 +286,74 @@ async def get_knowledge_source(
     payload = record_to_dict(source)
     payload.pop("object_reference", None)
     return payload
+
+
+@router.get("/{knowledge_base_id}/sources")
+async def list_knowledge_sources(
+    knowledge_base_id: UUID,
+    auth: KnowledgeReader,
+    repository: Annotated[Any, Depends(get_knowledge_repo)],
+) -> list[dict[str, Any]]:
+    try:
+        sources = await _resolve(
+            repository.list_sources(UUID(auth.tenant_id), knowledge_base_id)
+        )
+    except KnowledgeNotFoundError as exc:
+        raise _not_found(exc) from exc
+    payloads = []
+    for source in sources:
+        payload = record_to_dict(source)
+        payload.pop("object_reference", None)
+        payloads.append(payload)
+    return payloads
+
+
+@router.post("/{knowledge_base_id}/preview-query")
+async def preview_knowledge_query(
+    knowledge_base_id: UUID,
+    body: PreviewQueryBody,
+    auth: KnowledgeReader,
+    repository: Annotated[Any, Depends(get_knowledge_repo)],
+    preview_service: Annotated[
+        KnowledgePreviewService, Depends(get_knowledge_preview_service)
+    ],
+) -> dict[str, Any]:
+    tenant_id = UUID(auth.tenant_id)
+    try:
+        base = await _resolve(
+            repository.get_knowledge_base(tenant_id, knowledge_base_id)
+        )
+        revision = base.active_revision or 1
+        results = await preview_service.preview(
+            query=body.query,
+            tenant_id=tenant_id,
+            knowledge_base_id=knowledge_base_id,
+            revision=revision,
+            top_k=body.top_k,
+        )
+    except KnowledgeNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except (EmbeddingError, KnowledgeVectorError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": exc.code, "message": exc.safe_message},
+        ) from exc
+    return {
+        "knowledge_base_id": str(knowledge_base_id),
+        "revision": revision,
+        "query": body.query.strip(),
+        "results": [
+            {
+                "source_id": str(item.source_document_id),
+                "revision": item.revision,
+                "ordinal": item.ordinal,
+                "text": item.text,
+                "citation": item.citation or item.metadata.get("citation", {}),
+                "score": item.score,
+            }
+            for item in results
+        ],
+    }
 
 
 @router.post("/{knowledge_base_id}/sources/{source_id}/retry")

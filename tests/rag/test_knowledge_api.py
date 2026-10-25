@@ -5,6 +5,8 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from core.rag.models import KnowledgeBaseChunk
+
 
 @pytest.fixture
 def knowledge_client(monkeypatch: pytest.MonkeyPatch, tmp_path):
@@ -16,13 +18,34 @@ def knowledge_client(monkeypatch: pytest.MonkeyPatch, tmp_path):
     from control_plane.app import app
     from control_plane.routes.knowledge_bases import (
         get_knowledge_object_store,
+        get_knowledge_preview_service,
         get_knowledge_repo,
     )
     from core.db.repos.knowledge_repo import InMemoryKnowledgeRepository
     from core.storage.knowledge_objects import LocalKnowledgeObjectStore
 
     repository = InMemoryKnowledgeRepository()
+    preview_calls = []
+
+    class _PreviewService:
+        async def preview(self, **kwargs):
+            preview_calls.append(kwargs)
+            return [
+                KnowledgeBaseChunk(
+                    tenant_id=kwargs["tenant_id"],
+                    knowledge_base_id=kwargs["knowledge_base_id"],
+                    source_document_id=uuid4(),
+                    revision=kwargs["revision"],
+                    ordinal=2,
+                    text="Refunds are available within 30 days.",
+                    citation={"heading": "Refund policy", "line_start": 12},
+                    score=0.91,
+                )
+            ]
+
+    preview_service = _PreviewService()
     app.dependency_overrides[get_knowledge_repo] = lambda: repository
+    app.dependency_overrides[get_knowledge_preview_service] = lambda: preview_service
     app.dependency_overrides[get_knowledge_object_store] = lambda: (
         LocalKnowledgeObjectStore(tmp_path)
     )
@@ -30,6 +53,7 @@ def knowledge_client(monkeypatch: pytest.MonkeyPatch, tmp_path):
         yield client, repository
     app.dependency_overrides.pop(get_knowledge_repo, None)
     app.dependency_overrides.pop(get_knowledge_object_store, None)
+    app.dependency_overrides.pop(get_knowledge_preview_service, None)
 
 
 def test_upload_duplicate_faq_and_delete_lifecycle(knowledge_client) -> None:
@@ -379,3 +403,81 @@ def test_binding_requires_agent_write_and_returns_404_for_missing_agent(
         headers=full_headers,
     )
     assert response.status_code == 404
+
+
+def test_source_list_and_preview_are_tenant_scoped(knowledge_client) -> None:
+    client, repository = knowledge_client
+    tenant_id = uuid4()
+    other_tenant = uuid4()
+    headers = _headers(client, tenant_id, "knowledge:read", "knowledge:write")
+    other_headers = _headers(client, other_tenant, "knowledge:read")
+    kb_id = UUID(
+        client.post(
+            "/v1/knowledge-bases", headers=headers, json={"name": "Policies"}
+        ).json()["knowledge_base_id"]
+    )
+    source = repository.create_source(
+        tenant_id,
+        kb_id,
+        source_type="txt",
+        display_name="refunds.txt",
+        media_type="text/plain",
+        byte_count=42,
+        checksum_sha256="e" * 64,
+        object_reference="knowledge/test/refunds.txt",
+    )
+    repository.mark_source_ready(
+        tenant_id, kb_id, source.source_id, chunk_count=1
+    )
+
+    listed = client.get(f"/v1/knowledge-bases/{kb_id}/sources", headers=headers)
+    previewed = client.post(
+        f"/v1/knowledge-bases/{kb_id}/preview-query",
+        headers=headers,
+        json={"query": "What is the refund policy?", "top_k": 4},
+    )
+
+    assert listed.status_code == 200
+    assert listed.json()[0]["display_name"] == "refunds.txt"
+    assert "object_reference" not in listed.json()[0]
+    assert previewed.status_code == 200
+    assert previewed.json()["results"][0] == {
+        "source_id": str(previewed.json()["results"][0]["source_id"]),
+        "revision": 1,
+        "ordinal": 2,
+        "text": "Refunds are available within 30 days.",
+        "citation": {"heading": "Refund policy", "line_start": 12},
+        "score": 0.91,
+    }
+    assert (
+        client.get(f"/v1/knowledge-bases/{kb_id}/sources", headers=other_headers)
+        .status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/v1/knowledge-bases/{kb_id}/preview-query",
+            headers=other_headers,
+            json={"query": "refund"},
+        ).status_code
+        == 404
+    )
+
+
+def test_preview_rejects_empty_or_oversized_query(knowledge_client) -> None:
+    client, _repository = knowledge_client
+    headers = _headers(client, uuid4(), "knowledge:read", "knowledge:write")
+    kb_id = client.post(
+        "/v1/knowledge-bases", headers=headers, json={"name": "Bounds"}
+    ).json()["knowledge_base_id"]
+
+    assert client.post(
+        f"/v1/knowledge-bases/{kb_id}/preview-query",
+        headers=headers,
+        json={"query": ""},
+    ).status_code == 422
+    assert client.post(
+        f"/v1/knowledge-bases/{kb_id}/preview-query",
+        headers=headers,
+        json={"query": "x" * 2_001},
+    ).status_code == 422
