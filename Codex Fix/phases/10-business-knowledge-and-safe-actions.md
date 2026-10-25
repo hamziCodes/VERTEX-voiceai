@@ -1,6 +1,6 @@
 # Phase 10 — Business Knowledge and Safe Actions
 
-**Status:** IN PROGRESS — 10A THROUGH 10E COMPLETE; NEXT 10F
+**Status:** IN PROGRESS — 10A THROUGH 10F COMPLETE; NEXT 10G
 
 **Goal:** Let an operator give an agent approved business knowledge through a guided setup flow, retrieve that knowledge quickly and safely during a conversation, and execute only explicitly enabled lifecycle or external actions.
 
@@ -286,7 +286,7 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 
 **Evidence:** [`../evidence/phase-10e/VERIFICATION.md`](../evidence/phase-10e/VERIFICATION.md). Runtime lifecycle tools are advertised only when allowed and available; graceful end drains the model's closing response before WebSocket or Direct SIP shutdown; human handoff uses only a server-pinned destination; tool calls have argument, timeout, round, call-count, total-budget, result-size, cancellation, replay, and error-redaction controls; and only the LLM continuation reaches TTS. External MCP registration and transport remain 10F.
 
-### 10F — Secure MCP registry and Streamable HTTP
+### 10F — Secure MCP registry and Streamable HTTP — COMPLETE 2026-10-25 (`460311d`)
 
 **Create/modify:**
 
@@ -306,6 +306,8 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 **Verification:** local fake MCP server only; cross-tenant access, duplicate tool owner, unreachable server, malformed protocol, oversized result, redirect/private address, timeout, credential redaction, close/cancel, and stdio production denial.
 
 **Suggested commit:** `feat: add secure mcp server boundary`
+
+**Evidence:** [`../evidence/phase-10f/VERIFICATION.md`](../evidence/phase-10f/VERIFICATION.md). Tenant-owned registry persistence, disabled-by-default hosts, protocol-correct local Streamable HTTP, credential references, exact tool ownership, agent/server allowlist intersection, bounded schemas/calls/results, side-effect idempotency, DNS/redirect/private-network defenses, development-only structured stdio, production-disabled SSE, cancellation, and transport cleanup are implemented. The guided setup surface remains 10G.
 
 ### 10G — Guided local setup surface and documentation
 
