@@ -113,6 +113,7 @@ Implement authenticated, tenant-derived routes under `/v1/knowledge-bases`:
 - `POST /` — create a draft knowledge base;
 - `GET /` and `GET /{knowledge_base_id}` — list/details with real counts and states;
 - `POST /{knowledge_base_id}/sources` — bounded multipart upload;
+- `GET /{knowledge_base_id}/sources` — list real source progress and safe errors;
 - `POST /{knowledge_base_id}/faqs` — add validated FAQ items;
 - `GET /{knowledge_base_id}/sources/{source_id}` — progress and safe error details;
 - `POST /{knowledge_base_id}/sources/{source_id}/retry` — idempotent retry of a failed source;
@@ -309,7 +310,7 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 
 **Evidence:** [`../evidence/phase-10f/VERIFICATION.md`](../evidence/phase-10f/VERIFICATION.md). Tenant-owned registry persistence, disabled-by-default hosts, protocol-correct local Streamable HTTP, credential references, exact tool ownership, agent/server allowlist intersection, bounded schemas/calls/results, side-effect idempotency, DNS/redirect/private-network defenses, development-only structured stdio, production-disabled SSE, cancellation, and transport cleanup are implemented. The guided setup surface remains 10G.
 
-### 10G — Guided local setup surface and documentation
+### 10G — Guided local setup surface and documentation — COMPLETE 2026-10-25 (`ab19168`)
 
 **Create/modify:**
 
@@ -325,6 +326,8 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 **Verification:** browser tests for keyboard/responsive/error/loading states; Playwright screenshots and visual critique as required by `AGENTS.md`; two-tenant API isolation; a nontechnical local walkthrough.
 
 **Suggested commit:** `docs: complete phase 10 knowledge setup`
+
+**Evidence:** [`../evidence/phase-10g/VERIFICATION.md`](../evidence/phase-10g/VERIFICATION.md). The local console now provides the complete eight-step knowledge workflow with in-memory-only management authentication, real base/source state, bounded upload and FAQ forms, polling, retry/removal, real preview passages and citations, activation, immutable agent-version binding, keyboard task tabs, responsive internal layouts, typed loading/error/success states, and generated OpenAPI coverage. No provider or MCP credential is collected. Phase 10H remains the final regression and close gate.
 
 ### 10H — Phase close and regression gate
 

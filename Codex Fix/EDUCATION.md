@@ -75,3 +75,18 @@ The MCP work creates a secure connection boundary for future CRM, calendar, emai
 The undefined “hypercodes” term has been removed from the product roadmap. There was no code or documented behavior behind it.
 
 Phase 10 is divided into eight checkpoints: durable knowledge records and APIs; safe file parsing; local embeddings and real vector search; fast runtime retrieval; real built-in actions; secure MCP foundations; a guided local setup screen; and final offline regression verification. The detailed plan is in [`phases/10-business-knowledge-and-safe-actions.md`](phases/10-business-knowledge-and-safe-actions.md).
+
+## Using the Local Knowledge Setup
+
+Start the Control Plane locally and open `http://127.0.0.1:8000/demo/`, then choose **Knowledge Setup**. Enter the local Control Plane URL and a previously issued management API key with `knowledge:read` and `knowledge:write`. Binding also requires `agent:write`. The key stays in page memory for that browser tab; Wavia clears the visible field after connecting and does not use browser storage.
+
+The left pane tracks the eight setup steps. Create or select a knowledge base, then use the center task tabs:
+
+1. **Upload files** accepts PDF, DOCX, TXT, Markdown, CSV, and XLSX within the displayed limits. Browser checks provide fast feedback; the server repeats authoritative MIME, signature, archive, and content validation.
+2. **Add FAQ** creates one traceable question-and-answer source per submission.
+3. **Test knowledge** calls the real tenant-scoped preview endpoint and shows passage text, revision, chunk, score, and citation location. If the local embedding model or database is unavailable, it reports the real error and shows no invented result.
+4. **Activate & bind** enables activation only when every source in the revision is ready. Entering an agent UUID then publishes a new immutable agent configuration version with the selected knowledge revision.
+
+The right pane polls real source status every four seconds while the tab is visible. Failed sources show their safe failure message and a retry action. Removing a source requires browser confirmation and deletes through the authenticated API. The screen never marks queued, parsing, chunking, or embedding work as ready.
+
+FastAPI publishes the current route schemas at `http://127.0.0.1:8000/docs` and `/openapi.json`. The knowledge surface covers base creation/list/detail, source list/upload/detail/retry/delete, FAQ creation, preview query, activation, and agent binding under `/v1/knowledge-bases`.
