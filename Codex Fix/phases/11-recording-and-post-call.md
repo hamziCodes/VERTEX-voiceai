@@ -1,6 +1,6 @@
 # Phase 11 — Recording, Transcripts, and Post-Call Intelligence
 
-**Status:** APPROVED — H11 RESOLVED; NEXT 11A
+**Status:** IN PROGRESS — 11A COMPLETE; NEXT 11B
 
 **Goal:** Persist honest call records and execute extraction, verification, human review, summaries, webhooks, retention, and erasure through durable jobs.
 
@@ -39,9 +39,9 @@ Alternatives rejected:
 
 ## Tasks
 
-- [ ] Create the call record at admission with real start time; finalize idempotently with end/disposition/metrics.
-- [ ] Never manufacture recording URI/dual-channel metadata. Store `not_requested`, `recording`, `available`, or `failed` state with evidence.
-- [ ] Persist transcript turns incrementally so provider/post-call failures do not erase the conversation.
+- [x] Create the call record at admission with real start time; finalize idempotently with end/disposition/metrics.
+- [x] Never manufacture recording URI/dual-channel metadata. Store `not_requested`, `recording`, `available`, or `failed` state with evidence.
+- [x] Persist transcript turns incrementally so provider/post-call failures do not erase the conversation.
 - [ ] Replace process-list enqueue with durable queue/outbox, retries, DLQ, leases and idempotency.
 - [ ] Replace fabricated extraction/summary/sentiment with schema-valid model/provider output plus source evidence/confidence; missing stays null.
 - [ ] Route configured/high-risk actions through human review before webhook/CRM dispatch.
@@ -67,6 +67,8 @@ Each checkpoint begins with failing tests, ends with focused regression and stat
 - `tests/db/test_phase11a_live_integration.py`
 
 **Contract:** `PostCallRepository.start_call(...)` creates one call at admission with the real UTC start and an immutable policy snapshot; `append_turn(...)` stores an idempotent ordinal immediately; `finalize_call(...)` sets end/disposition/provider/usage/recording state exactly once without overwriting an existing final result. No recording object reference exists unless upload evidence exists. Tenant RLS and session uniqueness are enforced in PostgreSQL.
+
+**Completed:** implementation commit `2287665`; evidence: [`../evidence/phase-11a/VERIFICATION.md`](../evidence/phase-11a/VERIFICATION.md). Full offline, focused, disposable PostgreSQL, formatting, type, compile, integrity, protected-path, and secret-literal gates passed. Next checkpoint: 11B.
 
 ### 11B — Durable jobs, evidence-backed intelligence, and review
 
