@@ -50,6 +50,12 @@ class PipelineSessionConfig:
     telephony_policy: dict[str, Any] | None = None
     max_duration_sec: int = 3600
     max_turns: int = 500
+    recording_enabled: bool = False
+    recording_consent_obtained: bool = False
+    transcript_retention_days: int = 30
+    recording_retention_days: int = 7
+    storage_region: str = "local"
+    requires_review_for_external_actions: bool = True
     allow_unsafe_session_overrides: bool = False
 
     def runtime_provider_routes(

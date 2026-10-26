@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -19,7 +19,6 @@ from core.providers.interfaces.llm import LLMStreamChunk
 from core.providers.interfaces.tts import TTSChunk, TTSConfig
 from post_call.models.call_record import CallRecord
 from post_call.models.diarized_turn import DiarizedTurn
-from post_call.models.recording import CallRecording
 from post_call.pipeline.enqueue import PostCallPipeline
 from tests.e2e.harness import HarnessConfig, ScenarioResult, register_scenario
 from worker_raw.orchestration.pipeline import PipelineOrchestrator
@@ -163,8 +162,9 @@ async def run_sovereign_conversation(config: HarnessConfig) -> ScenarioResult:
     audio_before = len(audio_out)
     orch.tts_provider = _FastTTS()  # type: ignore[assignment]
 
-    # After mid-TTS cancel, FSM may sit in PROCESSING_INFERENCE (TTS_FIRST_BYTE never fired).
-    # run_turn recovers AGENT_SPEAKING via TTS_DRAINED; for PROCESSING_INFERENCE leave as-is.
+    # Mid-TTS cancellation can leave the FSM in PROCESSING_INFERENCE because
+    # TTS_FIRST_BYTE never fired. run_turn recovers AGENT_SPEAKING via
+    # TTS_DRAINED; PROCESSING_INFERENCE remains unchanged.
     if orch.fsm.state == SessionState.AGENT_SPEAKING and orch.fsm.can_transition(
         SessionEvent.TTS_DRAINED
     ):
@@ -179,7 +179,7 @@ async def run_sovereign_conversation(config: HarnessConfig) -> ScenarioResult:
     if len(audio_out) <= audio_before:
         failures.append("turn2: expected additional TTS audio chunks")
 
-    # --- Teardown + post-call enqueue (mirrors run() finally; WS path lacks this until R2) ---
+    # Teardown and post-call enqueue mirror run() cleanup.
     try:
         if orch.fsm.can_transition(SessionEvent.DISCONNECT):
             orch.fsm.trigger(SessionEvent.DISCONNECT)
@@ -193,7 +193,7 @@ async def run_sovereign_conversation(config: HarnessConfig) -> ScenarioResult:
             )
             for t in raw_turns
         ]
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         record = CallRecord(
             tenant_id=uuid4(),
             agent_id=uuid4(),
@@ -202,11 +202,6 @@ async def run_sovereign_conversation(config: HarnessConfig) -> ScenarioResult:
             started_at=now_utc,
             ended_at=now_utc,
             turns=diarized,
-            recording=CallRecording(
-                recording_s3_uri="s3://ucve-test/e2e-sovereign.wav",
-                dual_channel=True,
-                duration_sec=1.0,
-            ),
         )
         await post_call.enqueue(record)
     except Exception as exc:

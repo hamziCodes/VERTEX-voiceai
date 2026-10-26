@@ -80,14 +80,16 @@ from core.rag.prompt_context import (
 )
 from core.rag.retriever import PgVectorRetriever
 from core.rag.speculative import SpeculativeRetrieval
+from core.runtime.env import is_protected_environment
 from core.session.redis_store import RedisSessionStore
 from core.transport.resample_egress import StreamingEgressResampler
 from core.types.audio import AudioFrame
 from core.types.events import ControlEventType
 from core.vad.silero_adapter import SileroVADAdapter
-from post_call.models.call_record import CallRecord
 from post_call.models.diarized_turn import DiarizedTurn
 from post_call.models.disposition import CallDisposition
+from post_call.models.policy import PostCallPolicy
+from post_call.models.recording import RecordingState
 from post_call.pipeline.enqueue import PostCallPipeline
 from worker_raw.orchestration.latency_hooks import LatencyHooks
 from worker_raw.orchestration.provider_binding import (
@@ -106,6 +108,17 @@ def _metric_session_uuid(session_id: str) -> UUID:
         return UUID(session_id)
     except ValueError:
         return uuid5(NAMESPACE_DNS, f"ucve-session:{session_id}")
+
+
+def _post_call_uuid(value: str, field: str) -> UUID:
+    """Keep legacy local fixtures deterministic; protected identities stay strict."""
+
+    try:
+        return parse_uuid(value, field)
+    except UCVEError:
+        if is_protected_environment():
+            raise
+        return uuid5(NAMESPACE_DNS, f"ucve-{field}:{value}")
 
 
 ProviderRegistry.register_provider_class("gladia", GladiaSTTProvider)
@@ -206,6 +219,10 @@ class PipelineOrchestrator:
         self._tts_cancel = AsyncioCancellationToken()
         self._playback_started = False
         self._finalized_once = False
+        self._post_call_started = False
+        self._post_call_turn_ordinal = 0
+        self._post_call_config: PipelineSessionConfig | None = None
+        self._session_started_at_utc: datetime | None = None
         self._runtime_resources_closed = False
         self._speech_buffer = bytearray()
         self._capturing_speech = False
@@ -469,6 +486,81 @@ class PipelineOrchestrator:
         self._ws_session = session
         if self._egress_sender_task is None or self._egress_sender_task.done():
             self._egress_sender_task = asyncio.create_task(self._egress_sender_loop())
+
+    async def start_session_record(self, session_config: PipelineSessionConfig) -> None:
+        """Create the durable call record once at session admission."""
+
+        if self._post_call_started:
+            return
+        tenant_id = _post_call_uuid(session_config.tenant_id, "tenant_id")
+        agent_id = _post_call_uuid(session_config.agent_id, "agent_id")
+        session_id = _post_call_uuid(session_config.session_id, "session_id")
+        transcript_days = session_config.transcript_retention_days
+        recording_days = session_config.recording_retention_days
+        if session_config.compliance_tier == "gdpr_strict":
+            transcript_days = 0
+            recording_days = 0
+        policy = PostCallPolicy(
+            recording_enabled=session_config.recording_enabled,
+            recording_consent_obtained=session_config.recording_consent_obtained,
+            transcript_retention_days=transcript_days,
+            recording_retention_days=recording_days,
+            storage_region=session_config.storage_region,
+            requires_review_for_external_actions=(
+                session_config.requires_review_for_external_actions
+            ),
+        )
+        started_at = datetime.now(UTC)
+        await self.post_call_pipeline.start_session(
+            tenant_id=tenant_id,
+            agent_id=agent_id,
+            session_id=session_id,
+            started_at=started_at,
+            transport_type=session_config.transport_type,
+            policy=policy,
+            provider_snapshot={
+                "stt": self._active_stt_id,
+                "llm": self._active_llm_id,
+                "tts": self._active_tts_id,
+            },
+            caller_id=getattr(session_config.caller_id, "from_number", None),
+            compliance_tier=session_config.compliance_tier,
+        )
+        self._session_started_at_utc = started_at
+        self._post_call_config = session_config
+        self._post_call_started = True
+
+    async def _persist_post_call_turn(
+        self,
+        *,
+        speaker: str,
+        text: str,
+        language: str,
+        start_ms: int,
+        end_ms: int,
+        confidence: float = 1.0,
+    ) -> None:
+        config = self._post_call_config
+        if config is None:
+            return
+        redacted = self.redaction_service.redact_transcript(
+            [{"speaker": speaker, "text": text, "language": language}],
+            RedactionPolicy(redact_pii_in_transcript=True),
+        )[0]
+        await self.post_call_pipeline.append_turn(
+            tenant_id=_post_call_uuid(config.tenant_id, "tenant_id"),
+            session_id=_post_call_uuid(config.session_id, "session_id"),
+            ordinal=self._post_call_turn_ordinal,
+            turn=DiarizedTurn(
+                speaker=speaker,
+                text=str(redacted.get("text", "")),
+                start_ms=max(0, start_ms),
+                end_ms=max(start_ms, end_ms),
+                language=language,
+                confidence=confidence,
+            ),
+        )
+        self._post_call_turn_ordinal += 1
 
     @property
     def escalation_available(self) -> bool:
@@ -791,6 +883,16 @@ class PipelineOrchestrator:
                     "language": language,
                     "playback_complete": result.complete,
                 },
+            )
+            start_ms = max(
+                0, int((time.monotonic() - self._session_start_monotonic) * 1000)
+            )
+            await self._persist_post_call_turn(
+                speaker="assistant",
+                text=result.text,
+                language=language,
+                start_ms=start_ms,
+                end_ms=start_ms + max(1, int(played_audio_ms)),
             )
         session = self._ws_session
         transport = getattr(session, "transport", None) if session is not None else None
@@ -1590,6 +1692,16 @@ class PipelineOrchestrator:
             session_config.session_id,
             {"speaker": "user", "text": user_text, "language": session_config.language},
         )
+        user_start_ms = max(
+            0, int((time.monotonic() - self._session_start_monotonic) * 1000)
+        )
+        await self._persist_post_call_turn(
+            speaker="user",
+            text=user_text,
+            language=session_config.language,
+            start_ms=user_start_ms,
+            end_ms=user_start_ms + 1,
+        )
         if self.fsm.state == SessionState.CONNECTING:
             self.fsm.trigger(SessionEvent.SESSION_ADMITTED)
         elif self.fsm.state == SessionState.AGENT_SPEAKING and self._ws_session is None:
@@ -2072,30 +2184,39 @@ class PipelineOrchestrator:
             provider_id=self._active_tts_id,
         )
 
+        record_created = False
         try:
-            diarized = self._build_diarized_turns(redacted_turns)
-            now_utc = datetime.now(UTC)
-            from post_call.models.recording import CallRecording
-
-            record = CallRecord(
-                tenant_id=parse_uuid(session_config.tenant_id, "tenant_id"),
-                agent_id=parse_uuid(session_config.agent_id, "agent_id"),
-                session_id=parse_uuid(session_config.session_id, "session_id"),
-                caller_id=getattr(session_config.caller_id, "from_number", None),
-                compliance_tier=session_config.compliance_tier,
-                started_at=now_utc,
-                ended_at=now_utc,
+            if not self._post_call_started:
+                await self.start_session_record(session_config)
+            recording_requested = (
+                session_config.recording_enabled
+                and session_config.recording_consent_obtained
+            )
+            await self.post_call_pipeline.finalize_session(
+                tenant_id=_post_call_uuid(session_config.tenant_id, "tenant_id"),
+                session_id=_post_call_uuid(session_config.session_id, "session_id"),
+                ended_at=datetime.now(UTC),
                 end_reason=self._session_end_reason,
-                transport_type=session_config.transport_type,
                 disposition=CallDisposition(self._session_disposition),
-                turns=diarized,
-                recording=CallRecording(
-                    recording_s3_uri=f"s3://ucve-recordings/{session_config.session_id}.wav",
-                    dual_channel=True,
-                    duration_sec=duration,
+                metrics_snapshot={
+                    "duration_seconds": duration,
+                    "turn_count": len(redacted_turns),
+                },
+                usage_snapshot={
+                    "agent_sec": duration,
+                    "stt_sec": self._stt_audio_sec,
+                    "tts_sec": self._tts_audio_sec,
+                },
+                recording_state=(
+                    RecordingState.FAILED
+                    if recording_requested
+                    else RecordingState.NOT_REQUESTED
+                ),
+                recording_error_code=(
+                    "recording_capture_unavailable" if recording_requested else None
                 ),
             )
-            await self.post_call_pipeline.enqueue(record)
+            record_created = True
         except UCVEError as exc:
             logger.warning(
                 "Skipped PostCallRecord (identity validation)", error=str(exc)
@@ -2108,13 +2229,14 @@ class PipelineOrchestrator:
         if hasattr(self.latency_collector, "clear_session"):
             self.latency_collector.clear_session()
 
-        await self.audit_writer.arecord(
-            tenant_id=session_config.tenant_id,
-            action="call_record_created",
-            resource_type="session",
-            resource_id=session_config.session_id,
-            detail={"turn_count": len(redacted_turns)},
-        )
+        if record_created:
+            await self.audit_writer.arecord(
+                tenant_id=session_config.tenant_id,
+                action="call_record_created",
+                resource_type="session",
+                resource_id=session_config.session_id,
+                detail={"turn_count": len(redacted_turns)},
+            )
         logger.info(
             "Pipeline session terminated cleanly", session_id=session_config.session_id
         )
@@ -2150,6 +2272,7 @@ class PipelineOrchestrator:
         logger.info("Pipeline session starting", session_id=session_config.session_id)
         self._started_at = time.monotonic()
         self._session_start_monotonic = self._started_at
+        await self.start_session_record(session_config)
 
         if (
             session_config.compliance_tier == "hipaa"

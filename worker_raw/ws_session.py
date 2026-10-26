@@ -78,13 +78,13 @@ class WebSocketSessionRunner:
         self._ingress_queue: TypedAsyncQueue[AudioFrame] = TypedAsyncQueue(
             INBOUND_MIC_POLICY
         )
-        self._turn_queue: TypedAsyncQueue[
-            tuple[str, asyncio.Future[str] | None]
-        ] = TypedAsyncQueue(
-            BufferPolicy(
-                name="turn_queue",
-                maxsize=32,
-                overflow=OverflowPolicy.BLOCK,
+        self._turn_queue: TypedAsyncQueue[tuple[str, asyncio.Future[str] | None]] = (
+            TypedAsyncQueue(
+                BufferPolicy(
+                    name="turn_queue",
+                    maxsize=32,
+                    overflow=OverflowPolicy.BLOCK,
+                )
             )
         )
         self._active_turns: set[asyncio.Task[Any]] = set()
@@ -139,6 +139,9 @@ class WebSocketSessionRunner:
             await self._perform_protocol_handshake()
             self.orchestrator.attach_ws_session(self)
             await self.orchestrator.apply_provider_selection(self.config)
+            start_record = getattr(self.orchestrator, "start_session_record", None)
+            if callable(start_record):
+                await start_record(self.config)
             self.orchestrator.barge_in_controller.fsm = self.orchestrator.fsm
             self.orchestrator.barge_in_controller.cancel_contract = (
                 self.orchestrator.three_point_cancel
@@ -443,9 +446,7 @@ class WebSocketSessionRunner:
                 continue
             if event_type == ControlEventType.CLEAR_AUDIO_ACK.value:
                 payload = (
-                    data.get("payload")
-                    if isinstance(data.get("payload"), dict)
-                    else {}
+                    data.get("payload") if isinstance(data.get("payload"), dict) else {}
                 )
                 try:
                     await self.orchestrator.handle_clear_audio_ack(
@@ -458,9 +459,7 @@ class WebSocketSessionRunner:
                 continue
             if event_type == ControlEventType.PLAYBACK_DRAINED.value:
                 payload = (
-                    data.get("payload")
-                    if isinstance(data.get("payload"), dict)
-                    else {}
+                    data.get("payload") if isinstance(data.get("payload"), dict) else {}
                 )
                 try:
                     await self.orchestrator.handle_playback_drained(
@@ -500,8 +499,8 @@ class WebSocketSessionRunner:
                             ),
                             client_scheduled_playback_ms=(
                                 float(payload["client_scheduled_playback_ms"])
-                                    if payload.get("client_scheduled_playback_ms")
-                                    is not None
+                                if payload.get("client_scheduled_playback_ms")
+                                is not None
                                 else None
                             ),
                             receipt_monotonic_ms=self.orchestrator.latency_hooks.now_ms(),
