@@ -5,38 +5,29 @@ from __future__ import annotations
 import datetime
 import json
 import logging
-import re
 import sys
 from typing import Any
 
+from core.compliance.redaction import redact_sensitive_data, redact_text
 from core.observability.context import ObservabilityContext
-
-# Regex patterns for PHI and secret URL query parameter redaction
-_PHONE_PATTERN = re.compile(r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b")
-_EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
-_SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
-_AUTH_PARAM_PATTERN = re.compile(r"((?:token|api_key|signature|access_token|jwt)=)[^&]*", re.IGNORECASE)
 
 
 def redact_phi(text: str) -> str:
     """Redact sensitive PHI patterns (phone numbers, emails, SSNs) from text."""
     if not isinstance(text, str):
         return text
-    cleaned = _PHONE_PATTERN.sub("[REDACTED_PHONE]", text)
-    cleaned = _EMAIL_PATTERN.sub("[REDACTED_EMAIL]", cleaned)
-    cleaned = _SSN_PATTERN.sub("[REDACTED_SSN]", cleaned)
-    return cleaned
+    return redact_text(text)
 
 
 def redact_url_params(url: str) -> str:
     """Redact authentication token query parameters from URLs."""
     if not isinstance(url, str):
         return url
-    return _AUTH_PARAM_PATTERN.sub(r"\1[REDACTED]", url)
+    return redact_text(url)
 
 
 class StructuredJSONFormatter(logging.Formatter):
-    """Formatter producing standardized JSON log records enriched with context variables."""
+    """Format structured JSON logs with context and privacy redaction."""
 
     def format(self, record: logging.LogRecord) -> str:
         ctx = ObservabilityContext.get()
@@ -47,7 +38,9 @@ class StructuredJSONFormatter(logging.Formatter):
         message = redact_url_params(message)
 
         log_data: dict[str, Any] = {
-            "timestamp": datetime.datetime.fromtimestamp(record.created, tz=datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.fromtimestamp(
+                record.created, tz=datetime.UTC
+            ).isoformat(),
             "level": record.levelname,
             "event": message,
             "logger": record.name,
@@ -60,10 +53,9 @@ class StructuredJSONFormatter(logging.Formatter):
 
         # Merge extra attributes if passed
         if hasattr(record, "extra_fields") and isinstance(record.extra_fields, dict):
-            for k, v in record.extra_fields.items():
-                if isinstance(v, str):
-                    v = redact_phi(redact_url_params(v))
-                log_data[k] = v
+            sanitized = redact_sensitive_data(record.extra_fields)
+            if isinstance(sanitized, dict):
+                log_data.update(sanitized)
 
         return json.dumps(log_data)
 
@@ -96,7 +88,7 @@ class StructuredLoggerWrapper:
             (),
             None,
         )
-        record.extra_fields = kwargs  # type: ignore[attr-defined]
+        record.extra_fields = kwargs
         self._logger.handle(record)
 
 
