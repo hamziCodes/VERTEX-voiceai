@@ -1,6 +1,6 @@
 # Phase 11 — Recording, Transcripts, and Post-Call Intelligence
 
-**Status:** IN PROGRESS — 11A COMPLETE; NEXT 11B
+**Status:** IN PROGRESS — 11A–11B COMPLETE; NEXT 11C
 
 **Goal:** Persist honest call records and execute extraction, verification, human review, summaries, webhooks, retention, and erasure through durable jobs.
 
@@ -42,9 +42,9 @@ Alternatives rejected:
 - [x] Create the call record at admission with real start time; finalize idempotently with end/disposition/metrics.
 - [x] Never manufacture recording URI/dual-channel metadata. Store `not_requested`, `recording`, `available`, or `failed` state with evidence.
 - [x] Persist transcript turns incrementally so provider/post-call failures do not erase the conversation.
-- [ ] Replace process-list enqueue with durable queue/outbox, retries, DLQ, leases and idempotency.
-- [ ] Replace fabricated extraction/summary/sentiment with schema-valid model/provider output plus source evidence/confidence; missing stays null.
-- [ ] Route configured/high-risk actions through human review before webhook/CRM dispatch.
+- [x] Replace process-list enqueue with durable queue/outbox, retries, DLQ, leases and idempotency.
+- [x] Replace fabricated extraction/summary/sentiment with schema-valid model/provider output plus source evidence/confidence; missing stays null.
+- [x] Route configured/high-risk actions through human review before webhook/CRM dispatch.
 - [ ] Implement real HTTP webhook delivery with HMAC, timeout/backoff/idempotency and stored attempt/result.
 - [ ] Apply recursive privacy redaction; remove transcript previews/vendor response bodies from default logs.
 - [ ] Implement object deletion, legal hold, retention jobs and async-safe erasure across DB/storage/queues/audit. Failed partial erasure remains failed and retryable.
@@ -84,6 +84,8 @@ Each checkpoint begins with failing tests, ends with focused regression and stat
 - `tests/post_call/test_review_policy.py`
 
 **Contract:** a transactionally created outbox job is leased with bounded attempts, exponential retry, and DLQ terminal state. Extraction and summary accept only schema-valid provider JSON and persist source turn IDs plus confidence; absent or invalid output remains null/failed rather than invented. Review policy blocks sensitive/high-risk/uncertain/configured dispatch until an authenticated approval exists.
+
+**Completed:** implementation commit `b510e8d`; evidence: [`../evidence/phase-11b/VERIFICATION.md`](../evidence/phase-11b/VERIFICATION.md). Focused, compatibility, full forced-offline, disposable PostgreSQL restart/RLS, Ruff, scoped strict mypy, compile, integrity, protected-path, and credential-literal gates passed. Next checkpoint: 11C.
 
 ### 11C — Real, bounded, replay-safe webhook delivery
 
