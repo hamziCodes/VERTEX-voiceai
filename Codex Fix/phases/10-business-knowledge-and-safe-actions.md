@@ -1,6 +1,6 @@
 # Phase 10 — Business Knowledge and Safe Actions
 
-**Status:** IN PROGRESS — 10A THROUGH 10F COMPLETE; NEXT 10G
+**Status:** COMPLETE — 10A THROUGH 10H VERIFIED 2026-10-26
 
 **Goal:** Let an operator give an agent approved business knowledge through a guided setup flow, retrieve that knowledge quickly and safely during a conversation, and execute only explicitly enabled lifecycle or external actions.
 
@@ -327,11 +327,13 @@ Each part ends with a focused commit and tracker update. Do not start the next p
 
 **Suggested commit:** `docs: complete phase 10 knowledge setup`
 
-**Evidence:** [`../evidence/phase-10g/VERIFICATION.md`](../evidence/phase-10g/VERIFICATION.md). The local console now provides the complete eight-step knowledge workflow with in-memory-only management authentication, real base/source state, bounded upload and FAQ forms, polling, retry/removal, real preview passages and citations, activation, immutable agent-version binding, keyboard task tabs, responsive internal layouts, typed loading/error/success states, and generated OpenAPI coverage. No provider or MCP credential is collected. Phase 10H remains the final regression and close gate.
+**Evidence:** [`../evidence/phase-10g/VERIFICATION.md`](../evidence/phase-10g/VERIFICATION.md). The local console now provides the complete eight-step knowledge workflow with in-memory-only management authentication, real base/source state, bounded upload and FAQ forms, polling, retry/removal, real preview passages and citations, activation, immutable agent-version binding, keyboard task tabs, responsive internal layouts, typed loading/error/success states, and generated OpenAPI coverage. No provider or MCP credential is collected. Phase 10H records the completed final regression and close gate.
 
-### 10H — Phase close and regression gate
+### 10H — Phase close and regression gate — COMPLETE 2026-10-26 (`673ba69`)
 
 Run the focused suite, disposable stores, full forced-offline suite, format/type checks, plan integrity, secret/mock scans, and source-control review. Update the tracker only from fresh evidence.
+
+**Evidence:** [`../evidence/phase-10h/VERIFICATION.md`](../evidence/phase-10h/VERIFICATION.md). The final focused, disposable PostgreSQL/Redis, and complete forced-offline suites passed. Ruff, scoped strict mypy, JavaScript syntax, Python compilation, plan integrity, diff, protected-path, secret-literal, and mock-path reviews also passed after a behavior-neutral static cleanup. Phase 10 is closed for its offline scope; live providers, external MCP systems, shared migrations, deployment, and publishing remain separate approval gates.
 
 ## Verification commands planned for implementation
 
