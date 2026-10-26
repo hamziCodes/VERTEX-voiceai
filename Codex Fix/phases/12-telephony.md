@@ -1,50 +1,244 @@
-# Phase 12 — Telephony
+# Phase 12 — Telnyx Telephony
 
-**Status:** NOT STARTED
+**Status:** PLANNED — PREWORK COMPLETE; IMPLEMENTATION NOT STARTED
 
-**Goal:** Complete an offline-tested carrier webhook/signaling/media lifecycle connected to the same voice pipeline, then prepare a separately approved live certification.
+**Goal:** Connect inbound and controlled single-call outbound Telnyx calls to the same production voice pipeline used by the web agent, with secure carrier admission, durable call identity, bidirectional media, low-latency interruption, exact metering, and deterministic cleanup.
 
-**Depends on:** Phase 04 for conversation behavior; Phases 07 and 09 before production integration.
+**Depends on:** Phases 04, 07, and 09. Phase 11D must close before Phase 12D can claim complete post-call and privacy behavior.
 
 **Audit coverage:** T01–T06.
 
-## Human gate before implementation
+## Approved product boundary
 
-Resolve H12. Recommended first boundary: Telnyx inbound only. Outbound adds dialing permissions, calling windows, consent, destination controls, cost and campaign safeguards and should be a separate sub-plan if selected.
+Hamzi has established that Wavia includes both the web voice agent and a calling agent through Telnyx. Phase 12 uses this sequence:
 
-## Files and interfaces
+1. Telnyx is the first production carrier.
+2. Secure inbound calling is implemented and proven offline first.
+3. Controlled one-call outbound calling follows on the same lifecycle and media contracts.
+4. Batch campaigns, predictive dialing, contact-list ingestion, and automatic bulk retries are excluded. They require a separate product, consent, compliance, spend, and abuse-control plan.
+5. No live call, number purchase, deployment, or paid carrier request occurs without the Phase 15 approval gate.
 
-- Modify: telephony gateway webhooks/signatures/resolver/call store, Direct SIP or chosen media adapter, inbound worker handler.
-- Create: stable carrier-call lifecycle mapping, replay store, RTP/media session interface and fake carrier/media server.
-- Test: signature vectors, lifecycle ordering/replay, codec/DSP/RTP, full fake phone conversation, hangup/cleanup, trunk selection.
+## Architecture decision
 
-## Tasks
+Use **Telnyx call control plus a bidirectional carrier media WebSocket** as the v1 carrier boundary. The gateway owns webhook verification, call commands, stable call state, and the carrier media socket. The worker continues to own VAD → STT → LLM/tools → TTS, interruption, metering, and post-call finalization.
 
-- [ ] Choose one carrier/transport implementation and mark all other stubs unavailable instead of healthy.
-- [ ] Verify carrier signature over exact raw body with timestamp freshness and atomic event-ID replay rejection.
-- [ ] Resolve DID to tenant/published agent from durable storage and keep one stable session per carrier call ID across reordered/duplicate events.
-- [ ] Implement answer/start-media/end commands and real bidirectional media callback/stream. If direct SIP is chosen, cover SDP, RTP sockets, sequence/timestamps, jitter/loss and pacing; if carrier media WebSocket is chosen, document that exact boundary.
-- [ ] Connect media ingress to the admitted runtime session, warm STT, turn queue, TTS egress, interruption, teardown, metering and post-call finalization.
-- [ ] Validate μ-law vectors, 8↔16 kHz duration/quality, 20 ms packets, arbitrary fragmentation, jitter/reorder/loss and DTMF.
-- [ ] Separate new-call trunk failover from established-call failure. Never promise transparent mid-call migration without proof.
-- [ ] Persist call control state/idempotency and avoid duplicate answers/charges/jobs.
-- [ ] Make gateway/control-plane route ownership and docs consistent; remove or protect unsigned normalization endpoint.
-- [ ] Run the full offline test plan already documented in `AUDIT.md`.
+This is the recommended path because it reuses the existing asynchronous WebSocket pipeline and lets the carrier own PSTN/SIP signaling and RTP. Implementing a complete SIP user agent, SDP negotiation, UDP/RTP sockets, NAT traversal, jitter buffering, retransmission policy, and carrier interoperability inside Wavia would add substantial operational risk without improving the agent product.
 
-## Verification
+Existing `DirectSIPTransport` remains a useful μ-law codec/rebuffer primitive until the carrier-media adapter supersedes or wraps it. It must not be described as a complete SIP transport. LiveKit, Twilio, and generic PTA adapters remain unavailable unless independently implemented and qualified; placeholders must never report connected or healthy.
 
-```powershell
-python -m pytest tests/telephony tests/e2e/scenarios/test_telephony_inbound_e2e.py -q
+Before 12A code is written, confirm the exact current Telnyx signature, call-control command, media message, codec, sequence, and close-reason schemas from official Telnyx documentation. Freeze sanitized JSON fixtures in tests. No credential values belong in fixtures or documentation.
+
+## Target data flow
+
+```text
+Inbound PSTN
+  → Telnyx signed webhook
+  → event replay check + stable call lookup
+  → DID → tenant + published agent resolution
+  → quota/admission + pinned runtime plan
+  → Telnyx answer/start-media command
+  → signed/unguessable media WebSocket admission
+  → μ-law frames → canonical 16 kHz PCM
+  → PipelineOrchestrator (VAD → STT → LLM/tools → TTS)
+  → PCM → paced μ-law media messages → Telnyx → caller
+  → hangup/disconnect → one finalize + metering + post-call job
+
+Controlled outbound
+  → authenticated tenant request + destination policy + idempotency
+  → Telnyx create-call command
+  → same webhook, media, pipeline, and finalization path
 ```
 
-Expected: signed started→answered→media→DTMF→ended events yield one session/record; actual fake audio traverses VAD→STT→LLM→TTS→μ-law; duplicates/reordering are idempotent; all sockets/tasks close.
+## Current reality recorded during prework
 
-## Human intervention
+- `control_plane/routes/telephony.py` is mounted and fails closed when no verification material is configured, but its module-level handler is not wired to runtime configuration or durable storage.
+- `telephony_gateway/main.py` exposes an unsigned normalization endpoint and must not admit calls.
+- `TelnyxWebhookHandler` verifies before processing but creates a fresh session UUID per event, accepts a missing carrier call ID by inventing one, and does not persist or execute call commands.
+- `SIPParticipantResolver` contains demo DID mappings, uses a mismatched database column name, swallows database errors, and is synchronous.
+- `DirectSIPTransport` converts and rebuffers audio but has no signaling, carrier WebSocket, RTP socket, pacing, sequence, jitter, or actual network egress.
+- `TelnyxDirectSIPAdapter.connect()` marks itself connected without a connection and `receive_audio()` always returns `None`.
+- `InboundTelephonySessionHandler` passes canonical frames into `process_frame_async()` and meters duration, but does not perform complete session admission/start/finalization or wire carrier egress.
+- Trunk routing treats unknown health as healthy and invents a default Telnyx trunk when durable configuration is empty.
+- Existing tests pass but primarily assert primitives and placeholder behavior. They do not execute a signed webhook-to-audible-response call lifecycle.
 
-After offline completion, stop. Request one sandbox call with named carrier, allowed test number, maximum cost, command, and sanitized evidence. Never dial automatically.
+## Implementation checkpoints
 
-## Exit criteria
+Each checkpoint starts with failing tests, ends with focused regression/static checks, receives its own implementation commit and evidence file, and updates `EXECUTION_TRACKER.md`. No checkpoint may weaken the explicit offline/live gates.
 
-- Offline media conversation passes under jitter/loss/hangup.
-- Stubs cannot report connected/healthy.
-- Live release remains blocked until Hamzi approves and passes staging certification.
+### 12A — Carrier contract and secure webhook boundary
+
+**Create/modify:**
+
+- `telephony_gateway/telnyx/{models,signature,webhook,fixtures}.py`
+- `telephony_gateway/main.py`
+- `control_plane/routes/telephony.py`
+- `tests/telephony/test_telnyx_webhook_security.py`
+- sanitized Telnyx fixtures under `tests/fixtures/telephony/`
+
+**Work:**
+
+- Define strict typed event models and an allowlist of supported Telnyx event names; reject unknown or malformed events.
+- Verify the carrier signature over the exact raw request bytes. The public carrier endpoint uses Telnyx's verified scheme only; test-only HMAC helpers cannot be selected in production.
+- Validate finite timestamp freshness and reject missing configuration, invalid encodings, tampering, future/stale timestamps, and malformed JSON.
+- Remove or lock down the unsigned `/v1/telephony/webhook/{carrier}` normalization route. Establish one canonical carrier webhook owner.
+- Load verification configuration through the existing credential/config boundary without logging it.
+- Return quickly after durable event acceptance; never run the voice pipeline inline in the webhook request.
+
+**Offline verification:**
+
+```powershell
+py -3.12 -m pytest tests/telephony/test_telnyx_webhook_security.py tests/hardening/test_remediation_r1_r7.py -q -p no:cacheprovider
+```
+
+**Human intervention:** none. Sanitized public protocol fixtures only; no account access or call.
+
+### 12B — Durable call identity, DID resolution, and idempotent lifecycle
+
+**Create/modify:**
+
+- append-only telephony runtime migration after the current migration head
+- `core/db/repos/telephony_repo.py`
+- `telephony_gateway/resolver/sip_participant_resolver.py`
+- `telephony_gateway/telnyx/webhook.py`
+- `tests/telephony/test_call_lifecycle.py`
+- `tests/db/test_phase12b_live_telephony.py`
+
+**Work:**
+
+- Persist carrier event ID, call-control ID, direction, tenant, agent, internal session ID, state, timestamps, disconnect reason, and command idempotency keys.
+- Map every event for one carrier call to one internal session. Atomically reject duplicate event IDs while allowing valid reordered lifecycle events.
+- Resolve normalized E.164 DIDs against durable tenant-scoped data and a published agent. Unknown/inactive DIDs and ownership mismatches fail closed.
+- Remove demo mappings, fabricated call IDs, swallowed database errors, and default trunks.
+- Make state transitions explicit and monotonic: received → admitted → answered → media_active → ending → ended/failed.
+- Keep webhook event receipt separate from executed carrier commands so retries cannot duplicate answer, media-start, hangup, usage, or post-call jobs.
+- Apply canonical RLS policies to telephony DID, trunk, call, event, and command data. Do not edit an already-applied migration to achieve this.
+
+**Offline verification:**
+
+```powershell
+py -3.12 -m pytest tests/telephony/test_call_lifecycle.py -q -p no:cacheprovider
+# Then run the documented disposable PostgreSQL Phase 12B command.
+```
+
+**Human intervention:** Hamzi may run the disposable PostgreSQL verification command. Shared database migration remains separately approved.
+
+### 12C — Bidirectional Telnyx media transport
+
+**Create/modify:**
+
+- `telephony_gateway/telnyx/media.py`
+- `telephony_gateway/transcoding/{mulaw,rebuffer}.py`
+- `telephony_gateway/adapters/telnyx_media_stream.py`
+- `tests/telephony/test_telnyx_media.py`
+- `tests/telephony/fake_telnyx.py`
+
+**Work:**
+
+- Implement an authenticated, call-bound media WebSocket with bounded queues and explicit open/start/media/DTMF/stop/error states.
+- Decode inbound base64 μ-law payloads, preserve sequence/timestamp metadata, handle arbitrary fragmentation, and emit canonical 16 kHz mono PCM frames.
+- Convert pipeline PCM to carrier format with a stateful filtered resampler, exact duration accounting, 20 ms framing where required, real-time pacing, and bounded backpressure.
+- Define reorder, loss, duplicate, late-frame, silence-fill, slow-sink, and disconnect policies. Expose counters without storing audio or phone numbers in logs.
+- Flush or discard codec buffers according to the close reason; never leak audio between calls.
+- Keep raw SIP/RTP and LiveKit out of the v1 runtime path.
+
+**Offline verification:**
+
+```powershell
+py -3.12 -m pytest tests/telephony/test_telnyx_media.py tests/audio -q -p no:cacheprovider
+```
+
+**Required measurements:** sample count and duration conservation; packet cadence; bounded queue depth; no leaked tasks; deterministic loss/reorder behavior; ingress-to-worker and worker-to-egress overhead percentiles from fake-clock tests.
+
+**Human intervention:** none. Use generated PCM/μ-law and a local fake carrier only.
+
+### 12D — Full inbound pipeline, interruption, teardown, and post-call
+
+**Create/modify:**
+
+- `worker_raw/telephony/inbound_handler.py`
+- `worker_raw/orchestration/pipeline.py` only where a transport-neutral lifecycle hook is missing
+- telephony session supervisor/registry under `worker_raw/telephony/`
+- `tests/telephony/test_inbound_pipeline.py`
+- `tests/e2e/scenarios/test_telephony_inbound_e2e.py`
+
+**Work:**
+
+- Admit through the same quota, pinned agent-plan, provider credential, and session ownership rules as web voice.
+- Warm STT before media readiness, start the durable call record, drive VAD/STT turns, and send real TTS bytes back through the carrier adapter.
+- Preserve barge-in semantics: stop queued and carrier playback, cancel generation, keep the interrupting speech, and resume one consistent session.
+- Propagate caller identity and `transport_type=telephony` without exposing phone numbers in ordinary logs.
+- Make carrier hangup, tool-requested end, provider failure, media loss, worker shutdown, and timeout converge on one idempotent finalizer.
+- Record exact telephony/agent/STT/TTS usage once and enqueue one post-call job. Use Phase 11 privacy/recording policy.
+
+**Offline verification:**
+
+```powershell
+py -3.12 -m pytest tests/telephony/test_inbound_pipeline.py tests/e2e/scenarios/test_telephony_inbound_e2e.py tests/interruption tests/post_call -q -p no:cacheprovider
+```
+
+**Exit evidence:** a local fake-carrier conversation must prove nonempty audio traverses carrier ingress → VAD → STT → LLM → TTS → carrier egress; interruption works; duplicate hangups finalize once; all sockets, queues, provider sessions, and tasks close.
+
+**Human intervention:** none. No carrier/provider traffic is needed; use deterministic fake providers.
+
+### 12E — Controlled single-call outbound and new-call resilience
+
+**Create/modify:**
+
+- authenticated outbound command route/service
+- `telephony_gateway/telnyx/client.py`
+- destination/calling-window/spend/idempotency policy
+- `tests/telephony/test_outbound_call.py`
+- `tests/telephony/test_trunk_readiness.py`
+
+**Work:**
+
+- Allow one authenticated outbound call request with a tenant-owned published agent, E.164 destination, explicit purpose/consent record, destination allowlist, calling window, per-tenant concurrency/rate/spend caps, and idempotency key.
+- Keep bulk lists and campaigns unavailable.
+- Use typed bounded retries only before call creation is known. Reconcile ambiguous carrier responses by idempotency/call ID rather than blind redial.
+- Treat unknown health, missing credentials, missing DID ownership, and unimplemented adapters as unavailable.
+- Define failover only for new calls. Established calls fail and finalize honestly; no transparent mid-call carrier migration claim.
+- Align actual management/runtime endpoints, configuration names, OpenAPI, SDK docs, and runbooks.
+
+**Offline verification:**
+
+```powershell
+py -3.12 -m pytest tests/telephony/test_outbound_call.py tests/telephony/test_trunk_readiness.py tests/e2e -q -p no:cacheprovider
+```
+
+**Human intervention:** no call is placed here. Before any staging request, Hamzi must provide/confirm an allowed destination through local environment, maximum spend, permitted time window, and explicit live-run approval. Secret values never enter git or chat.
+
+### 12F — Offline close gate and separately approved live certification
+
+**Offline close gate:**
+
+```powershell
+$env:RUN_LIVE_PROVIDERS='0'
+$env:RUN_MOCK_PROVIDERS='1'
+$env:RUN_LIVE_DB_TESTS='0'
+$env:RUN_LIVE_REDIS_TESTS='0'
+py -3.12 -m pytest tests/telephony tests/e2e/scenarios/test_telephony_inbound_e2e.py -q -p no:cacheprovider
+py -3.12 -m pytest -q -p no:cacheprovider --basetemp hamza_local/pytest-phase12-full
+py -3.12 -m ruff check telephony_gateway worker_raw/telephony tests/telephony
+py -3.12 -m compileall -q telephony_gateway worker_raw/telephony
+py -3.12 voice_engine_plan/scripts/verify_plan_integrity.py
+git diff --check
+```
+
+The disposable PostgreSQL test is run separately with the repository's isolated Phase 12 compose file and removed with volumes afterward.
+
+**Live certification remains a manual gate:** one approved Telnyx sandbox/test call at a time, to an allowlisted number, under a named spend cap. Capture sanitized event ordering, connection timings, acoustic-end-to-first-audible latency, loss/jitter, barge-in, cleanup, and carrier billing correlation. Stop on the first unexplained retry, destination mismatch, signature failure, privacy leak, or duplicate charge.
+
+## Phase exit criteria
+
+- Signed, replay-safe inbound webhook admission maps one Telnyx call to one tenant, published agent, and internal session.
+- Fake carrier media proves a real bidirectional voice turn and barge-in under jitter, loss, duplicates, slow sinks, and hangup.
+- Controlled outbound is policy-gated, idempotent, rate/spend bounded, and cannot become a campaign dialer.
+- Unimplemented transports and unknown health fail closed.
+- Metering, post-call, privacy, and cleanup occur exactly once.
+- Endpoint/configuration/SDK/runbook documentation matches executable routes.
+- Full offline suite passes with no external traffic or charges.
+- Production/live readiness remains blocked until Phase 15 live certification is explicitly approved and passes.
+
+## Prework evidence
+
+See [`../evidence/phase-12-prework/READINESS.md`](../evidence/phase-12-prework/READINESS.md).
