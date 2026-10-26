@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from post_call.channels.whatsapp import WhatsAppDispatcher
 from post_call.extraction.schema import ExtractionField, TenantExtractionSchema
@@ -132,29 +133,20 @@ def test_verification_enqueues_low_confidence_to_review_queue() -> None:
     assert len(pending) == len(issues)
 
 
-@pytest.mark.asyncio
-async def test_webhook_hmac_and_fail_closed_without_secret() -> None:
-    dispatcher = WebhookDispatcher()
-    target = TenantWebhookTarget(
-        tenant_id=uuid4(),
-        url="https://api.clinic.com/webhook",
-        secret="test-only-secret",
-    )
-
-    sig = dispatcher.compute_signature(b'{"key":"val"}', target.secret)
+def test_webhook_hmac_and_fail_closed_without_secret() -> None:
+    sig = WebhookDispatcher.compute_signature(b'{"key":"val"}', "test-only-secret")
     assert len(sig) == 64  # SHA256 hex string
 
-    # Fail closed without secret
-    target_no_secret = TenantWebhookTarget(
-        tenant_id=uuid4(),
-        url="https://api.clinic.com/webhook",
-        secret="",
-    )
-    with pytest.raises(ValueError) as exc_info:
-        await dispatcher.dispatch(
-            target_no_secret, {"payload": 1}, idempotency_key="key1"
+    with pytest.raises(ValidationError):
+        TenantWebhookTarget.model_validate(
+            {
+                "tenant_id": uuid4(),
+                "name": "Clinic",
+                "url": "https://api.clinic.com/webhook",
+                "credential_ref": "clinic-signing",
+                "secret": "raw-secret-is-forbidden",
+            }
         )
-    assert "Webhook shared secret is missing" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -217,8 +209,9 @@ async def test_end_to_end_worker_processor() -> None:
 
     target = TenantWebhookTarget(
         tenant_id=schema.tenant_id,
+        name="Clinic",
         url="https://clinic.com/webhook",
-        secret="valid-secret-key",
+        credential_ref="clinic-signing",
     )
 
     result = await processor.process_record(record, schema, target)

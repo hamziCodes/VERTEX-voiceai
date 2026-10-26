@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import time
 import uuid
+from datetime import UTC, datetime
 
+import httpx
 import pytest
 
 from core.errors.alert_router import AlertRouter
@@ -15,7 +16,12 @@ from core.errors.structured import StructuredError
 from core.providers.failover import FailoverRouter
 from core.types.resampler import Resampler
 from post_call.webhook.dispatcher import WebhookDispatcher
-from post_call.webhook.targets import TenantWebhookTarget
+from post_call.webhook.models import (
+    TenantWebhookTarget,
+    WebhookDelivery,
+    WebhookTargetState,
+)
+from post_call.webhook.policy import WebhookEndpointPolicy
 from telephony_gateway.resolver.sip_participant_resolver import SIPParticipantResolver
 from telephony_gateway.telnyx.signature import verify_telnyx_signature
 from worker_raw.orchestration.pipeline import PipelineOrchestrator
@@ -74,22 +80,53 @@ def test_resampler_vectorized_boundary() -> None:
 
 
 @pytest.mark.asyncio
-async def test_webhook_exponential_backoff(test_env: None) -> None:
-    sleeps: list[float] = []
+async def test_webhook_failure_returns_durable_retry_decision(test_env: None) -> None:
+    calls = 0
 
-    async def _fake_sleep(sec: float) -> None:
-        sleeps.append(sec)
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(503, request=request)
 
-    async def _fail_client(*_a: object, **_k: object) -> bool:
-        return False
+    async def resolve_secret(_tenant_id: str, _credential_ref: str) -> str:
+        return "test-secret"
 
-    disp = WebhookDispatcher(http_client=_fail_client, sleep_fn=_fake_sleep)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    tenant_id, call_id = uuid.uuid4(), uuid.uuid4()
     target = TenantWebhookTarget(
-        tenant_id=uuid.uuid4(), url="https://example.com/hook", secret="sec"
+        tenant_id=tenant_id,
+        name="CRM",
+        url="https://example.com/hook",
+        credential_ref="crm-signing",
+        state=WebhookTargetState.ACTIVE,
+        reviewed_by="operator-1",
+        reviewed_at=datetime.now(UTC),
+        approved_addresses=("93.184.216.34",),
     )
-    ok = await disp.dispatch(target, {"a": 1}, "key-1", max_retries=3)
-    assert ok is False
-    assert sleeps == [1.0, 2.0]
+    delivery = WebhookDelivery(
+        tenant_id=tenant_id,
+        target_id=target.target_id,
+        call_id=call_id,
+        result_id=uuid.uuid4(),
+        review_id=uuid.uuid4(),
+        event_type="post_call.intelligence.completed",
+        idempotency_key="a" * 64,
+        payload={"call_id": str(call_id)},
+    )
+    dispatcher = WebhookDispatcher(
+        secret_resolver=resolve_secret,
+        client=client,
+        endpoint_policy=WebhookEndpointPolicy(
+            resolver=lambda _host: ("93.184.216.34",)
+        ),
+    )
+
+    result = await dispatcher.send_once(target, delivery)
+
+    assert result.retryable is True
+    assert result.error_code == "remote_unavailable"
+    assert calls == 1
+    await client.aclose()
 
 
 def test_telnyx_signature_fail_closed() -> None:
@@ -105,13 +142,17 @@ def test_did_binding_no_silent_default() -> None:
 @pytest.mark.asyncio
 async def test_alert_router_webhook_dispatch(test_env: None) -> None:
     router = AlertRouter()
-    err = StructuredError(code=UCVEErrorCode.LATENCY_SLO_BREACH, message="slow", severity="error")
+    err = StructuredError(
+        code=UCVEErrorCode.LATENCY_SLO_BREACH, message="slow", severity="error"
+    )
     ok = await router.route_alert(uuid.uuid4(), err)
     assert ok
     assert router.routed_alerts[-1].get("log_dispatched") is True
 
 
-def test_unauth_quick_mint_blocked(test_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unauth_quick_mint_blocked(
+    test_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from fastapi.testclient import TestClient
 
     monkeypatch.delenv("UCVE_DEMO_MODE", raising=False)
