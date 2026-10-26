@@ -1,6 +1,6 @@
 # Phase 11 — Recording, Transcripts, and Post-Call Intelligence
 
-**Status:** IN PROGRESS — 11A–11C COMPLETE; NEXT 11D
+**Status:** IN PROGRESS — 11A–11C AND 11D-1 COMPLETE; NEXT 11D-2
 
 **Goal:** Persist honest call records and execute extraction, verification, human review, summaries, webhooks, retention, and erasure through durable jobs.
 
@@ -46,7 +46,7 @@ Alternatives rejected:
 - [x] Replace fabricated extraction/summary/sentiment with schema-valid model/provider output plus source evidence/confidence; missing stays null.
 - [x] Route configured/high-risk actions through human review before webhook/CRM dispatch.
 - [x] Implement real HTTP webhook delivery with HMAC, timeout/backoff/idempotency and stored attempt/result.
-- [ ] Apply recursive privacy redaction; remove transcript previews/vendor response bodies from default logs.
+- [x] Apply recursive privacy redaction; remove transcript previews/vendor response bodies from default logs.
 - [ ] Implement object deletion, legal hold, retention jobs and async-safe erasure across DB/storage/queues/audit. Failed partial erasure remains failed and retryable.
 - [ ] Test restart, duplicate finalize/job/webhook, extraction invalid JSON, missing review, storage failure, legal hold, and complete tenant erasure.
 
@@ -113,6 +113,20 @@ Each checkpoint begins with failing tests, ends with focused regression and stat
 - Phase 11 evidence and trackers
 
 **Contract:** recursive redaction covers nested structured logs without retaining transcript previews or vendor bodies; retention claims success only after database and object deletion; legal hold blocks every deletion layer; tenant erasure is async-safe, restartable, and reports partial failure until all registered stores, jobs, attempts, and audit-safe tombstones complete.
+
+#### 11D-1 — Recursive redaction and fail-closed retention contracts
+
+**Completed:** implementation commit `2ce9e75`; evidence: [`../evidence/phase-11d1/VERIFICATION.md`](../evidence/phase-11d1/VERIFICATION.md).
+
+- One bounded recursive sanitizer now covers transcript structures, structured-log extras, and error details, including nested sequences, sensitive keys, PII strings, authentication query values, binary data, and hostile depth.
+- Transcript sanitization returns a new structure and does not mutate the source turns.
+- Retention validates aware timestamps and non-negative schedules, records a safe result for every candidate, blocks held sessions before deletion, and reports success only after every required object/record deletion returns without failure.
+- Object-store and record-delete errors produce stable reason codes without retaining exception text.
+- The legacy in-memory purge fixture remains compatible, while durable object stores, database claims, restartable erasure, and legacy-secret migration remain 11D-2.
+
+#### 11D-2 — Durable deletion, erasure, legacy migration, and phase close
+
+**Next:** implement bounded recording object storage/deletion, durable legal-hold-aware retention jobs, restartable tenant erasure across every registered store, and the approved migration path away from the unused raw-secret webhook table. Run disposable PostgreSQL verification and the final Phase 11 close gate. No shared migration or destructive legacy-data operation is authorized by the offline test plan.
 
 ## Verification
 
