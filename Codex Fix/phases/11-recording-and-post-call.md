@@ -1,6 +1,6 @@
 # Phase 11 — Recording, Transcripts, and Post-Call Intelligence
 
-**Status:** IN PROGRESS — 11A–11B COMPLETE; NEXT 11C
+**Status:** IN PROGRESS — 11A–11C COMPLETE; NEXT 11D
 
 **Goal:** Persist honest call records and execute extraction, verification, human review, summaries, webhooks, retention, and erasure through durable jobs.
 
@@ -45,7 +45,7 @@ Alternatives rejected:
 - [x] Replace process-list enqueue with durable queue/outbox, retries, DLQ, leases and idempotency.
 - [x] Replace fabricated extraction/summary/sentiment with schema-valid model/provider output plus source evidence/confidence; missing stays null.
 - [x] Route configured/high-risk actions through human review before webhook/CRM dispatch.
-- [ ] Implement real HTTP webhook delivery with HMAC, timeout/backoff/idempotency and stored attempt/result.
+- [x] Implement real HTTP webhook delivery with HMAC, timeout/backoff/idempotency and stored attempt/result.
 - [ ] Apply recursive privacy redaction; remove transcript previews/vendor response bodies from default logs.
 - [ ] Implement object deletion, legal hold, retention jobs and async-safe erasure across DB/storage/queues/audit. Failed partial erasure remains failed and retryable.
 - [ ] Test restart, duplicate finalize/job/webhook, extraction invalid JSON, missing review, storage failure, legal hold, and complete tenant erasure.
@@ -97,6 +97,8 @@ Each checkpoint begins with failing tests, ends with focused regression and stat
 - `tests/db/test_phase11c_live_webhook.py`
 
 **Contract:** enabled tenant targets hold a credential reference rather than a raw secret. Delivery resolves the secret server-side, permits reviewed HTTPS destinations only, applies the existing private-network/redirect protections, signs canonical bytes, uses explicit connect/read/total deadlines, stores every safe attempt, and treats one `(tenant, target, call, event)` key as one logical delivery across retries.
+
+**Completed:** implementation commit `b64a8fe`; evidence: [`../evidence/phase-11c/VERIFICATION.md`](../evidence/phase-11c/VERIFICATION.md). Focused, compatibility, full forced-offline, disposable PostgreSQL restart/RLS, Ruff, scoped strict mypy, compile, integrity, protected-path, and credential-literal gates passed. Migration 012's unused raw-secret table is isolated from the new runtime; its gated data migration/removal is part of 11D. Next checkpoint: 11D.
 
 ### 11D — Privacy, retention, erasure, and phase close
 
