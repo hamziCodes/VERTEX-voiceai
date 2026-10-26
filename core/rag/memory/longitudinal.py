@@ -1,8 +1,9 @@
-"""Longitudinal Caller Memory Handler — Embeds post-call summary & updates memory_embed_status."""
+"""Embed post-call summaries and update their memory status."""
 
 from __future__ import annotations
 
 from typing import Any
+
 from post_call.models.call_record import CallRecord
 from post_call.models.memory_embed import MemoryEmbedStatus
 

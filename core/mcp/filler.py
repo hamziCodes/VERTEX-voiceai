@@ -1,10 +1,10 @@
-"""Conversational Filler Synthesizer — Plays spoken filler audio during long tool calls (> 400 ms)."""
+"""Play spoken filler audio during long tool calls."""
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 
 @dataclass
@@ -16,13 +16,17 @@ class FillerConfig:
 
 
 class ConversationalFillerSynth:
-    """Monitors in-flight tool calls and triggers filler phrase if threshold exceeded."""
+    """Trigger a filler phrase when a tool call exceeds its threshold."""
 
-    def __init__(self, config: FillerConfig | None = None, on_filler_triggered: Callable[[str], None] | None = None) -> None:
+    def __init__(
+        self,
+        config: FillerConfig | None = None,
+        on_filler_triggered: Callable[[str], None] | None = None,
+    ) -> None:
         self.config = config or FillerConfig()
         self.on_filler_triggered = on_filler_triggered
         self.is_active = False
-        self._task: asyncio.Task | None = None
+        self._task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         """Start timer for filler phrase."""

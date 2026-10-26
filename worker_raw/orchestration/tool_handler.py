@@ -6,7 +6,7 @@ import asyncio
 import json
 from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from core.mcp.builtin_tools import (
     LifecycleHooks,
@@ -62,11 +62,8 @@ class PipelineToolHandler:
         self._handoff_target = handoff_target.strip() if handoff_target else None
 
     def available_tools(self) -> list[ToolDefinition]:
-        return cast(
-            list[ToolDefinition],
-            available_lifecycle_tools(
-                self._allowed_tools, self._lifecycle_hooks, self._handoff_target
-            ),
+        return available_lifecycle_tools(
+            self._allowed_tools, self._lifecycle_hooks, self._handoff_target
         )
 
     async def prepare_tools(self) -> list[ToolDefinition]:
