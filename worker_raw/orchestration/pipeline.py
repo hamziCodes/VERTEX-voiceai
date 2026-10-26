@@ -525,6 +525,11 @@ class PipelineOrchestrator:
             },
             caller_id=getattr(session_config.caller_id, "from_number", None),
             compliance_tier=session_config.compliance_tier,
+            intelligence_config_snapshot={
+                "extraction_schema_id": session_config.extraction_schema_id,
+                "extraction_schema": session_config.extraction_schema,
+                "external_action_configured": False,
+            },
         )
         self._session_started_at_utc = started_at
         self._post_call_config = session_config

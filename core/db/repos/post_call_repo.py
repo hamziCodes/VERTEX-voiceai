@@ -9,11 +9,13 @@ from uuid import UUID, uuid4
 
 from core.db.async_pg import AsyncDatabase, get_default_database
 from core.db.pg import use_memory_repos
+from post_call.jobs.models import PostCallIntelligenceResult, PostCallJob
 from post_call.models.call_record import CallRecord
 from post_call.models.diarized_turn import DiarizedTurn
 from post_call.models.disposition import CallDisposition
 from post_call.models.policy import PostCallPolicy
 from post_call.models.recording import CallRecording, RecordingState
+from post_call.review.models import ReviewRequest
 
 
 class PostCallNotFoundError(LookupError):
@@ -30,6 +32,11 @@ class InMemoryPostCallRepository:
     def __init__(self) -> None:
         self._calls: dict[tuple[UUID, UUID], CallRecord] = {}
         self._turns: dict[tuple[UUID, UUID], dict[int, DiarizedTurn]] = {}
+        self._post_call_jobs: dict[UUID, PostCallJob] = {}
+        self._post_call_results: dict[
+            tuple[UUID, UUID], PostCallIntelligenceResult
+        ] = {}
+        self._post_call_reviews: dict[UUID, ReviewRequest] = {}
 
     async def start_call(
         self,
@@ -43,6 +50,7 @@ class InMemoryPostCallRepository:
         provider_snapshot: dict[str, Any],
         caller_id: str | None = None,
         compliance_tier: str = "standard",
+        intelligence_config_snapshot: dict[str, Any] | None = None,
     ) -> CallRecord:
         key = (tenant_id, session_id)
         existing = self._calls.get(key)
@@ -60,6 +68,7 @@ class InMemoryPostCallRepository:
             compliance_tier=compliance_tier,
             policy_snapshot=policy.model_dump(mode="json"),
             provider_snapshot=dict(provider_snapshot),
+            intelligence_config_snapshot=dict(intelligence_config_snapshot or {}),
         )
         self._calls[key] = record
         self._turns[key] = {}
@@ -71,6 +80,12 @@ class InMemoryPostCallRepository:
         if record is None:
             raise PostCallNotFoundError("Call record not found.")
         return record.model_copy(deep=True)
+
+    async def get_call_by_id(self, tenant_id: UUID, call_id: UUID) -> CallRecord:
+        for (owner, _session_id), record in self._calls.items():
+            if owner == tenant_id and record.call_id == call_id:
+                return record.model_copy(deep=True)
+        raise PostCallNotFoundError("Call record not found.")
 
     async def append_turn(
         self,
@@ -163,6 +178,19 @@ class InMemoryPostCallRepository:
         record.disposition = disposition
         record.metrics_snapshot = dict(metrics_snapshot)
         record.usage_snapshot = dict(usage_snapshot)
+        if not any(
+            job.tenant_id == tenant_id and job.call_id == record.call_id
+            for job in self._post_call_jobs.values()
+        ):
+            job = PostCallJob(
+                tenant_id=tenant_id,
+                call_id=record.call_id,
+                payload=dict(record.intelligence_config_snapshot),
+                available_at=record.ended_at,
+                created_at=record.ended_at,
+                updated_at=record.ended_at,
+            )
+            self._post_call_jobs[job.job_id] = job
         return record.model_copy(deep=True)
 
 
@@ -184,14 +212,16 @@ class PostgresPostCallRepository:
         provider_snapshot: dict[str, Any],
         caller_id: str | None = None,
         compliance_tier: str = "standard",
+        intelligence_config_snapshot: dict[str, Any] | None = None,
     ) -> CallRecord:
         async with self.database.tenant_transaction(str(tenant_id)) as connection:
             cursor = await connection.execute(
                 "INSERT INTO call_records (call_id, tenant_id, agent_id, session_id, "
                 "caller_id, started_at, ended_at, transport_type, compliance_tier, "
-                "recording_state, policy_snapshot, provider_snapshot) "
+                "recording_state, policy_snapshot, provider_snapshot, "
+                "intelligence_config_snapshot) "
                 "VALUES (%s::uuid, %s::uuid, %s::uuid, %s::uuid, %s, %s, NULL, %s, %s, "
-                "'not_requested', %s::jsonb, %s::jsonb) "
+                "'not_requested', %s::jsonb, %s::jsonb, %s::jsonb) "
                 "ON CONFLICT (tenant_id, session_id) DO UPDATE SET updated_at = "
                 "call_records.updated_at RETURNING call_id",
                 (
@@ -205,6 +235,7 @@ class PostgresPostCallRepository:
                     compliance_tier,
                     json.dumps(policy.model_dump(mode="json")),
                     json.dumps(provider_snapshot),
+                    json.dumps(intelligence_config_snapshot or {}),
                 ),
             )
             row = await cursor.fetchone()
@@ -222,7 +253,7 @@ class PostgresPostCallRepository:
                 "recording_duration_seconds, recording_storage_region, "
                 "compliance_tier, metrics_snapshot, policy_snapshot, "
                 "provider_snapshot, "
-                "usage_snapshot, recording_error_code "
+                "usage_snapshot, recording_error_code, intelligence_config_snapshot "
                 "FROM call_records WHERE tenant_id = %s::uuid "
                 "AND session_id = %s::uuid",
                 (str(tenant_id), str(session_id)),
@@ -267,7 +298,20 @@ class PostgresPostCallRepository:
             provider_snapshot=row[18] or {},
             usage_snapshot=row[19] or {},
             recording_error_code=row[20],
+            intelligence_config_snapshot=row[21] or {},
         )
+
+    async def get_call_by_id(self, tenant_id: UUID, call_id: UUID) -> CallRecord:
+        async with self.database.tenant_transaction(str(tenant_id)) as connection:
+            cursor = await connection.execute(
+                "SELECT session_id FROM call_records WHERE tenant_id = %s::uuid "
+                "AND call_id = %s::uuid",
+                (str(tenant_id), str(call_id)),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            raise PostCallNotFoundError("Call record not found.")
+        return await self.get_call(tenant_id, row[0], call_id=call_id)
 
     async def append_turn(
         self, *, tenant_id: UUID, session_id: UUID, ordinal: int, turn: DiarizedTurn
@@ -342,7 +386,7 @@ class PostgresPostCallRepository:
                 "Only failed recordings may include an error code."
             )
         async with self.database.tenant_transaction(str(tenant_id)) as connection:
-            await connection.execute(
+            updated = await connection.execute(
                 "UPDATE call_records SET ended_at = GREATEST(%s, started_at), "
                 "end_reason = %s, disposition = %s, metrics_snapshot = %s::jsonb, "
                 "usage_snapshot = %s::jsonb, recording_state = %s, "
@@ -370,6 +414,20 @@ class PostgresPostCallRepository:
                     str(session_id),
                 ),
             )
+            if updated.rowcount:
+                await connection.execute(
+                    "INSERT INTO post_call_jobs "
+                    "(tenant_id, call_id, payload_jsonb, available_at) "
+                    "VALUES (%s::uuid, %s::uuid, %s::jsonb, GREATEST(%s, %s)) "
+                    "ON CONFLICT (tenant_id, call_id, job_type) DO NOTHING",
+                    (
+                        str(tenant_id),
+                        str(current.call_id),
+                        json.dumps(current.intelligence_config_snapshot),
+                        ended_at,
+                        current.started_at,
+                    ),
+                )
         return await self.get_call(tenant_id, session_id)
 
 

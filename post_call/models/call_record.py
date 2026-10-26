@@ -42,6 +42,7 @@ class CallRecord(BaseModel):
     policy_snapshot: dict[str, Any] = Field(default_factory=dict)
     provider_snapshot: dict[str, Any] = Field(default_factory=dict)
     usage_snapshot: dict[str, Any] = Field(default_factory=dict)
+    intelligence_config_snapshot: dict[str, Any] = Field(default_factory=dict)
     transcript_redacted_ref: str = Field(
         default="", description="Ref/URI to redacted transcript JSONB"
     )

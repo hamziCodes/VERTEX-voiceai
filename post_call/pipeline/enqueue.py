@@ -37,6 +37,7 @@ class PostCallPipeline:
         provider_snapshot: dict[str, Any],
         caller_id: str | None = None,
         compliance_tier: str = "standard",
+        intelligence_config_snapshot: dict[str, Any] | None = None,
     ) -> CallRecord:
         return await self.repo.start_call(
             tenant_id=tenant_id,
@@ -48,6 +49,7 @@ class PostCallPipeline:
             provider_snapshot=provider_snapshot,
             caller_id=caller_id,
             compliance_tier=compliance_tier,
+            intelligence_config_snapshot=intelligence_config_snapshot,
         )
 
     async def append_turn(
@@ -123,6 +125,7 @@ class PostCallPipeline:
                 provider_snapshot=record.provider_snapshot,
                 caller_id=record.caller_id,
                 compliance_tier=record.compliance_tier,
+                intelligence_config_snapshot=record.intelligence_config_snapshot,
             )
             for ordinal, turn in enumerate(record.turns):
                 await self.append_turn(
