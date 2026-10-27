@@ -1,6 +1,6 @@
 # Phase 12 — Telnyx Telephony
 
-**Status:** PLANNED — PREWORK COMPLETE; IMPLEMENTATION NOT STARTED
+**Status:** IN PROGRESS — 12A COMPLETE; NEXT 12B
 
 **Goal:** Connect inbound and controlled single-call outbound Telnyx calls to the same production voice pipeline used by the web agent, with secure carrier admission, durable call identity, bidirectional media, low-latency interruption, exact metering, and deterministic cleanup.
 
@@ -91,6 +91,15 @@ py -3.12 -m pytest tests/telephony/test_telnyx_webhook_security.py tests/hardeni
 ```
 
 **Human intervention:** none. Sanitized public protocol fixtures only; no account access or call.
+
+**Completed:** implementation commit `45a60bf`; evidence: [`../evidence/phase-12a/VERIFICATION.md`](../evidence/phase-12a/VERIFICATION.md).
+
+- The canonical gateway endpoint verifies Telnyx Ed25519 against the exact raw request bytes and finite five-minute timestamp window before JSON parsing.
+- Missing configuration, malformed encodings, HMAC input, tampering, stale/future timestamps, unknown events, invalid phone numbers, and malformed envelopes fail closed.
+- A typed event sink accepts each event ID once before the endpoint returns; duplicate delivery receives a safe 200 without repeated processing.
+- The old unsigned generic gateway endpoint and duplicate control-plane webhook owner were removed.
+- The production endpoint remains 503 until Phase 12B injects a durable PostgreSQL event sink. The in-memory sink is limited to deterministic offline tests.
+- Official protocol details were frozen into a sanitized fixture; no account, credential, carrier request, or call was used.
 
 ### 12B — Durable call identity, DID resolution, and idempotent lifecycle
 
