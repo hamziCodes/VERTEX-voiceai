@@ -1,4 +1,4 @@
-"""G.711 μ-law ↔ PCM16 Transcoder with G.711 Lookup Table for Python 3.12+ Compatibility."""
+"""G.711 mu-law to/from PCM16 transcoding without deprecated stdlib audioop."""
 
 from __future__ import annotations
 
@@ -38,15 +38,15 @@ def pcm16_to_mulaw(pcm_bytes: bytes) -> bytes:
     samples = struct.unpack(f"<{sample_count}h", pcm_bytes)
     out = bytearray(sample_count)
 
-    BIAS = 0x84
-    CLIP = 32635
+    bias = 0x84
+    clip = 32635
 
     for idx, pcm_val in enumerate(samples):
         sign = 0x80 if pcm_val < 0 else 0x00
         sample = abs(pcm_val)
-        if sample > CLIP:
-            sample = CLIP
-        sample += BIAS
+        if sample > clip:
+            sample = clip
+        sample += bias
 
         exponent = 7
         mask = 0x4000
@@ -100,3 +100,56 @@ def resample_pcm16_16k_to_8k(pcm16k_bytes: bytes) -> bytes:
     samples = struct.unpack(f"<{sample_count}h", pcm16k_bytes)
     out_samples = samples[::2]
     return struct.pack(f"<{len(out_samples)}h", *out_samples)
+
+
+class Pcm16Upsampler8To16:
+    """Stateful 2x linear PCM16 upsampler with exact duration conservation."""
+
+    def __init__(self) -> None:
+        self._previous: int | None = None
+
+    def process(self, pcm8k_bytes: bytes) -> bytes:
+        if len(pcm8k_bytes) % 2:
+            raise ValueError("PCM16 input length must be even.")
+        if not pcm8k_bytes:
+            return b""
+        samples = struct.unpack(f"<{len(pcm8k_bytes) // 2}h", pcm8k_bytes)
+        output: list[int] = []
+        for sample in samples:
+            previous = self._previous
+            if previous is None:
+                output.extend((sample, sample))
+            else:
+                output.extend(((previous + sample) // 2, sample))
+            self._previous = sample
+        return struct.pack(f"<{len(output)}h", *output)
+
+    def reset(self) -> None:
+        self._previous = None
+
+
+class Pcm16Downsampler16To8:
+    """Stateful two-tap low-pass/downsample stage with one-sample carry."""
+
+    def __init__(self) -> None:
+        self._pending: int | None = None
+
+    def process(self, pcm16k_bytes: bytes) -> bytes:
+        if len(pcm16k_bytes) % 2:
+            raise ValueError("PCM16 input length must be even.")
+        if not pcm16k_bytes:
+            return b""
+        samples = list(struct.unpack(f"<{len(pcm16k_bytes) // 2}h", pcm16k_bytes))
+        if self._pending is not None:
+            samples.insert(0, self._pending)
+            self._pending = None
+        if len(samples) % 2:
+            self._pending = samples.pop()
+        output = [
+            (samples[index] + samples[index + 1]) // 2
+            for index in range(0, len(samples), 2)
+        ]
+        return struct.pack(f"<{len(output)}h", *output) if output else b""
+
+    def reset(self) -> None:
+        self._pending = None
