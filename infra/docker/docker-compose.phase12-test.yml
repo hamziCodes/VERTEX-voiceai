@@ -1,0 +1,18 @@
+name: wavia-phase12-test
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: phase12
+      POSTGRES_USER: phase12
+      POSTGRES_PASSWORD: ${PHASE12_DB_PASSWORD:?set PHASE12_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:55433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phase12 -d phase12"]
+      interval: 2s
+      timeout: 3s
+      retries: 20

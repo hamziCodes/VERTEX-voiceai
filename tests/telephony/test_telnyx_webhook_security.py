@@ -8,6 +8,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
+from core.db.repos.telephony_repo import InMemoryTelephonyRepository
 from telephony_gateway.main import app
 from telephony_gateway.telnyx.signature import verify_telnyx_signature
 from telephony_gateway.telnyx.webhook import (
@@ -144,8 +145,13 @@ def test_verified_but_unsupported_or_malformed_payload_is_rejected(
     assert sink.events == {}
 
 
-def test_unsigned_legacy_route_and_unconfigured_canonical_route_fail_closed() -> None:
+def test_unsigned_legacy_route_and_unconfigured_canonical_route_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("TELNYX_PUBLIC_KEY", raising=False)
     app.state.telnyx_webhook_service = None
+    app.state.telnyx_event_sink = None
     with TestClient(app) as client:
         assert (
             client.post(
@@ -177,3 +183,26 @@ def test_service_factory_fails_closed_without_public_key(monkeypatch) -> None:
     monkeypatch.delenv("TELNYX_PUBLIC_KEY", raising=False)
     with pytest.raises(ValueError, match="TELNYX_PUBLIC_KEY"):
         build_telnyx_webhook_service(event_sink=InMemoryTelnyxEventSink())
+
+
+def test_verified_event_with_unknown_did_fails_closed() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    public_key = base64.b64encode(private_key.public_key().public_bytes_raw()).decode(
+        "ascii"
+    )
+    app.state.telnyx_webhook_service = TelnyxWebhookService(
+        public_key=public_key,
+        event_sink=InMemoryTelephonyRepository(),
+        now=lambda: float(NOW),
+    )
+    body = FIXTURE.read_bytes()
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/telephony/webhooks/telnyx",
+            content=body,
+            headers=_headers(private_key, body, str(NOW)),
+        )
+    app.state.telnyx_webhook_service = None
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "telnyx_call_not_admitted"

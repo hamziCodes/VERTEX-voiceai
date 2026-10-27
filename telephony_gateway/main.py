@@ -19,11 +19,30 @@ from telephony_gateway.telnyx.webhook import (
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     event_sink = getattr(_app.state, "telnyx_event_sink", None)
-    if _app.state.telnyx_webhook_service is None and event_sink is not None:
-        _app.state.telnyx_webhook_service = build_telnyx_webhook_service(
-            event_sink=event_sink
-        )
-    yield
+    database = None
+    try:
+        if (
+            _app.state.telnyx_webhook_service is None
+            and event_sink is None
+            and os.environ.get("DATABASE_URL")
+        ):
+            from core.db.async_pg import AsyncDatabase
+            from core.db.repos.telephony_repo import PostgresTelephonyRepository
+
+            database = AsyncDatabase.from_environment()
+            await database.open()
+            event_sink = PostgresTelephonyRepository(database)
+            _app.state.telnyx_event_sink = event_sink
+        if _app.state.telnyx_webhook_service is None and event_sink is not None:
+            _app.state.telnyx_webhook_service = build_telnyx_webhook_service(
+                event_sink=event_sink
+            )
+        yield
+    finally:
+        if database is not None:
+            await database.close()
+            _app.state.telnyx_event_sink = None
+            _app.state.telnyx_webhook_service = None
 
 
 app = FastAPI(title="Wavia Telephony Gateway", version="0.1.0", lifespan=lifespan)

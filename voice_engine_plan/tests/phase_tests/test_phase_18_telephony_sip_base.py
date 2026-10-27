@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from core.db.repos.telephony_repo import DidBinding, InMemoryTelephonyRepository
 from core.transport.caller_id import CallerIdContext
 from core.transport.direct_sip import DirectSIPTransport
 from core.transport.livekit_sip import LiveKitSIPTransport
@@ -87,18 +88,28 @@ def test_telnyx_signature_verification() -> None:
     )
 
 
-def test_sip_participant_resolver() -> None:
-    resolver = SIPParticipantResolver()
-    tenant_id, agent_id = resolver.resolve("+18005550199")
-    assert isinstance(tenant_id, UUID)
-    assert isinstance(agent_id, UUID)
-
+@pytest.mark.asyncio
+async def test_sip_participant_resolver() -> None:
     custom_tenant = uuid4()
     custom_agent = uuid4()
-    resolver.register_did("+15559998888", custom_tenant, custom_agent)
-    res_t, res_a = resolver.resolve("+15559998888")
-    assert res_t == custom_tenant
-    assert res_a == custom_agent
+    repository = InMemoryTelephonyRepository()
+    repository.add_did(
+        DidBinding(
+            did_id=uuid4(),
+            tenant_id=custom_tenant,
+            agent_id=custom_agent,
+            did_number="+15559998888",
+            carrier="telnyx",
+            active=True,
+            published_version_id=uuid4(),
+            published_version=1,
+        )
+    )
+    resolver = SIPParticipantResolver(repository)
+    binding = await resolver.resolve("+15559998888")
+    assert isinstance(binding.tenant_id, UUID)
+    assert binding.tenant_id == custom_tenant
+    assert binding.agent_id == custom_agent
 
 
 @pytest.mark.asyncio

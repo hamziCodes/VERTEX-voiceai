@@ -9,6 +9,10 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
+from core.db.repos.telephony_repo import (
+    InMemoryTelephonyRepository,
+    TelephonyAdmissionError,
+)
 from core.errors.alert_router import AlertRouter
 from core.errors.codes import UCVEErrorCode
 from core.errors.parse_uuid import parse_uuid
@@ -133,10 +137,11 @@ def test_telnyx_signature_fail_closed() -> None:
     assert verify_telnyx_signature(b"{}", None, "123", hmac_secret="sec") is False
 
 
-def test_did_binding_no_silent_default() -> None:
-    resolver = SIPParticipantResolver()
-    with pytest.raises(ValueError):
-        resolver.resolve("+15551234567")
+@pytest.mark.asyncio
+async def test_did_binding_no_silent_default() -> None:
+    resolver = SIPParticipantResolver(InMemoryTelephonyRepository())
+    with pytest.raises(TelephonyAdmissionError, match="did_not_found"):
+        await resolver.resolve("+15551234567")
 
 
 @pytest.mark.asyncio
