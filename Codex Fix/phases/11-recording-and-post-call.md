@@ -1,6 +1,6 @@
 # Phase 11 — Recording, Transcripts, and Post-Call Intelligence
 
-**Status:** IN PROGRESS — 11A–11C AND 11D-1 COMPLETE; NEXT 11D-2
+**Status:** COMPLETE — 11A–11D VERIFIED OFFLINE
 
 **Goal:** Persist honest call records and execute extraction, verification, human review, summaries, webhooks, retention, and erasure through durable jobs.
 
@@ -47,8 +47,8 @@ Alternatives rejected:
 - [x] Route configured/high-risk actions through human review before webhook/CRM dispatch.
 - [x] Implement real HTTP webhook delivery with HMAC, timeout/backoff/idempotency and stored attempt/result.
 - [x] Apply recursive privacy redaction; remove transcript previews/vendor response bodies from default logs.
-- [ ] Implement object deletion, legal hold, retention jobs and async-safe erasure across DB/storage/queues/audit. Failed partial erasure remains failed and retryable.
-- [ ] Test restart, duplicate finalize/job/webhook, extraction invalid JSON, missing review, storage failure, legal hold, and complete tenant erasure.
+- [x] Implement object deletion, legal hold, retention jobs and async-safe erasure across DB/storage/queues/audit. Failed partial erasure remains failed and retryable.
+- [x] Test restart, duplicate finalize/job/webhook, extraction invalid JSON, missing review, storage failure, legal hold, and complete tenant erasure.
 
 ## Implementation sequence
 
@@ -126,7 +126,16 @@ Each checkpoint begins with failing tests, ends with focused regression and stat
 
 #### 11D-2 — Durable deletion, erasure, legacy migration, and phase close
 
-**Next:** implement bounded recording object storage/deletion, durable legal-hold-aware retention jobs, restartable tenant erasure across every registered store, and the approved migration path away from the unused raw-secret webhook table. Run disposable PostgreSQL verification and the final Phase 11 close gate. No shared migration or destructive legacy-data operation is authorized by the offline test plan.
+**Completed:** implementation commit `a854b9e`; evidence: [`../evidence/phase-11d2/VERIFICATION.md`](../evidence/phase-11d2/VERIFICATION.md).
+
+- Region-bound local and S3-compatible recording stores enforce size, suffix, tenant/session key, bucket, prefix, and region boundaries.
+- PostgreSQL privacy jobs use leases, retries, stable request keys, per-object checkpoints, and a final database-deletion checkpoint.
+- Legal hold is checked before object deletion and again inside the database transaction.
+- Retention timestamps are captured during finalization; due calls can be enqueued without realtime-path deletion work.
+- Tenant erasure removes operational tenant data, preserves immutable audit evidence, and leaves a scrubbed soft-deleted tenant tombstone.
+- Quarantined legacy webhook rows are disabled, leased one at a time, encrypted into the tenant vault, replaced with a pending reviewed target, and cleared only after the encrypted write succeeds.
+- Disposable PostgreSQL verification proved migration idempotency, restart recovery, raw-secret removal, encrypted storage, erasure, audit preservation, and cross-tenant RLS.
+- No shared database migration or destructive production-data operation was run.
 
 ## Verification
 
