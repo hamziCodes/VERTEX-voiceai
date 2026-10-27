@@ -1,6 +1,6 @@
 # Phase 12 — Telnyx Telephony
 
-**Status:** IN PROGRESS — 12A COMPLETE; NEXT 12B
+**Status:** IN PROGRESS — 12A–12B COMPLETE; NEXT 12C
 
 **Goal:** Connect inbound and controlled single-call outbound Telnyx calls to the same production voice pipeline used by the web agent, with secure carrier admission, durable call identity, bidirectional media, low-latency interruption, exact metering, and deterministic cleanup.
 
@@ -130,6 +130,21 @@ py -3.12 -m pytest tests/telephony/test_call_lifecycle.py -q -p no:cacheprovider
 ```
 
 **Human intervention:** Hamzi may run the disposable PostgreSQL verification command. Shared database migration remains separately approved.
+
+**Completed:** implementation commit `4d8bf04`; evidence:
+[`../evidence/phase-12b/VERIFICATION.md`](../evidence/phase-12b/VERIFICATION.md).
+
+- Durable PostgreSQL admission now maps one Telnyx call-control ID to one internal
+  session, accepts each event ID once, and records reordered events without state
+  regression.
+- DID admission requires an active tenant-owned E.164 binding and the agent's
+  current immutable published version. Demo mappings and silent fallbacks are gone.
+- Commands have a separate durable idempotency ledger; no carrier command is
+  executed in this checkpoint.
+- Canonical RLS and composite ownership constraints cover DIDs, trunks, calls,
+  events, and commands. The disposable PostgreSQL proof passed and was removed.
+- No shared migration, carrier request, provider traffic, paid action, or live call
+  occurred.
 
 ### 12C — Bidirectional Telnyx media transport
 
