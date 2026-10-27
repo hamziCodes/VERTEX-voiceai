@@ -1,4 +1,4 @@
-"""Comprehensive End-to-End Test Suite for All System Endpoints, RAG, Telephony, and Providers."""
+"""End-to-end checks for system endpoints, RAG, telephony, and providers."""
 
 from __future__ import annotations
 
@@ -62,6 +62,7 @@ def worker_client() -> TestClient:
 # 1. CONTROL PLANE ENDPOINTS E2E
 # ==============================================================================
 
+
 def test_control_plane_health(cp_client: TestClient) -> None:
     res = cp_client.get("/health")
     assert res.status_code == 200
@@ -74,7 +75,11 @@ def test_control_plane_metrics(cp_client: TestClient) -> None:
     bearer = os.environ.get("UCVE_METRICS_BEARER", "dev-only-replace-me-metrics-bearer")
     res = cp_client.get("/metrics", headers={"Authorization": f"Bearer {bearer}"})
     assert res.status_code == 200
-    assert "process_cpu_seconds_total" in res.text or "ucve" in res.text or res.status_code == 200
+    assert (
+        "process_cpu_seconds_total" in res.text
+        or "ucve" in res.text
+        or res.status_code == 200
+    )
 
 
 def test_control_plane_openapi_docs(cp_client: TestClient) -> None:
@@ -122,6 +127,7 @@ def test_control_plane_knowledge_base_status(cp_client: TestClient) -> None:
 # 2. TELEPHONY GATEWAY ENDPOINTS E2E
 # ==============================================================================
 
+
 def test_telephony_gateway_health(tel_client: TestClient) -> None:
     res = tel_client.get("/health")
     assert res.status_code == 200
@@ -136,7 +142,9 @@ def test_telephony_gateway_root(tel_client: TestClient) -> None:
     assert res.json()["service"] == "telephony-gateway"
 
 
-def test_telephony_gateway_telnyx_webhook_normalization(tel_client: TestClient) -> None:
+def test_telephony_gateway_unsigned_webhook_is_unavailable(
+    tel_client: TestClient,
+) -> None:
     payload = {
         "data": {
             "event_type": "call.initiated",
@@ -155,23 +163,23 @@ def test_telephony_gateway_telnyx_webhook_normalization(tel_client: TestClient) 
             "record_type": "event",
         }
     }
-    res = tel_client.post("/v1/telephony/webhook/telnyx", json=payload)
-    assert res.status_code == 200
-    data = res.json()
-    assert data["status"] == "processed"
-    assert data["carrier"] == "telnyx"
-    assert data["event_type"] in ("call_started", "call.initiated")
-    assert "session_id" in data
+    legacy = tel_client.post("/v1/telephony/webhook/telnyx", json=payload)
+    canonical = tel_client.post("/v1/telephony/webhooks/telnyx", json=payload)
+
+    assert legacy.status_code == 404
+    assert canonical.status_code == 503
+    assert canonical.json()["detail"]["code"] == "telnyx_verifier_unavailable"
 
 
 def test_telephony_gateway_invalid_carrier_fails(tel_client: TestClient) -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         WebhookNormalizer.normalize("unsupported_carrier", {})
 
 
 # ==============================================================================
 # 3. RAG SUBSYSTEM E2E (PgVectorRetriever & Speculative RAG)
 # ==============================================================================
+
 
 @pytest.mark.asyncio
 async def test_rag_retriever_tenant_isolation() -> None:
@@ -198,12 +206,16 @@ async def test_rag_retriever_tenant_isolation() -> None:
     retriever.seed_chunks(tenant_b, [chunk_b])
 
     # Search for clinic hours under tenant A
-    res_a = await retriever.retrieve("What are the clinic opening hours?", tenant_a, top_k=3)
+    res_a = await retriever.retrieve(
+        "What are the clinic opening hours?", tenant_a, top_k=3
+    )
     assert len(res_a) > 0
     assert "clinic opening hours" in res_a[0].text
 
     # Search for financial data under tenant A (must return empty/zero tenant B chunks)
-    res_a_leak = await retriever.retrieve("Confidential financial revenue", tenant_a, top_k=3)
+    res_a_leak = await retriever.retrieve(
+        "Confidential financial revenue", tenant_a, top_k=3
+    )
     assert all(c.tenant_id == tenant_a for c in res_a_leak)
     assert not any("financial audit" in c.text for c in res_a_leak)
 
@@ -233,7 +245,9 @@ async def test_rag_speculative_retrieval_flow() -> None:
     assert len(spec_results) > 0
 
     # Reconcile on final STT
-    final_results = await speculative.reconcile("What is the latency of Wavia voice AI?", tenant)
+    final_results = await speculative.reconcile(
+        "What is the latency of Wavia voice AI?", tenant
+    )
     assert len(final_results) > 0
     assert "sub-450ms latency" in final_results[0].text
 
@@ -241,6 +255,7 @@ async def test_rag_speculative_retrieval_flow() -> None:
 # ==============================================================================
 # 4. PROVIDER COMBINATION MATRIX E2E
 # ==============================================================================
+
 
 def test_supported_provider_sets() -> None:
     assert "gladia" in SUPPORTED_STT
@@ -293,6 +308,7 @@ async def test_openai_llm_generate_stream() -> None:
 # 5. WORKER RAW WEBSOCKET HANDSHAKE & MINT TEST
 # ==============================================================================
 
+
 def test_worker_raw_health(worker_client: TestClient) -> None:
     res = worker_client.get("/health")
     assert res.status_code == 200
@@ -305,7 +321,9 @@ def test_worker_raw_json_version(worker_client: TestClient) -> None:
     assert res.json()["service"] == "ucve-worker-raw"
 
 
-def test_worker_raw_websocket_handshake_and_turn(cp_client: TestClient, worker_client: TestClient) -> None:
+def test_worker_raw_websocket_handshake_and_turn(
+    cp_client: TestClient, worker_client: TestClient
+) -> None:
     # 1. Mint session token via Control Plane
     mint_res = cp_client.post(
         "/mint",
@@ -317,7 +335,7 @@ def test_worker_raw_websocket_handshake_and_turn(cp_client: TestClient, worker_c
     assert mint_res.status_code == 200
     token = mint_res.json()["token"]
 
-    # 2. Connect using the published session plan (provider query overrides are demo-only).
+    # 2. Connect with the published plan; provider query overrides are demo-only.
     ws_path = f"/ws/audio?token={token}"
     with worker_client.websocket_connect(ws_path) as ws:
         ws.send_text(

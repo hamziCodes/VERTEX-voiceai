@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -13,7 +12,6 @@ from core.transport.direct_sip import DirectSIPTransport
 from core.transport.livekit_sip import LiveKitSIPTransport
 from telephony_gateway.resolver.sip_participant_resolver import SIPParticipantResolver
 from telephony_gateway.telnyx.signature import verify_telnyx_signature
-from telephony_gateway.telnyx.webhook import TelnyxWebhookHandler
 from telephony_gateway.transcoding.mulaw import mulaw_to_pcm16, pcm16_to_mulaw
 from telephony_gateway.transcoding.rebuffer import TelephonyRebuffer
 from worker_raw.telephony.inbound_handler import InboundTelephonySessionHandler
@@ -55,28 +53,38 @@ def test_telephony_rebuffer() -> None:
 
 
 def test_telnyx_signature_verification() -> None:
-    secret = "test-telnyx-secret-key-32-chars-long"
+    import base64
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    private_key = Ed25519PrivateKey.generate()
+    public_key = base64.b64encode(private_key.public_key().public_bytes_raw()).decode(
+        "ascii"
+    )
     payload = b'{"data":{"event_type":"call.initiated"}}'
     ts = "1700000000"
+    valid_sig = base64.b64encode(
+        private_key.sign(ts.encode("ascii") + b"|" + payload)
+    ).decode("ascii")
 
-    # Compute valid signature
-    import hmac
-
-    valid_sig = hmac.new(secret.encode("utf-8"), f"{ts}|".encode("utf-8") + payload, "sha256").hexdigest()
-
-    # Pass case (mock time drift for deterministic test)
-    import time
-
-    orig_time = time.time
-    time.time = lambda: 1700000010.0
-    try:
-        assert verify_telnyx_signature(payload, valid_sig, ts, secret) is True
-        # Fail closed case on invalid signature
-        assert verify_telnyx_signature(payload, "invalid_signature", ts, secret) is False
-        # Fail closed case on missing signature
-        assert verify_telnyx_signature(payload, None, ts, secret) is False
-    finally:
-        time.time = orig_time
+    assert (
+        verify_telnyx_signature(
+            payload, valid_sig, ts, public_key=public_key, now=1700000010.0
+        )
+        is True
+    )
+    assert (
+        verify_telnyx_signature(
+            payload, "invalid_signature", ts, public_key=public_key, now=1700000010.0
+        )
+        is False
+    )
+    assert (
+        verify_telnyx_signature(
+            payload, None, ts, public_key=public_key, now=1700000010.0
+        )
+        is False
+    )
 
 
 def test_sip_participant_resolver() -> None:
@@ -104,7 +112,7 @@ async def test_direct_sip_transport_sovereign_pipeline() -> None:
         on_audio_frame=lambda frame: received_frames.append(frame),
     )
 
-    # Ingest 2 x 160-byte μ-law frames (8kHz) -> resampled to 16kHz PCM16 (640 bytes each) = 1280 bytes
+    # Two 160-byte μ-law frames become 16 kHz PCM16 before rebuffering.
     mulaw_frame = b"\x7f" * 160
     await transport.receive_mulaw_frame(mulaw_frame)
     await transport.receive_mulaw_frame(mulaw_frame)
@@ -115,7 +123,9 @@ async def test_direct_sip_transport_sovereign_pipeline() -> None:
 
 
 def test_caller_id_propagation() -> None:
-    caller = CallerIdContext(from_number="+15550123456", to_number="+18005550199", carrier="telnyx")
+    caller = CallerIdContext(
+        from_number="+15550123456", to_number="+18005550199", carrier="telnyx"
+    )
     data = caller.to_dict()
     assert data["from_number"] == "+15550123456"
     assert data["to_number"] == "+18005550199"

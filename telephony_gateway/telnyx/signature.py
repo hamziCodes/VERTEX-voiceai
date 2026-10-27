@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import base64
-import hmac
+import binascii
 import time
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 
 def verify_telnyx_signature(
@@ -15,58 +18,32 @@ def verify_telnyx_signature(
     public_key: str | None = None,
     hmac_secret: str | None = None,
     max_drift_sec: float = 300.0,
+    now: float | None = None,
 ) -> bool:
-    """Validate incoming Telnyx webhook signature (fail-closed security)."""
-    pk = public_key
-    sec = hmac_secret if hmac_secret is not None else public_key_or_secret
+    """Verify Telnyx Ed25519 over ``timestamp + b"|" + raw_body``.
 
-    if not signature_header or not timestamp_header or not (pk or sec):
+    The legacy HMAC argument remains in the call signature only so old callers fail
+    closed during migration. It is never accepted by the carrier verifier.
+    """
+    del hmac_secret
+    pk = public_key or public_key_or_secret
+    if not signature_header or not timestamp_header or not pk:
         return False
-
     try:
-        ts = float(timestamp_header)
-        now = time.time()
-        if abs(now - ts) > max_drift_sec:
+        if not timestamp_header.isascii() or not timestamp_header.isdigit():
             return False
-    except ValueError:
+        timestamp = int(timestamp_header)
+        current = time.time() if now is None else now
+        if max_drift_sec <= 0 or abs(current - timestamp) > max_drift_sec:
+            return False
+        raw_key = base64.b64decode(pk, validate=True)
+        raw_signature = base64.b64decode(signature_header, validate=True)
+        if len(raw_key) != 32 or len(raw_signature) != 64:
+            return False
+        signed_payload = timestamp_header.encode("ascii") + b"|" + payload_body
+        Ed25519PublicKey.from_public_bytes(raw_key).verify(
+            raw_signature, signed_payload
+        )
+    except (ValueError, TypeError, binascii.Error, InvalidSignature):
         return False
-
-    signed_payload = f"{timestamp_header}|".encode("utf-8") + payload_body
-
-    # 1. Try Ed25519 if pk provided and valid base64 key of 32 bytes
-    if pk:
-        try:
-            raw_key = base64.b64decode(pk)
-            if len(raw_key) == 32:
-                from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
-                key_obj = Ed25519PublicKey.from_public_bytes(raw_key)
-                raw_sig = base64.b64decode(signature_header)
-                key_obj.verify(raw_sig, signed_payload)
-                return True
-        except Exception:
-            pass
-
-    # 2. HMAC-SHA256 verification if secret provided
-    if sec:
-        try:
-            computed_mac = hmac.new(
-                sec.encode("utf-8"),
-                signed_payload,
-                "sha256",
-            ).hexdigest()
-            if hmac.compare_digest(computed_mac, signature_header):
-                return True
-            computed_b64 = base64.b64encode(
-                hmac.new(
-                    sec.encode("utf-8"),
-                    signed_payload,
-                    "sha256",
-                ).digest()
-            ).decode("utf-8")
-            if hmac.compare_digest(computed_b64, signature_header):
-                return True
-        except Exception:
-            pass
-
-    return False
+    return True
