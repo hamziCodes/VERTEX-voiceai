@@ -393,6 +393,7 @@ class PostgresPostCallRepository:
                 "recording_s3_uri = %s, dual_channel = %s, recording_checksum = %s, "
                 "recording_channel_count = %s, recording_duration_seconds = %s, "
                 "recording_storage_region = %s, recording_error_code = %s, "
+                "purge_after = GREATEST(%s, started_at) + make_interval(days => %s), "
                 "finalized_at = NOW(), updated_at = NOW() "
                 "WHERE tenant_id = %s::uuid AND session_id = %s::uuid "
                 "AND ended_at IS NULL",
@@ -410,6 +411,8 @@ class PostgresPostCallRepository:
                     recording.duration_sec if recording else None,
                     recording.storage_region if recording else None,
                     recording_error_code,
+                    ended_at,
+                    policy.transcript_retention_days,
                     str(tenant_id),
                     str(session_id),
                 ),
