@@ -1,6 +1,6 @@
 # Phase 12 — Telnyx Telephony
 
-**Status:** IN PROGRESS — 12A–12B COMPLETE; NEXT 12C
+**Status:** IN PROGRESS — 12A–12C COMPLETE; NEXT 12D
 
 **Goal:** Connect inbound and controlled single-call outbound Telnyx calls to the same production voice pipeline used by the web agent, with secure carrier admission, durable call identity, bidirectional media, low-latency interruption, exact metering, and deterministic cleanup.
 
@@ -174,6 +174,24 @@ py -3.12 -m pytest tests/telephony/test_telnyx_media.py tests/audio -q -p no:cac
 **Required measurements:** sample count and duration conservation; packet cadence; bounded queue depth; no leaked tasks; deterministic loss/reorder behavior; ingress-to-worker and worker-to-egress overhead percentiles from fake-clock tests.
 
 **Human intervention:** none. Use generated PCM/μ-law and a local fake carrier only.
+
+**Completed:** implementation commit `61ea1e7`; evidence:
+[`../evidence/phase-12c/VERIFICATION.md`](../evidence/phase-12c/VERIFICATION.md).
+
+- Added an authenticated, exact-URL-signed, call-bound Telnyx media WebSocket
+  adapter with explicit connected/start/media/DTMF/mark/stop/error handling.
+- Inbound PCMU is decoded and statefully resampled to canonical 16 kHz PCM;
+  outbound PCM is statefully downsampled, encoded to PCMU, framed at 20 ms, and
+  paced through a bounded queue.
+- Reorder state is bounded for long calls. Duplicate, late, missing, oversized,
+  malformed, identity-mismatched, and unexpected-disconnect cases have explicit
+  fail-closed behavior and counters.
+- Playback clear, partial-frame discard, callback failure, carrier stop, and
+  disconnect cleanup close without leaked worker tasks or cross-call audio.
+- Generated audio and a local fake carrier proved sample conservation, metadata,
+  deterministic loss fill, queue bounds, packet cadence, and processing
+  percentiles. No Telnyx account, carrier endpoint, provider, or live call was
+  used.
 
 ### 12D — Full inbound pipeline, interruption, teardown, and post-call
 
