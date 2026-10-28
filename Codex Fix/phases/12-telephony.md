@@ -1,6 +1,6 @@
 # Phase 12 — Telnyx Telephony
 
-**Status:** IN PROGRESS — 12A–12C COMPLETE; NEXT 12D
+**Status:** IN PROGRESS — 12A–12D COMPLETE; NEXT 12E
 
 **Goal:** Connect inbound and controlled single-call outbound Telnyx calls to the same production voice pipeline used by the web agent, with secure carrier admission, durable call identity, bidirectional media, low-latency interruption, exact metering, and deterministic cleanup.
 
@@ -221,6 +221,26 @@ py -3.12 -m pytest tests/telephony/test_inbound_pipeline.py tests/e2e/scenarios/
 **Exit evidence:** a local fake-carrier conversation must prove nonempty audio traverses carrier ingress → VAD → STT → LLM → TTS → carrier egress; interruption works; duplicate hangups finalize once; all sockets, queues, provider sessions, and tasks close.
 
 **Human intervention:** none. No carrier/provider traffic is needed; use deterministic fake providers.
+
+**Completed:** implementation commit `49478ad`; evidence:
+[`../evidence/phase-12d/VERIFICATION.md`](../evidence/phase-12d/VERIFICATION.md).
+
+- Added one bounded session supervisor that owns authoritative-plan validation,
+  admission lease/heartbeat, provider binding and STT warmup, Telnyx media,
+  pipeline workers, published limits, usage, post-call finalization, and cleanup.
+- Generated PCMU traverses the real VAD → batch STT → streaming LLM → streaming
+  TTS pipeline and returns as nonempty paced PCMU through the fake carrier.
+- Carrier clear integrates with the existing generation-based barge-in contract;
+  canceling one turn leaves the worker alive and preserves the interrupting turn.
+- Carrier stop/disconnect, tool end, provider-pipeline failure, worker shutdown,
+  maximum duration, and maximum turns converge on one idempotent finalizer.
+- Telephony, agent, STT, and TTS usage are recorded once. One privacy-aware call
+  record and one post-call job are finalized, with caller identity stored in the
+  record but absent from ordinary logs.
+- The frozen Phase 18 DirectSIP codec/rebuffer constructor remains only for
+  offline compatibility tests. It does not enter the production Telnyx path.
+- No carrier/provider request, account access, live call, shared database, or
+  paid action occurred.
 
 ### 12E — Controlled single-call outbound and new-call resilience
 
