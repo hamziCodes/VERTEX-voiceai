@@ -208,6 +208,25 @@ class TelnyxMediaStreamAdapter:
         async with self._egress_lock:
             frames = self._egress_rebuffer.push(pcm16)
             generation = self._generation
+        await self._queue_egress_frames(frames, generation=generation)
+
+    async def flush_audio(self) -> None:
+        """Pad and send a final partial 20 ms frame, then wait for carrier egress."""
+        if self.state is not TelnyxMediaState.STARTED:
+            return
+        async with self._egress_lock:
+            final_frame = self._egress_rebuffer.flush(pad_byte=0, pad=True)
+            generation = self._generation
+        if final_frame:
+            await self._queue_egress_frames([final_frame], generation=generation)
+        await self._egress_queue.join()
+
+    async def wait_egress_drained(self) -> None:
+        await self._egress_queue.join()
+
+    async def _queue_egress_frames(
+        self, frames: list[bytes], *, generation: int
+    ) -> None:
         for frame in frames:
             queued = _QueuedEgress(
                 pcm16=frame,

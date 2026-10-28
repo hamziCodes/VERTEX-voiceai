@@ -223,6 +223,7 @@ class PipelineOrchestrator:
         self._post_call_turn_ordinal = 0
         self._post_call_config: PipelineSessionConfig | None = None
         self._session_started_at_utc: datetime | None = None
+        self._transport_usage_snapshot: dict[str, float] = {}
         self._runtime_resources_closed = False
         self._speech_buffer = bytearray()
         self._capturing_speech = False
@@ -486,6 +487,23 @@ class PipelineOrchestrator:
         self._ws_session = session
         if self._egress_sender_task is None or self._egress_sender_task.done():
             self._egress_sender_task = asyncio.create_task(self._egress_sender_loop())
+
+    def attach_transport_session(self, session: Any) -> None:
+        """Attach any realtime transport owner to the shared voice pipeline."""
+        self.attach_ws_session(session)
+
+    def set_end_conversation_hook(self, hook: Callable[[str, str], Any]) -> None:
+        self._end_conversation_hook = hook
+
+    def begin_session_timing(self) -> None:
+        """Start billable/runtime timing when transport media becomes ready."""
+        now = time.monotonic()
+        self._started_at = now
+        self._session_start_monotonic = now
+
+    def set_transport_usage(self, kind: str, quantity: float) -> None:
+        if quantity > 0:
+            self._transport_usage_snapshot[kind] = float(quantity)
 
     async def start_session_record(self, session_config: PipelineSessionConfig) -> None:
         """Create the durable call record once at session admission."""
@@ -2211,6 +2229,7 @@ class PipelineOrchestrator:
                     "agent_sec": duration,
                     "stt_sec": self._stt_audio_sec,
                     "tts_sec": self._tts_audio_sec,
+                    **self._transport_usage_snapshot,
                 },
                 recording_state=(
                     RecordingState.FAILED

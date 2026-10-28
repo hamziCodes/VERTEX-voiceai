@@ -55,5 +55,5 @@ async def wait_until(predicate: Callable[[], bool], *, attempts: int = 100) -> N
     for _ in range(attempts):
         if predicate():
             return
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.001)
     raise AssertionError("condition did not become true")
