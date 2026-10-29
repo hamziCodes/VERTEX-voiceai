@@ -1,16 +1,16 @@
-"""Provider-neutral Webhook Normalizer — Maps Telnyx & Twilio webhook payloads to TelephonyEvent."""
+"""Map Telnyx and Twilio webhooks to provider-neutral events."""
 
 from __future__ import annotations
 
 import time
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from telephony_gateway.base import TelephonyEvent, TelephonyEventType
 
 
 class WebhookNormalizer:
-    """Normalizes carrier-specific webhook events into unified TelephonyEvent instances."""
+    """Normalize carrier-specific payloads into unified telephony events."""
 
     @staticmethod
     def normalize(provider: str, payload_json: dict[str, Any]) -> TelephonyEvent:
@@ -40,7 +40,11 @@ class WebhookNormalizer:
                 from_number=from_num,
                 to_number=to_num,
                 timestamp_ms=int(time.time() * 1000),
-                payload={"carrier": "telnyx", "call_control_id": call_id_str, "raw": raw_event},
+                payload={
+                    "carrier": "telnyx",
+                    "call_control_id": call_id_str,
+                    "raw": raw_event,
+                },
             )
 
         elif prov == "twilio":
@@ -61,7 +65,11 @@ class WebhookNormalizer:
                 from_number=from_num,
                 to_number=to_num,
                 timestamp_ms=int(time.time() * 1000),
-                payload={"carrier": "twilio", "call_sid": call_sid, "raw_status": call_status},
+                payload={
+                    "carrier": "twilio",
+                    "call_sid": call_sid,
+                    "raw_status": call_status,
+                },
             )
 
         else:

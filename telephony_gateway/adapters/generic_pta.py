@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from telephony_gateway.base import BaseTelephonyTransport
 
 
 class GenericPTAAdapter(BaseTelephonyTransport):
-    """Adapter stub for generic enterprise Private Telephony Appliances (Cisco, Avaya, Asterisk)."""
+    """Stub for enterprise PTAs such as Cisco, Avaya, and Asterisk."""
 
     async def connect(self) -> bool:
         self.is_connected = True

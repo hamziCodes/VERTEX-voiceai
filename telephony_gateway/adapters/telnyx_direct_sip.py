@@ -14,8 +14,15 @@ class TelnyxDirectSIPAdapter(BaseTelephonyTransport):
 
     def __init__(self, session_id: UUID, from_number: str, to_number: str) -> None:
         super().__init__(session_id, from_number, to_number)
-        self.caller_id = CallerIdContext(from_number=from_number, to_number=to_number, carrier="telnyx")
-        self.sip_transport = DirectSIPTransport(session_id=session_id, caller_id=self.caller_id)
+        self.caller_id = CallerIdContext(
+            from_number=from_number,
+            to_number=to_number,
+            carrier="telnyx",
+        )
+        self.sip_transport = DirectSIPTransport(
+            session_id=session_id,
+            caller_id=self.caller_id,
+        )
 
     async def connect(self) -> bool:
         self.is_connected = True
