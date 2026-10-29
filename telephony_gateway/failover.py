@@ -40,7 +40,7 @@ class TelephonyFailoverRouter:
             await conn.execute("SET LOCAL app.current_tenant_id = $1", str(tenant_id))
             rows = await conn.fetch(
                 """
-                SELECT id, provider, priority, enabled, credentials_ref
+                SELECT id, provider, priority, enabled, credentials_ref, connection_id
                 FROM sip_trunks
                 WHERE tenant_id = $1 AND enabled = true
                 ORDER BY priority ASC
@@ -52,6 +52,7 @@ class TelephonyFailoverRouter:
                     trunk_id=r["id"],
                     provider=SIPTrunkProvider(r["provider"]),
                     credentials_ref=r["credentials_ref"],
+                    connection_id=r["connection_id"],
                     priority=r["priority"],
                     role=SIPTrunkRole.PRIMARY
                     if r["priority"] == 1
@@ -67,7 +68,10 @@ class TelephonyFailoverRouter:
             return cls(trunks)
 
     def get_active_trunk(
-        self, health_status_map: dict[str, bool] | None = None
+        self,
+        health_status_map: dict[str, bool] | None = None,
+        *,
+        for_new_call: bool = True,
     ) -> SIPTrunkConfig:
         """Return the highest priority healthy trunk.
 
@@ -76,10 +80,25 @@ class TelephonyFailoverRouter:
           - If primary fails and secondary exists & healthy, routes to secondary.
           - If no configured trunk is healthy, raise TrunkUnavailableError.
         """
+        if not for_new_call:
+            raise TrunkUnavailableError(
+                "Carrier failover is not supported for established calls."
+            )
+
         health_status = health_status_map or {}
+        saw_unknown = False
+        saw_unimplemented = False
+        saw_not_ready = False
 
         for trunk in self.trunks:
             if not trunk.enabled:
+                continue
+
+            if trunk.provider.value != "telnyx":
+                saw_unimplemented = True
+                continue
+            if not trunk.validate():
+                saw_not_ready = True
                 continue
 
             ref_id = str(trunk.trunk_id)
@@ -88,10 +107,23 @@ class TelephonyFailoverRouter:
             elif trunk.provider.value in health_status:
                 is_healthy = health_status[trunk.provider.value]
             else:
-                is_healthy = True
+                saw_unknown = True
+                continue
 
             if is_healthy:
                 return trunk
+
+        if saw_unknown:
+            raise TrunkUnavailableError("Telephony trunk readiness is unknown.")
+        if saw_not_ready:
+            raise TrunkUnavailableError(
+                "The configured Telnyx trunk is not ready for outbound calls."
+            )
+        if saw_unimplemented:
+            raise TrunkUnavailableError(
+                "The configured telephony provider is not implemented for "
+                "outbound calls."
+            )
 
         # If primary failed and no healthy trunk found
         primary = self.trunks[0]
