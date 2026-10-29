@@ -1,6 +1,6 @@
 # Phase 12 — Telnyx Telephony
 
-**Status:** IN PROGRESS — 12A–12E COMPLETE; NEXT 12F
+**Status:** COMPLETE — OFFLINE VERIFIED; LIVE CERTIFICATION DEFERRED TO PHASE 15
 
 **Goal:** Connect inbound and controlled single-call outbound Telnyx calls to the same production voice pipeline used by the web agent, with secure carrier admission, durable call identity, bidirectional media, low-latency interruption, exact metering, and deterministic cleanup.
 
@@ -303,6 +303,19 @@ git diff --check
 ```
 
 The disposable PostgreSQL test is run separately with the repository's isolated Phase 12 compose file and removed with volumes afterward.
+
+**Completed:** close-gate cleanup commit `df9c4d4`; evidence:
+[`../evidence/phase-12f/VERIFICATION.md`](../evidence/phase-12f/VERIFICATION.md).
+
+- Disposable PostgreSQL migration/RLS verification passed for both durable call
+  lifecycle and controlled outbound request state; the container and volumes
+  were removed afterward.
+- Final telephony/E2E verification passed 62 tests; the full forced-offline
+  repository passed 929 tests with 13 expected skips.
+- Exact Ruff, compile, plan-integrity, and diff gates passed.
+- Phase 12 is complete for offline implementation. No live carrier claim is
+  made; Phase 15 retains the explicit destination, spend, deployment, and live
+  call approval gate.
 
 **Live certification remains a manual gate:** one approved Telnyx sandbox/test call at a time, to an allowlisted number, under a named spend cap. Capture sanitized event ordering, connection timings, acoustic-end-to-first-audible latency, loss/jitter, barge-in, cleanup, and carrier billing correlation. Stop on the first unexplained retry, destination mismatch, signature failure, privacy leak, or duplicate charge.
 
