@@ -1,6 +1,6 @@
 # Phase 12 — Telnyx Telephony
 
-**Status:** IN PROGRESS — 12A–12D COMPLETE; NEXT 12E
+**Status:** IN PROGRESS — 12A–12E COMPLETE; NEXT 12F
 
 **Goal:** Connect inbound and controlled single-call outbound Telnyx calls to the same production voice pipeline used by the web agent, with secure carrier admission, durable call identity, bidirectional media, low-latency interruption, exact metering, and deterministic cleanup.
 
@@ -268,6 +268,22 @@ py -3.12 -m pytest tests/telephony/test_outbound_call.py tests/telephony/test_tr
 ```
 
 **Human intervention:** no call is placed here. Before any staging request, Hamzi must provide/confirm an allowed destination through local environment, maximum spend, permitted time window, and explicit live-run approval. Secret values never enter git or chat.
+
+**Completed:** implementation commits `1cb234c` and `038cd64`; evidence:
+[`../evidence/phase-12e/VERIFICATION.md`](../evidence/phase-12e/VERIFICATION.md).
+
+- Added authenticated, tenant-scoped one-call creation with explicit purpose,
+  consent, E.164 validation, destination allowlist, calling window, durable
+  idempotency, and concurrency/rate/spend/duration ceilings.
+- Added PostgreSQL RLS policy/request state, tenant-owned published-agent/DID/
+  trunk resolution, privacy erasure coverage, and a tenant BYOK Telnyx client.
+- `RUN_LIVE_TELEPHONY=1` is required before secret resolution or carrier I/O.
+  Ambiguous responses are persisted and never blindly redialed.
+- Unknown health, incomplete trunks, and unimplemented adapters fail closed;
+  failover is new-call-only. Campaign and batch surfaces remain unavailable.
+- Full forced-offline verification passed 929 tests with 13 expected skips.
+  The disposable PostgreSQL execution is retained as the first Phase 12F gate
+  because Docker Desktop was unavailable; no live call was placed.
 
 ### 12F — Offline close gate and separately approved live certification
 
