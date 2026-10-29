@@ -8,20 +8,24 @@ import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from inspect import isawaitable
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from control_plane.audit_routes import handle_get_audit_logs
 from control_plane.auth.api_keys_async import build_api_key_manager
-from control_plane.auth.hmac_mint import expected_signature
-from control_plane.auth.rate_limit import RateLimiter
 from control_plane.auth.context import AuthContext
 from control_plane.auth.dependencies import enforce_tenant_access, require_permission
+from control_plane.auth.hmac_mint import expected_signature
+from control_plane.auth.rate_limit import RateLimiter
 from control_plane.metrics import handle_metrics_request
+from control_plane.middleware.security_headers import SecurityHeadersMiddleware
+from control_plane.openapi_serve import register_self_hosted_docs
 from control_plane.routes.agents import router as agents_router
 from control_plane.routes.alerts import router as alerts_router
 from control_plane.routes.extraction_schemas import router as extraction_router
@@ -35,9 +39,9 @@ from control_plane.routes.session import (
 from control_plane.routes.telephony import router as telephony_router
 from control_plane.routes.usage import query_usage
 from control_plane.secrets_routes import handle_rotate_secret
-from core.runtime.env import get_ucve_env, require_production_secrets
 from core.db.async_pg import get_default_database
 from core.db.pg import use_memory_repos
+from core.runtime.env import get_ucve_env, require_production_secrets
 
 
 class QuickMintBody(BaseModel):
@@ -79,7 +83,7 @@ def _metrics_bearer() -> str:
 
 
 def _demo_mode() -> bool:
-    """Allow unauthenticated /mint for local demo console (development only by default)."""
+    """Allow unauthenticated /mint in local development demo mode."""
     if get_ucve_env() not in {"development", "dev", "test"}:
         return False
     explicit = os.environ.get("UCVE_DEMO_MODE")
@@ -119,14 +123,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.database = database
     app.state.db_pool = database.pool if database is not None else None
     app.state.redis = None
+    outbound_runtime = None
+    if database is not None and not hasattr(app.state, "outbound_call_service"):
+        from telephony_gateway.outbound_runtime import build_outbound_runtime
+
+        outbound_runtime = build_outbound_runtime(database)
+        if outbound_runtime is not None:
+            app.state.outbound_call_service = outbound_runtime.service
     try:
         yield
     finally:
+        if outbound_runtime is not None:
+            await outbound_runtime.close()
+            if (
+                getattr(app.state, "outbound_call_service", None)
+                is outbound_runtime.service
+            ):
+                delattr(app.state, "outbound_call_service")
         if database is not None:
             await database.close()
 
-
-from control_plane.middleware.security_headers import SecurityHeadersMiddleware
 
 app = FastAPI(
     title="Wavia Voice AI — Control Plane", version="0.1.0", lifespan=lifespan
@@ -148,12 +164,7 @@ app.include_router(kb_router, prefix="/v1")
 app.include_router(alerts_router, prefix="/v1")
 app.include_router(agents_router)
 
-from control_plane.openapi_serve import register_self_hosted_docs
-
 register_self_hosted_docs(app)
-
-from pathlib import Path
-from fastapi.staticfiles import StaticFiles
 
 web_client_path = Path(__file__).resolve().parent.parent / "examples" / "web-client"
 if web_client_path.exists():
@@ -288,7 +299,7 @@ async def quick_mint_session(
     request: Request,
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> JSONResponse:
-    """Developer helper endpoint for quick session minting (demo mode or API-key auth)."""
+    """Mint a demo session using local demo mode or API-key authentication."""
     api_key_mint = False
     if _demo_mode():
         api_key_mint = True

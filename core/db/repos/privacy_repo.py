@@ -20,6 +20,8 @@ class PostgresPrivacyJobRepository:
     """PostgreSQL job queue with durable per-object deletion checkpoints."""
 
     _ERASURE_ROOT_TABLES = (
+        "telephony_outbound_requests",
+        "telephony_outbound_policies",
         "post_call_webhook_targets",
         "webhook_targets",
         "knowledge_bases",

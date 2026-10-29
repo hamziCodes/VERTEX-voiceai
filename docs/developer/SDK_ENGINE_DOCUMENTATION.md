@@ -526,7 +526,7 @@ The agents router is mounted at `/v1/agents` (`control_plane/routes/agents.py:18
 
 | Method | Path | Purpose | Source |
 | --- | --- | --- | --- |
-| POST | `/v1/telephony/telnyx/webhook` | Telnyx webhook with signature headers | `control_plane/routes/telephony.py:12` |
+| POST | `/v1/telephony/calls` | Authenticated, policy-gated single outbound call | `control_plane/routes/telephony.py` |
 | POST | `/v1/extraction-schemas` | Create extraction schema | `control_plane/routes/extraction_schemas.py:12` |
 | GET | `/v1/knowledge-bases/status/{tenant_id}` | Placeholder KB status | `control_plane/routes/knowledge_bases.py:10` |
 | POST | `/v1/alerts/config/{tenant_id}` | Update alert email/webhook config | `control_plane/routes/alerts.py:10` |
@@ -541,7 +541,7 @@ The standalone telephony gateway exposes:
 | --- | --- | --- | --- |
 | GET | `/health` | Health check | `telephony_gateway/main.py:19` |
 | GET | `/` | Service metadata | `telephony_gateway/main.py:24` |
-| POST | `/v1/telephony/webhook/{carrier}` | Generic carrier webhook normalization | `telephony_gateway/main.py:29` |
+| POST | `/v1/telephony/webhooks/telnyx` | Exact-body Ed25519 Telnyx webhook admission | `telephony_gateway/main.py` |
 
 `WebhookNormalizer` supports Telnyx and Twilio. Telnyx event names are mapped into answered, ended, and DTMF categories using carrier payload fields (`telephony_gateway/webhook_normalizer.py:20`). Twilio maps `CallStatus` values such as `in-progress`, `answered`, `completed`, `canceled`, `failed`, and `busy` (`telephony_gateway/webhook_normalizer.py:46`).
 
@@ -549,9 +549,13 @@ Telnyx signature verification is fail-closed. It checks required headers, timest
 
 ### Trunks and SIP
 
-`SIPTrunkConfig` supports providers `telnyx`, `twilio`, `plivo`, `bandwidth`, and `generic_pta`; roles `primary`, `secondary`, and `sandbox`; priority; enabled state; region; and generated trunk ID (`telephony_gateway/trunk_config.py:10`). Trunk validation requires a credentials reference and enabled state (`telephony_gateway/trunk_config.py:41`).
+`SIPTrunkConfig` models known provider and role values, priority, enabled state,
+region, credential reference, connection ID, and trunk ID. Readiness requires an
+enabled supported adapter plus both the credential reference and connection ID.
 
-`TrunkFailoverRouter` sorts trunks by priority and chooses the first enabled healthy trunk. It can load enabled tenant trunks from DB with RLS and falls back to a default Telnyx trunk when none are configured (`telephony_gateway/failover.py:19`).
+`TrunkFailoverRouter` sorts tenant trunks by priority and fails closed unless a
+supported trunk is explicitly healthy and fully configured. Secondary selection
+is only for new calls; established calls are never migrated transparently.
 
 `DirectSIPTransport` performs inbound RTP mu-law decode, 8 kHz to 16 kHz resampling, and rebuffering into 512-sample canonical frames. Egress down-samples 16 kHz PCM16 to 8 kHz and encodes mu-law (`core/transport/direct_sip.py:19`).
 
@@ -559,7 +563,12 @@ Telnyx signature verification is fail-closed. It checks required headers, timest
 
 ### Outbound and Supervisor Features
 
-The repository does not contain a production outbound dialer, predictive campaign engine, answering-machine detection, supervisor whisper, or true carrier warm-transfer implementation. `docs/agent-studio/OUTBOUND_UI_DEFERRED.md:1` explicitly classifies outbound calling campaigns, predictive dialing algorithms, and batch contact ingestion as later work. A built-in `escalate_to_human` tool exists, but it is a tool-call result path, not a telephony transfer feature (`core/mcp/builtin_tools.py:48`).
+The repository contains a controlled, authenticated single-call Telnyx Dial path
+with tenant policy, durable idempotency, spend/rate/concurrency caps, and a
+separate live-call gate. It does not contain campaigns, batch contact ingestion,
+predictive dialing, answering-machine detection, supervisor whisper, or true
+carrier warm transfer. `escalate_to_human` remains a tool result, not a telephony
+transfer feature.
 
 ## 5. Post-Call Intelligence & Memory Engine
 
@@ -710,7 +719,7 @@ The example environment file documents these public configuration names. Values 
 | LLM providers | `PLATFORM_GROQ_API_KEY`, `GOOGLE_API_KEY`, `PLATFORM_OPENAI_API_KEY`, `PLATFORM_ANTHROPIC_API_KEY` | `.env.example:47` |
 | STT providers | `PLATFORM_GLADIA_API_KEY`, `PLATFORM_DEEPGRAM_API_KEY`, `PLATFORM_SONIOX_API_KEY` | `.env.example:62` |
 | TTS providers | `PLATFORM_UPLIFT_API_KEY`, `UPLIFT_VOICE_ID`, `PLATFORM_UPLIFT_VOICE_ID`, `UPLIFT_OUTPUT_FORMAT`, `PLATFORM_ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `PLATFORM_ELEVENLABS_VOICE_ID`, `ELEVENLABS_OUTPUT_FORMAT`, `ELEVENLABS_MODEL_ID`, `PLATFORM_CARTESIA_API_KEY`, `CARTESIA_API_KEY`, `CARTESIA_VOICE_ID`, `CARTESIA_MODEL_ID`, `CARTESIA_SAMPLE_RATE`, `CARTESIA_VERSION`, `PLATFORM_RIME_API_KEY`, `PLATFORM_FISH_AUDIO_API_KEY` | `.env.example:74` |
-| Telephony | `TELNYX_API_KEY`, `TELNYX_CONNECTION_ID`, `TELNYX_PUBLIC_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `UCVE_ENABLE_LIVEKIT`, `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | `.env.example:110` |
+| Telephony | `TELNYX_PUBLIC_KEY`, `UCVE_TELEPHONY_MEDIA_PUBLIC_URL`, `RUN_LIVE_TELEPHONY`, tenant BYOK credential/trunk records, optional LiveKit variables | `.env.example` |
 | KMS/cloud | `AWS_KMS_KEY_ID`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `GCP_KMS_KEY_NAME`, `GOOGLE_APPLICATION_CREDENTIALS` | `.env.example:130` |
 | Observability | `OTEL_EXPORTER_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `SENTRY_DSN` | `.env.example:142` |
 | Pipeline phases | `UCVE_PIPELINE_V2` | `.env.example:147` |

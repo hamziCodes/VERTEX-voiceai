@@ -23,6 +23,8 @@ class RBACManager:
             "extraction:write",
             "alert:read",
             "alert:write",
+            "telephony:read",
+            "telephony:write",
         },
         "tenant_editor": {
             "agent:read",
@@ -37,6 +39,7 @@ class RBACManager:
             "extraction:write",
             "alert:read",
             "alert:write",
+            "telephony:read",
         },
         "tenant_viewer": {
             "agent:read",

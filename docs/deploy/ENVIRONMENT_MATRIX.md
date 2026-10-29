@@ -20,6 +20,8 @@ Variable ownership across UCVE services (Phase 30).
 | `REDIS_URL` | ✓ | ✓ | ✓ | AUTH in prod |
 | `UCVE_RUNTIME_PROFILE` | — | ✓ | — | Phase 31 |
 | `UCVE_ENABLE_LIVEKIT` | ✓ | ✓ | optional | default `false` |
+| `UCVE_TELEPHONY_MEDIA_PUBLIC_URL` | ✓ | — | ✓ | exact public `wss://` Telnyx media endpoint |
+| `RUN_LIVE_TELEPHONY` | ✓ | — | — | default `0`; temporary approved live-call gate |
 | `OTEL_EXPORTER_ENABLED` | ✓ | ✓ | ✓ | Phase 07 |
 | `UCVE_TENANT_API_KEY` | vault ref | — | — | Phase 09 |
 | Secrets inline | **never** | **never** | **never** | vault/sealed secrets |
@@ -30,6 +32,7 @@ Variable ownership across UCVE services (Phase 30).
 - [ ] Phase 32 PENTEST_READINESS sign-off
 - [ ] ≥2 provider routes verified
 - [ ] No secrets in git or compose committed files
+- [ ] Live telephony gate remains `0` except during approved certification
 
 ## Related
 

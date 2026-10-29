@@ -189,9 +189,12 @@ Routes under `/v1/telephony/` (from `control_plane/routes/telephony.py`):
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/v1/telephony/trunks` | Configure SIP trunk |
-| `GET` | `/v1/telephony/trunks` | List configured trunks |
-| `POST` | `/v1/telephony/inbound` | Inbound call webhook |
+| `POST` | `/v1/telephony/calls` | Create one authenticated, policy-gated outbound call request |
+
+Telnyx sends signed carrier events to the telephony-gateway endpoint
+`POST /v1/telephony/webhooks/telnyx`. Trunk and outbound-policy management APIs
+are not exposed yet; operators provision those records through controlled
+administration.
 
 ---
 

@@ -100,7 +100,9 @@ These env vars map to `SpeakingPipelineConfig.from_env()` in `core/listening/con
 
 | Variable | Description |
 |---|---|
-| `TELNYX_API_KEY` | Telnyx API key (telephony_gateway) |
+| `TELNYX_API_KEY` | Legacy/platform key; controlled outbound uses tenant BYOK vault references |
+| `UCVE_TELEPHONY_MEDIA_PUBLIC_URL` | Exact public `wss://` Telnyx media endpoint |
+| `RUN_LIVE_TELEPHONY` | Explicit live-call gate; keep `0` by default |
 | `TELNYX_APP_ID` | Telnyx TeXML application ID |
 | `TELNYX_WEBHOOK_SECRET` | Webhook signature verification secret |
 

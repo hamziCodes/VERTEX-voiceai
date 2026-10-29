@@ -9,9 +9,16 @@ import pytest
 
 from telephony_gateway.adapters.telnyx_direct_sip import TelnyxDirectSIPAdapter
 from telephony_gateway.adapters.twilio_media_stream import TwilioMediaStreamTransport
-from telephony_gateway.base import BaseTelephonyTransport, TelephonyEvent, TelephonyEventType
+from telephony_gateway.base import (
+    BaseTelephonyTransport,
+    TelephonyEventType,
+)
 from telephony_gateway.failover import TelephonyFailoverRouter, TrunkUnavailableError
-from telephony_gateway.trunk_config import SIPTrunkConfig, SIPTrunkProvider, SIPTrunkRole
+from telephony_gateway.trunk_config import (
+    SIPTrunkConfig,
+    SIPTrunkProvider,
+    SIPTrunkRole,
+)
 from telephony_gateway.webhook_normalizer import WebhookNormalizer
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -31,6 +38,7 @@ def test_single_trunk_config_validates() -> None:
     trunk = SIPTrunkConfig(
         provider=SIPTrunkProvider.TELNYX,
         credentials_ref="vault://tenant1/telnyx",
+        connection_id="tenant1-telnyx-connection",
         role=SIPTrunkRole.PRIMARY,
     )
     assert trunk.validate() is True
@@ -48,17 +56,19 @@ def test_two_trunk_config_validates() -> None:
     t1 = SIPTrunkConfig(
         provider=SIPTrunkProvider.TELNYX,
         credentials_ref="vault://tenant1/telnyx",
+        connection_id="tenant1-primary",
         priority=1,
         role=SIPTrunkRole.PRIMARY,
     )
     t2 = SIPTrunkConfig(
-        provider=SIPTrunkProvider.TWILIO,
-        credentials_ref="vault://tenant1/twilio",
+        provider=SIPTrunkProvider.TELNYX,
+        credentials_ref="vault://tenant1/telnyx-secondary",
+        connection_id="tenant1-secondary",
         priority=2,
         role=SIPTrunkRole.SECONDARY,
     )
     router = TelephonyFailoverRouter([t1, t2])
-    active = router.get_active_trunk()
+    active = router.get_active_trunk({str(t1.trunk_id): True})
     assert active.provider == SIPTrunkProvider.TELNYX
 
 
@@ -66,27 +76,30 @@ def test_primary_failure_routes_to_secondary() -> None:
     t1 = SIPTrunkConfig(
         provider=SIPTrunkProvider.TELNYX,
         credentials_ref="vault://tenant1/telnyx",
+        connection_id="tenant1-primary",
         priority=1,
         role=SIPTrunkRole.PRIMARY,
     )
     t2 = SIPTrunkConfig(
-        provider=SIPTrunkProvider.TWILIO,
-        credentials_ref="vault://tenant1/twilio",
+        provider=SIPTrunkProvider.TELNYX,
+        credentials_ref="vault://tenant1/telnyx-secondary",
+        connection_id="tenant1-secondary",
         priority=2,
         role=SIPTrunkRole.SECONDARY,
     )
     router = TelephonyFailoverRouter([t1, t2])
 
     # Simulate Primary down
-    health_map = {str(t1.trunk_id): False, "telnyx": False}
+    health_map = {str(t1.trunk_id): False, str(t2.trunk_id): True}
     active = router.get_active_trunk(health_status_map=health_map)
-    assert active.provider == SIPTrunkProvider.TWILIO
+    assert active == t2
 
 
 def test_single_trunk_primary_failure_surfaces_error() -> None:
     t1 = SIPTrunkConfig(
         provider=SIPTrunkProvider.TELNYX,
         credentials_ref="vault://tenant1/telnyx",
+        connection_id="tenant1-primary",
         priority=1,
         role=SIPTrunkRole.PRIMARY,
     )
@@ -148,4 +161,8 @@ def test_webhook_normalizer_telnyx_and_twilio() -> None:
 def test_twilio_media_stream_transport_is_uninstantiable_stub() -> None:
     with pytest.raises(TypeError):
         # Uninstantiable because process_media_event is an abstractmethod
-        TwilioMediaStreamTransport(session_id=uuid4(), from_number="+15550123", to_number="+1800555")  # type: ignore
+        TwilioMediaStreamTransport(  # type: ignore[abstract]
+            session_id=uuid4(),
+            from_number="+15550123",
+            to_number="+1800555",
+        )

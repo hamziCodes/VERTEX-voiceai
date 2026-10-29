@@ -1,40 +1,61 @@
 # Telephony Integrator Guide
 
-Inbound PSTN integration (Phases 18–19). Outbound campaigns are **[LATER]**.
+Wavia currently supports signed Telnyx inbound admission and one controlled
+outbound call request. Bulk contact lists, campaigns, predictive dialing, and
+automatic mid-call carrier migration are intentionally unavailable and remain
+later work.
 
-## Inbound flow
+Inbound admission rejects a missing or invalid E.164 caller identity with the
+stable `CALLER_ID_MISSING` contract.
 
-```
-PSTN → SIP trunk → telephony-gateway → worker-raw pipeline (same as native WS)
-```
+## Executable endpoints
 
-1. **Provision DID** on primary trunk (Telnyx DirectSIP or secondary adapter).
-2. **Configure webhook URL** on carrier → `POST /v1/telephony/inbound` on control plane.
-3. **Verify signature** — HMAC validation on webhook (habiba pattern, Phase 18).
-4. **Normalize payload** — Phase 19 trunk adapter produces canonical `InboundCallEvent`.
+| Service | Method and path | Purpose |
+|---|---|---|
+| telephony-gateway | `POST /v1/telephony/webhooks/telnyx` | Exact-body, Ed25519-verified Telnyx event admission |
+| control-plane | `POST /v1/telephony/calls` | Authenticated, tenant-scoped single outbound call request |
 
-## Required fields
+The outbound route requires an API key with `telephony:write`. Tenant identity
+comes from authentication, never from the request body. The body contains one
+published `agent_id`, one E.164 destination, purpose, consent reference, and
+idempotency key.
 
-| Field | Description |
-|---|---|
-| `caller_id` | E.164 calling party number — required; missing returns `CALLER_ID_MISSING` |
-| `called_did` | Tenant-routed destination |
-| `trunk_id` | Primary or failover trunk identifier |
+## Required outbound setup
 
-## Media
+An operator must configure, per tenant:
 
-- μ-law ↔ PCM16 transcoding in telephony-gateway (Phase 18).
-- Sovereign path: no LiveKit required for call to connect.
+- one active tenant-owned Telnyx DID assigned to the published agent;
+- one enabled Telnyx trunk with a vault credential reference and connection ID;
+- an enabled outbound policy containing an exact destination allowlist, calling
+  timezone/window, concurrency/rate limits, daily spend cap, per-call spend
+  reservation, and maximum call duration;
+- `UCVE_TELEPHONY_MEDIA_PUBLIC_URL` as the exact public `wss://` media endpoint;
+- a tenant BYOK Telnyx API credential in the Wavia secret vault.
 
-## Outbound
+`TELNYX_API_KEY` and `TELNYX_CONNECTION_ID` are legacy/platform configuration
+names. The controlled outbound path resolves the tenant credential reference and
+connection ID from durable tenant configuration.
 
-**[LATER]** — outbound dialer and campaign APIs not in v1. Do not depend on outbound for production integrations.
+## Safety gate
+
+`RUN_LIVE_TELEPHONY=1` is required before credential resolution or any Telnyx
+Dial request. Keep it `0` by default. Enabling it does not bypass the destination
+allowlist, consent, time window, concurrency, rate, spend, or idempotency checks.
+
+Carrier timeouts after submission are recorded as ambiguous and are not blindly
+redialed. Reuse the same idempotency key to retrieve the existing request.
+
+## Certification boundary
+
+Offline tests use generated audio, fake providers, and a local fake carrier. A
+real call is not part of normal verification. Live certification requires
+Hamzi's separate approval, one approved allowlisted destination, an explicit
+spend cap and time window, and a deployed authenticated media endpoint.
 
 ## Failover
 
-See [../runbooks/RUNBOOK_TRUNK_FAILOVER.md](../runbooks/RUNBOOK_TRUNK_FAILOVER.md) for dual-trunk promotion (Phase 19).
+Failover selection applies only before a new call. An established call is ended
+and finalized honestly if its carrier path fails; Wavia does not claim transparent
+mid-call carrier migration.
 
-## Related
-
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — telephony error codes
-- [INTEGRATION_PATTERNS.md](INTEGRATION_PATTERNS.md)
+See [RUNBOOK_TRUNK_FAILOVER.md](../runbooks/RUNBOOK_TRUNK_FAILOVER.md).
