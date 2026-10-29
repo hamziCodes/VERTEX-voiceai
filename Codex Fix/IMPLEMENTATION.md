@@ -56,7 +56,7 @@ Phase 00 records the baseline. Hamzi approves any contractual SLO.
 | 10 | Business knowledge and safe actions | Guided common-file knowledge setup, agent-scoped retrieval, real lifecycle actions, and secure disabled-by-default MCP | 07,09 | RESOLVED — recommended safe scope approved; external systems remain disabled |
 | 11 | Post-call intelligence | Honest records/extraction/review/webhooks | 09 | Retention/residency/review |
 | 12 | Telephony | Offline carrier media lifecycle, staged live plan | 04,07,09 | Carrier/direction/live approval |
-| 13 | Self-serve Studio | Nontechnical onboarding to working publish | 05,06,08–12 | Product/UI scope |
+| 13 | Self-serve Studio | Secure guided onboarding, testing, publishing, channels, and operations | 05,06,08–12 | RESOLVED — Next.js BFF architecture approved; OIDC choice gates 13B and visual references gate 13G |
 | 14 | Operations and compliance | Real jobs/telemetry/readiness/erasure | 09–12 | Hosting/compliance claims |
 | 15 | Packaging and qualification | Installable artifacts and release evidence | all release phases | Publish/deploy/live certification |
 
