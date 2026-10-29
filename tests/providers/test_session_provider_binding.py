@@ -153,9 +153,5 @@ def test_production_disallows_synthetic_llm_reply(
     monkeypatch.setenv("RUN_MOCK_PROVIDERS", "0")
     monkeypatch.setenv("RUN_LIVE_PROVIDERS", "0")
 
-    orchestrator = PipelineOrchestrator(
-        provider_binder=ProviderSessionBinder(_Builder())
-    )
-
-    assert orchestrator._synthetic_provider_reply_allowed() is False
+    assert PipelineOrchestrator._synthetic_provider_reply_allowed() is False
     assert issubclass(NoProviderAvailableError, Exception)
