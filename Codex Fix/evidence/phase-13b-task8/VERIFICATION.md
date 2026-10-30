@@ -6,6 +6,8 @@ Branch: `wavia-fixv1-phase13b`
 
 Base: `72974c7273f4dfc40254ae8a9289942071b724c5`
 
+Implementation commits: `cea3606`, `165555b`
+
 ## Scope
 
 - Added the standalone Next.js 16 Studio scaffold.
