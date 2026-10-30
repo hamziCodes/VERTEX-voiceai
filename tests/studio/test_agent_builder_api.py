@@ -162,3 +162,23 @@ def test_validation_returns_stable_structured_issues(studio_api) -> None:
         set(issue) == {"code", "message", "field"}
         for issue in validation.json()["errors"]
     )
+
+
+def test_agent_creation_enforces_workspace_entitlement(studio_api) -> None:
+    client, _ = studio_api
+    tenant_id, _ = _create_workspace(client)
+
+    first = client.post(
+        "/v1/agents",
+        headers=_headers("owner-token", tenant_id),
+        json={"name": "First agent"},
+    )
+    second = client.post(
+        "/v1/agents",
+        headers=_headers("owner-token", tenant_id),
+        json={"name": "Second agent"},
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 409
+    assert second.json() == {"detail": "Agent limit reached for this workspace."}

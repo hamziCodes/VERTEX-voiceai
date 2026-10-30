@@ -16,6 +16,107 @@ export const currentIdentitySchema = z.object({
   memberships: z.array(workspaceSummarySchema),
 });
 
+export const onboardingProfileSchema = z.object({
+  business_name: z.string(),
+  use_case: z.string(),
+  languages: z.array(z.string()),
+  operating_region: z.string(),
+  timezone: z.string(),
+  escalation_email: z.string().nullable(),
+  completed_steps: z.array(z.string()),
+});
+
+export const onboardingResponseSchema = z.object({
+  profile: onboardingProfileSchema,
+  requirement_codes: z.array(z.string()),
+});
+
+export const entitlementsSchema = z.object({
+  max_agents: z.number().int().positive(),
+  max_concurrent_sessions: z.number().int().positive(),
+  max_knowledge_bytes: z.number().int().nonnegative(),
+  api_keys_allowed: z.number().int().nonnegative(),
+  telephony_enabled: z.boolean(),
+  advanced_providers_enabled: z.boolean(),
+  byok_enabled: z.boolean(),
+  allowed_retention_days: z.array(z.number().int().positive()),
+});
+
+const providerRouteSchema = z.object({
+  provider_id: z.string().min(1),
+  model: z.string().nullable().optional(),
+  enabled: z.boolean(),
+  priority: z.number().int(),
+});
+
+const providerChainSchema = z.object({
+  category: z.string().min(1),
+  language: z.string().min(1),
+  routes: z.array(providerRouteSchema),
+});
+
+const providersSchema = z.object({
+  stt: z.array(providerChainSchema),
+  llm: z.array(providerChainSchema),
+  tts: z.array(providerChainSchema),
+  s2s: z.array(providerChainSchema),
+});
+
+const personaSchema = z.object({
+  system_prompt: z.string(),
+  greeting: z.string().nullable(),
+  voice_id: z.string(),
+  voice_by_language: z.record(z.string(), z.string()).default({}),
+  persona_isolation: z.boolean(),
+});
+
+export const agentSchema = z.object({
+  agent_id: z.string().uuid(),
+  name: z.string().min(1),
+  description: z.string(),
+  languages: z.array(z.string()),
+  persona: personaSchema,
+  providers: providersSchema,
+  compliance: z.record(z.string(), z.unknown()),
+  draft_revision: z.number().int().positive(),
+  version: z.number().int().positive(),
+  published_at: z.string().nullable(),
+  is_published: z.boolean(),
+});
+
+export const agentListSchema = z.array(agentSchema);
+
+export const templateResponseSchema = z.object({
+  templates: z.array(z.object({
+    template_id: z.string().min(1),
+    config: z.object({
+      name: z.string().min(1),
+      description: z.string(),
+      languages: z.array(z.string()),
+      persona: personaSchema,
+      providers: providersSchema,
+      compliance: z.record(z.string(), z.unknown()),
+    }),
+  })),
+});
+
+export const validationResultSchema = z.object({
+  is_valid: z.boolean(),
+  errors: z.array(z.object({
+    code: z.string(),
+    message: z.string(),
+    field: z.string().nullable(),
+  })),
+});
+
+export const autosaveResponseSchema = z.object({ saved: z.boolean(), agent: agentSchema });
+export const publishResponseSchema = z.object({ version: z.number().int().positive(), config: agentSchema });
+export const agentVersionsSchema = z.array(z.object({
+  version: z.number().int().positive(),
+  published_by: z.string().nullable(),
+  published_at: z.string().nullable(),
+}));
+
 export function parseControlPlaneDto<T>(
   schema: z.ZodType<T>,
   payload: unknown,

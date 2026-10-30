@@ -3,6 +3,7 @@ import Link from "next/link";
 import { hasWorkspacePermission, type WorkspacePermission, type WorkspaceRole } from "@/auth/workspace";
 
 const ITEMS: ReadonlyArray<{ label: string; href: string; permission: WorkspacePermission }> = [
+  { label: "Setup", href: "/onboarding", permission: "onboarding:read" },
   { label: "Build", href: "/agents", permission: "agent:read" },
   { label: "Test", href: "/test", permission: "session:read" },
   { label: "Connect", href: "/channels", permission: "telephony:write" },

@@ -6,7 +6,7 @@ from inspect import isawaitable
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from control_plane.agents import (
@@ -70,10 +70,21 @@ async def _resolve(value: Any) -> Any:
 @router.post("", status_code=201)
 async def create_agent(
     body: CreateAgentBody,
+    request: Request,
     auth: AgentWriter,
 ) -> dict[str, Any]:
     """Create a new agent draft under the tenant."""
     tenant_uuid = UUID(auth.tenant_id)
+    studio_repository = getattr(request.app.state, "studio_repository", None)
+    if studio_repository is None:
+        raise HTTPException(status_code=503, detail="Studio repository unavailable.")
+    entitlements = await studio_repository.get_entitlements(tenant_uuid)
+    current_agents = await _resolve(_agent_repo.list_agents(tenant_uuid))
+    if len(current_agents) >= entitlements.max_agents:
+        raise HTTPException(
+            status_code=409,
+            detail="Agent limit reached for this workspace.",
+        )
     config_dict: dict[str, Any] = {
         "tenant_id": tenant_uuid,
         "name": body.name,

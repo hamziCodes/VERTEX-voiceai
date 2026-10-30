@@ -382,19 +382,19 @@ Verify client storage contains no tokens and built client chunks contain no serv
 - Consumes: onboarding, template, catalog, agent CRUD, validate, publish, version, and restore APIs.
 - Produces: debounced revision-aware draft actions with explicit saved/saving/conflict/error states.
 
-- [ ] **Step 1: Write failing component/journey tests**
+- [x] **Step 1: Write failing component/journey tests**
 
 Cover template and custom paths, resume, validation paths, entitlement limits, stale conflict recovery, publish checklist, immutable version history, restore-to-draft, viewer read-only state, and no raw UUID requirement.
 
-- [ ] **Step 2: Implement guided fields and readiness**
+- [x] **Step 2: Implement guided fields and readiness**
 
 Expose safe structured fields. Keep raw prompt/provider configuration in Advanced mode. Never infer a readiness success not returned by the API.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run unit tests, `agent-builder.spec.ts`, typecheck, lint, and production build.
 
-- [ ] **Step 4: Stop for 13C review and commit confirmation**
+- [x] **Step 4: Stop for 13C review and commit confirmation**
 
 ## Phase 13D — Knowledge and browser voice test
 
