@@ -314,19 +314,19 @@ Do not begin 13B until Hamzi approves the 13A evidence and explicitly authorizes
 - Produces: safe Zod DTO parsing at the FastAPI boundary.
 - Requires: server requests have timeout, request ID, selected tenant, and sanitized error mapping.
 
-- [ ] **Step 1: Lock supported dependencies**
+- [x] **Step 1: Lock supported dependencies**
 
 Install latest stable Next.js 16.x security patch, React 19 compatible patch, TypeScript, Zod, Vitest, Testing Library, Playwright, and axe-core. Record `npm audit --omit=dev` results; do not accept an unresolved high/critical production vulnerability.
 
-- [ ] **Step 2: Write failing DAL boundary tests**
+- [x] **Step 2: Write failing DAL boundary tests**
 
 Test missing session, timeout, invalid DTO, upstream 401/403/409/422/429/503 mapping, request-ID preservation, header allowlist, and secret-free errors.
 
-- [ ] **Step 3: Implement the minimal shell and DAL**
+- [x] **Step 3: Implement the minimal shell and DAL**
 
 Use Server Components by default. Client Components receive safe DTOs only. Do not make Server Components call the app's own route handlers.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `npm.cmd --prefix studio run typecheck`, `npm.cmd --prefix studio run lint`, and `npm.cmd --prefix studio run test`.
 
