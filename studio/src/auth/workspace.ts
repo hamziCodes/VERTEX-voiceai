@@ -21,12 +21,13 @@ export type WorkspacePermission =
   | "agent:read" | "agent:write" | "session:mint" | "session:read"
   | "usage:read" | "member:read" | "member:write" | "audit:read"
   | "telephony:read" | "telephony:write" | "conversation:read"
-  | "onboarding:read" | "onboarding:write" | "secret:rotate";
+  | "onboarding:read" | "onboarding:write" | "knowledge:read" | "knowledge:write"
+  | "secret:rotate";
 
 const ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, ReadonlySet<string>>> = {
-  tenant_admin: new Set(["agent:read", "agent:write", "session:mint", "session:read", "usage:read", "member:read", "member:write", "audit:read", "telephony:read", "telephony:write", "conversation:read", "onboarding:read", "onboarding:write", "secret:rotate"]),
-  tenant_editor: new Set(["agent:read", "agent:write", "session:mint", "session:read", "usage:read", "member:read", "audit:read", "telephony:read", "conversation:read", "onboarding:read", "onboarding:write"]),
-  tenant_viewer: new Set(["agent:read", "session:read", "usage:read", "conversation:read", "onboarding:read"]),
+  tenant_admin: new Set(["agent:read", "agent:write", "session:mint", "session:read", "usage:read", "member:read", "member:write", "audit:read", "telephony:read", "telephony:write", "conversation:read", "onboarding:read", "onboarding:write", "knowledge:read", "knowledge:write", "secret:rotate"]),
+  tenant_editor: new Set(["agent:read", "agent:write", "session:mint", "session:read", "usage:read", "member:read", "audit:read", "telephony:read", "conversation:read", "onboarding:read", "onboarding:write", "knowledge:read", "knowledge:write"]),
+  tenant_viewer: new Set(["agent:read", "session:read", "usage:read", "conversation:read", "onboarding:read", "knowledge:read"]),
   compliance_admin: new Set(["audit:read", "conversation:read"]),
 };
 

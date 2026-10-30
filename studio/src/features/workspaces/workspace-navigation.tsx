@@ -5,6 +5,7 @@ import { hasWorkspacePermission, type WorkspacePermission, type WorkspaceRole } 
 const ITEMS: ReadonlyArray<{ label: string; href: string; permission: WorkspacePermission }> = [
   { label: "Setup", href: "/onboarding", permission: "onboarding:read" },
   { label: "Build", href: "/agents", permission: "agent:read" },
+  { label: "Knowledge", href: "/knowledge", permission: "knowledge:read" },
   { label: "Test", href: "/test", permission: "session:read" },
   { label: "Connect", href: "/channels", permission: "telephony:write" },
   { label: "Operate", href: "/operations", permission: "usage:read" },

@@ -195,6 +195,34 @@ describe("controlPlaneRequest", () => {
     expect(headers.has("cookie")).toBe(false);
   });
 
+  it("forwards multipart bodies without overriding the generated boundary", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(validPayload));
+    const form = new FormData();
+    form.set("source", new File(["refund policy"], "refunds.txt", { type: "text/plain" }));
+
+    await expect(controlPlaneRequest("/v1/knowledge-bases/example/sources", requestOptions({ method: "POST", body: form }))).resolves.toEqual(validPayload);
+
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(init?.body).toBe(form);
+    expect(new Headers(init?.headers).has("content-type")).toBe(false);
+  });
+
+  it("rejects ambiguous JSON and raw-body requests before any network call", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await expect(controlPlaneRequest("/v1/knowledge-bases", requestOptions({ method: "POST", json: { name: "Policies" }, body: new FormData() }))).rejects.toMatchObject({
+      code: "invalid_request",
+      status: 400,
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("parses a successful empty response through an explicit null schema", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
+
+    await expect(controlPlaneRequest("/v1/knowledge-bases/example/sources/example", requestOptions({ method: "DELETE", schema: z.null() }))).resolves.toBeNull();
+  });
+
   it("never exposes tokens or raw upstream bodies in errors", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       Response.json(

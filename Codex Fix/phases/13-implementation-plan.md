@@ -410,15 +410,15 @@ Run unit tests, `agent-builder.spec.ts`, typecheck, lint, and production build.
 - Consumes: Phase 10 create/list/upload/FAQ/source/retry/delete/preview/activate/bind APIs.
 - Produces: bounded uploads, honest source state, citation preview, and published binding result.
 
-- [ ] **Step 1: Write failing state tests**
+- [x] **Step 1: Write failing state tests**
 
 Cover unsupported/oversized file, mixed upload states, retryable/permanent failure, deletion, empty retrieval, citations, activation blocked by unfinished sources, and cross-tenant denial.
 
-- [ ] **Step 2: Implement the vertical feature**
+- [x] **Step 2: Implement the vertical feature**
 
 Do not copy the engineering console DOM. Reuse the durable API/state contract and customer language.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run unit tests, `knowledge.spec.ts`, typecheck, lint, and build.
 

@@ -117,6 +117,53 @@ export const agentVersionsSchema = z.array(z.object({
   published_at: z.string().nullable(),
 }));
 
+export const knowledgeBaseSchema = z.object({
+  knowledge_base_id: z.string().uuid(),
+  name: z.string().min(1),
+  status: z.enum(["draft", "processing", "ready", "active", "failed", "deleting"]),
+  active_revision: z.number().int().nonnegative(),
+  source_count: z.number().int().nonnegative(),
+  ready_source_count: z.number().int().nonnegative(),
+  total_chunks: z.number().int().nonnegative(),
+});
+
+export const knowledgeBaseListSchema = z.array(knowledgeBaseSchema);
+
+export const knowledgeSourceSchema = z.object({
+  source_id: z.string().uuid(),
+  knowledge_base_id: z.string().uuid(),
+  source_type: z.string(),
+  display_name: z.string().min(1),
+  media_type: z.string(),
+  byte_count: z.number().int().nonnegative(),
+  revision: z.number().int().positive(),
+  status: z.enum(["uploaded", "queued", "parsing", "chunking", "embedding", "ready", "failed", "deleting"]),
+  chunk_count: z.number().int().nonnegative(),
+  error_code: z.string().nullable(),
+  error_message: z.string().nullable(),
+});
+
+export const knowledgeSourceListSchema = z.array(knowledgeSourceSchema);
+
+export const knowledgePreviewSchema = z.object({
+  results: z.array(z.object({
+    source_id: z.string().uuid(),
+    text: z.string(),
+    citation: z.record(z.string(), z.unknown()),
+    score: z.number().nullable(),
+  })),
+});
+
+export const knowledgeRetrySchema = z.object({
+  source_id: z.string().uuid(),
+  status: z.literal("queued"),
+});
+
+export const knowledgeBindingSchema = z.object({
+  agent_config_version: z.number().int().positive(),
+  knowledge_revision: z.number().int().positive(),
+});
+
 export function parseControlPlaneDto<T>(
   schema: z.ZodType<T>,
   payload: unknown,

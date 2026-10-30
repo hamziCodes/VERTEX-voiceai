@@ -20,6 +20,8 @@ from control_plane.agents.repo import (
 )
 from control_plane.auth.context import AuthContext
 from control_plane.auth.dependencies import require_permission
+from control_plane.studio.models import TenantEntitlements
+from control_plane.studio.repository import WorkspaceNotFoundError
 
 router = APIRouter(prefix="/v1/agents", tags=["agents"])
 AgentReader = Annotated[AuthContext, Depends(require_permission("agent:read"))]
@@ -78,7 +80,12 @@ async def create_agent(
     studio_repository = getattr(request.app.state, "studio_repository", None)
     if studio_repository is None:
         raise HTTPException(status_code=503, detail="Studio repository unavailable.")
-    entitlements = await studio_repository.get_entitlements(tenant_uuid)
+    try:
+        entitlements = await studio_repository.get_entitlements(tenant_uuid)
+    except WorkspaceNotFoundError:
+        # API-key/SDK tenants created before Studio may not have a Studio row yet.
+        # Keep the default restrictive limit instead of bypassing enforcement.
+        entitlements = TenantEntitlements(tenant_id=tenant_uuid)
     current_agents = await _resolve(_agent_repo.list_agents(tenant_uuid))
     if len(current_agents) >= entitlements.max_agents:
         raise HTTPException(

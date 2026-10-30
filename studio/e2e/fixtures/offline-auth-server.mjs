@@ -30,6 +30,10 @@ let onboarding;
 let agents;
 let versions;
 let nextAgent;
+let knowledgeBases;
+let knowledgeSources;
+let nextKnowledgeBase;
+let nextKnowledgeSource;
 
 function resetState() {
   onboarding = new Map([[workspaceA, structuredClone(initialOnboarding)], [workspaceB, structuredClone(initialOnboarding)]]);
@@ -37,6 +41,10 @@ function resetState() {
   agents = new Map([[workspaceA, []], [workspaceB, [viewerAgent]]]);
   versions = new Map();
   nextAgent = 1;
+  knowledgeBases = new Map([[workspaceA, []], [workspaceB, []]]);
+  knowledgeSources = new Map();
+  nextKnowledgeBase = 1;
+  nextKnowledgeSource = 1;
 }
 
 resetState();
@@ -82,10 +90,15 @@ function tenantFromRequest(request) {
   return request.headers["x-tenant-id"];
 }
 
-async function bodyFromRequest(request) {
+async function rawBodyFromRequest(request) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
-  return chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {};
+  return Buffer.concat(chunks);
+}
+
+async function bodyFromRequest(request) {
+  const content = await rawBodyFromRequest(request);
+  return content.length ? JSON.parse(content.toString("utf8")) : {};
 }
 
 function agentId() {
@@ -97,11 +110,60 @@ function findAgent(tenant, id) {
   return (agents.get(tenant) ?? []).find((agent) => agent.agent_id === id);
 }
 
+function fixtureId(prefix, value) {
+  return `${prefix}${String(value).padStart(7, "0")}-1111-4111-8111-111111111111`;
+}
+
+function findKnowledgeBase(tenant, id) {
+  return (knowledgeBases.get(tenant) ?? []).find((base) => base.knowledge_base_id === id);
+}
+
+function sourcesFor(id) {
+  return knowledgeSources.get(id) ?? [];
+}
+
+function refreshKnowledgeBase(base) {
+  const sources = sourcesFor(base.knowledge_base_id);
+  base.source_count = sources.length;
+  base.ready_source_count = sources.filter((source) => source.status === "ready").length;
+  base.total_chunks = sources.reduce((total, source) => total + source.chunk_count, 0);
+  if (base.status !== "active") base.status = sources.length > 0 && base.ready_source_count === sources.length ? "ready" : sources.length > 0 ? "processing" : "draft";
+}
+
+function newSource(baseId, displayName, sourceType, mediaType, byteCount) {
+  return {
+    source_id: fixtureId("6", nextKnowledgeSource++),
+    knowledge_base_id: baseId,
+    source_type: sourceType,
+    display_name: displayName,
+    media_type: mediaType,
+    byte_count: byteCount,
+    revision: 1,
+    status: "queued",
+    chunk_count: 0,
+    error_code: null,
+    error_message: null,
+  };
+}
+
 async function handle(request, response) {
   const url = new URL(request.url ?? "/", issuer);
   if (url.pathname === "/health") return json(response, 200, { ok: true });
   if (url.pathname === "/reset" && request.method === "POST") {
     resetState();
+    return json(response, 200, { ok: true });
+  }
+  if (url.pathname === "/advance-knowledge" && request.method === "POST") {
+    for (const [baseId, sources] of knowledgeSources.entries()) {
+      for (const source of sources) {
+        source.status = "ready";
+        source.chunk_count = 1;
+      }
+      for (const bases of knowledgeBases.values()) {
+        const base = bases.find((item) => item.knowledge_base_id === baseId);
+        if (base) refreshKnowledgeBase(base);
+      }
+    }
     return json(response, 200, { ok: true });
   }
   if (url.pathname === "/token") {
@@ -163,6 +225,71 @@ async function handle(request, response) {
     const created = { ...structuredClone(templateConfig), ...input, agent_id: agentId(), draft_revision: 1, version: 1, published_at: null, is_published: false };
     agents.get(tenant).push(created);
     return json(response, 201, created);
+  }
+  if (url.pathname === "/v1/knowledge-bases" && request.method === "GET") return json(response, 200, knowledgeBases.get(tenant));
+  if (url.pathname === "/v1/knowledge-bases" && request.method === "POST") {
+    const input = await bodyFromRequest(request);
+    const created = { knowledge_base_id: fixtureId("5", nextKnowledgeBase++), name: input.name, status: "draft", active_revision: 0, source_count: 0, ready_source_count: 0, total_chunks: 0 };
+    knowledgeBases.get(tenant).push(created);
+    knowledgeSources.set(created.knowledge_base_id, []);
+    return json(response, 201, created);
+  }
+  const knowledgeMatch = url.pathname.match(/^\/v1\/knowledge-bases\/([0-9a-f-]+)(.*)$/i);
+  if (knowledgeMatch) {
+    const [, baseId, tail] = knowledgeMatch;
+    const base = findKnowledgeBase(tenant, baseId);
+    if (!base) return json(response, 404, { detail: "Knowledge base not found." });
+    if (!tail && request.method === "GET") return json(response, 200, base);
+    if (tail === "/sources" && request.method === "GET") return json(response, 200, sourcesFor(baseId));
+    if (tail === "/sources" && request.method === "POST") {
+      const content = await rawBodyFromRequest(request);
+      const text = content.toString("utf8");
+      const filename = text.match(/filename="([^"]+)"/)?.[1] ?? "upload.txt";
+      const source = newSource(baseId, filename, filename.toLowerCase().endsWith(".txt") ? "txt" : "document", request.headers["content-type"] ?? "application/octet-stream", content.length);
+      sourcesFor(baseId).push(source);
+      refreshKnowledgeBase(base);
+      return json(response, 202, source);
+    }
+    if (tail === "/faqs" && request.method === "POST") {
+      const input = await bodyFromRequest(request);
+      const source = newSource(baseId, `${input.name}.json`, "faq", "application/json", JSON.stringify(input.items).length);
+      sourcesFor(baseId).push(source);
+      refreshKnowledgeBase(base);
+      return json(response, 202, source);
+    }
+    if (tail === "/preview-query" && request.method === "POST") {
+      const input = await bodyFromRequest(request);
+      return json(response, 200, { knowledge_base_id: baseId, revision: base.active_revision || 1, query: input.query, results: [{ source_id: sourcesFor(baseId)[0]?.source_id, revision: 1, ordinal: 1, text: "Refunds are available within 30 days.", citation: { heading: "Refund policy", line_start: 1 }, score: 0.91 }] });
+    }
+    if (tail === "/activate" && request.method === "POST") {
+      const sources = sourcesFor(baseId);
+      if (sources.length === 0 || sources.some((source) => source.status !== "ready")) return json(response, 409, { detail: "Knowledge is not ready." });
+      Object.assign(base, { status: "active", active_revision: base.active_revision + 1 });
+      refreshKnowledgeBase(base);
+      return json(response, 200, base);
+    }
+    const sourceMatch = tail.match(/^\/sources\/([0-9a-f-]+)(?:\/(retry))?$/i);
+    if (sourceMatch) {
+      const sourceId = sourceMatch[1];
+      const source = sourcesFor(baseId).find((item) => item.source_id === sourceId);
+      if (!source) return json(response, 404, { detail: "Source not found." });
+      if (sourceMatch[2] === "retry" && request.method === "POST") {
+        Object.assign(source, { status: "queued", error_code: null, error_message: null });
+        return json(response, 200, { job_id: fixtureId("7", 1), source_id: sourceId, status: "queued", attempt: 2 });
+      }
+      if (!sourceMatch[2] && request.method === "DELETE") {
+        knowledgeSources.set(baseId, sourcesFor(baseId).filter((item) => item.source_id !== sourceId));
+        refreshKnowledgeBase(base);
+        response.writeHead(204);
+        return response.end();
+      }
+    }
+    const bindMatch = tail.match(/^\/bind\/([0-9a-f-]+)$/i);
+    if (bindMatch && request.method === "POST") {
+      const agent = findAgent(tenant, bindMatch[1]);
+      if (!agent) return json(response, 404, { detail: "Agent not found." });
+      return json(response, 200, { binding_id: fixtureId("8", 1), agent_id: agent.agent_id, agent_config_version: 1, knowledge_base_id: baseId, knowledge_revision: base.active_revision });
+    }
   }
   const match = url.pathname.match(/^\/v1\/agents\/([0-9a-f-]+)(.*)$/i);
   if (match) {

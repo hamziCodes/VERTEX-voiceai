@@ -68,6 +68,7 @@ export interface ControlPlaneRequestOptions<T> {
   selectedTenantId: string | null;
   method?: "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
   headers?: HeadersInit;
+  body?: BodyInit;
   json?: unknown;
   requestId?: string;
   scope?: "identity" | "tenant";
@@ -105,6 +106,12 @@ function requireRequestContext<T>(options: ControlPlaneRequestOptions<T>): void 
   if (options.scope !== "identity" && !options.selectedTenantId) {
     throw new ControlPlaneError(
       { code: "workspace_required", message: "Select a workspace to continue." },
+      400,
+    );
+  }
+  if (options.body !== undefined && options.json !== undefined) {
+    throw new ControlPlaneError(
+      { code: "invalid_request", message: "Choose either a JSON or raw request body." },
       400,
     );
   }
@@ -175,7 +182,7 @@ export async function controlPlaneRequest<T>(
     response = await fetch(url, {
       method: options.method ?? "GET",
       headers,
-      body: options.json === undefined ? undefined : JSON.stringify(options.json),
+      body: options.json === undefined ? options.body : JSON.stringify(options.json),
       cache: "no-store",
       signal: controller.signal,
     });
@@ -202,7 +209,7 @@ export async function controlPlaneRequest<T>(
 
   let payload: unknown;
   try {
-    payload = await response.json();
+    payload = response.status === 204 ? null : await response.json();
     return parseControlPlaneDto(options.schema, payload);
   } catch (error) {
     if (error instanceof ControlPlaneError) {
