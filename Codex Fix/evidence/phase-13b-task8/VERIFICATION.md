@@ -11,23 +11,24 @@ Base: `72974c7273f4dfc40254ae8a9289942071b724c5`
 - Added the standalone Next.js 16 Studio scaffold.
 - Added a server-only FastAPI control-plane client with a strict outbound-header allowlist.
 - Added safe Zod DTO parsing and sanitized, typed upstream error mapping.
-- Added request timeout, request-ID propagation, selected-workspace enforcement, and same-origin path enforcement.
+- Added request timeout, request-ID propagation, secure tenant scope by default, explicit tenantless identity bootstrap, and same-origin path enforcement.
 - Did not add OIDC integration, live providers, carrier traffic, calls, deployment, or paid activity.
 
 ## Test-first evidence
 
-The initial DAL run failed because `@/data/control-plane` did not exist. After the minimal implementation, 12 boundary tests passed. A security mutation check then added absolute/protocol-relative/relative-path credential-exfiltration cases; all three failed before same-origin path enforcement and passed afterward.
+The initial DAL run failed because `@/data/control-plane` did not exist. After the minimal implementation, 12 boundary tests passed. A security mutation check then added absolute/protocol-relative/relative-path credential-exfiltration cases; all three failed before same-origin path enforcement and passed afterward. Final review found that `/v1/me` must bootstrap before workspace selection; the identity-scope test failed against the first commit and passed after adding an explicit tenantless identity scope while retaining tenant scope as the default.
 
 Final focused result:
 
 ```text
 Test Files  1 passed (1)
-Tests       15 passed (15)
+Tests       16 passed (16)
 ```
 
 Covered behavior:
 
 - missing server session and missing selected workspace fail before network access;
+- explicitly identity-scoped bootstrap calls work without sending `X-Tenant-Id`;
 - stalled upstream requests time out;
 - invalid success payloads fail safe at the Zod boundary;
 - upstream 401, 403, 409, 422, 429, and 503 responses map to sanitized errors;

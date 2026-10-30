@@ -66,6 +66,24 @@ describe("controlPlaneRequest", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("allows an explicit identity-scoped bootstrap request without a workspace", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(Response.json(validPayload));
+
+    await expect(
+      controlPlaneRequest(
+        "/v1/me",
+        requestOptions({ selectedTenantId: null, scope: "identity" }),
+      ),
+    ).resolves.toEqual(validPayload);
+
+    const [, init] = fetchSpy.mock.calls[0];
+    const headers = new Headers(init?.headers);
+    expect(headers.get("authorization")).toBe("Bearer test-server-token");
+    expect(headers.has("x-tenant-id")).toBe(false);
+  });
+
   it.each(["https://attacker.test/v1/me", "//attacker.test/v1/me", "v1/me"])(
     "refuses non-local control-plane path %s before credentials can leave",
     async (path) => {

@@ -70,6 +70,7 @@ export interface ControlPlaneRequestOptions<T> {
   headers?: HeadersInit;
   json?: unknown;
   requestId?: string;
+  scope?: "identity" | "tenant";
   timeoutMs?: number;
 }
 
@@ -84,7 +85,9 @@ function safeHeaders(options: ControlPlaneRequestOptions<unknown>): Headers {
   }
 
   headers.set("authorization", `Bearer ${options.session?.accessToken ?? ""}`);
-  headers.set("x-tenant-id", options.selectedTenantId ?? "");
+  if (options.scope !== "identity") {
+    headers.set("x-tenant-id", options.selectedTenantId ?? "");
+  }
   headers.set("x-request-id", options.requestId ?? randomUUID());
   if (options.json !== undefined) {
     headers.set("content-type", "application/json");
@@ -99,7 +102,7 @@ function requireRequestContext<T>(options: ControlPlaneRequestOptions<T>): void 
       401,
     );
   }
-  if (!options.selectedTenantId) {
+  if (options.scope !== "identity" && !options.selectedTenantId) {
     throw new ControlPlaneError(
       { code: "workspace_required", message: "Select a workspace to continue." },
       400,
