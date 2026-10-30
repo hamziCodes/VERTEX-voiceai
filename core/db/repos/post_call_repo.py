@@ -87,6 +87,27 @@ class InMemoryPostCallRepository:
                 return record.model_copy(deep=True)
         raise PostCallNotFoundError("Call record not found.")
 
+    async def list_calls(
+        self,
+        tenant_id: UUID,
+        *,
+        before: tuple[datetime, UUID] | None = None,
+        limit: int = 51,
+    ) -> tuple[CallRecord, ...]:
+        records = [
+            record.model_copy(deep=True)
+            for (owner, _), record in self._calls.items()
+            if owner == tenant_id
+        ]
+        records.sort(key=lambda item: (item.started_at, item.call_id), reverse=True)
+        if before is not None:
+            records = [
+                item
+                for item in records
+                if (item.started_at, item.call_id) < before
+            ]
+        return tuple(records[:limit])
+
     async def append_turn(
         self,
         *,
@@ -312,6 +333,78 @@ class PostgresPostCallRepository:
         if row is None:
             raise PostCallNotFoundError("Call record not found.")
         return await self.get_call(tenant_id, row[0], call_id=call_id)
+
+    async def list_calls(
+        self,
+        tenant_id: UUID,
+        *,
+        before: tuple[datetime, UUID] | None = None,
+        limit: int = 51,
+    ) -> tuple[CallRecord, ...]:
+        bounded_limit = max(1, min(limit, 101))
+        cursor_clause = ""
+        params: list[Any] = [str(tenant_id)]
+        if before is not None:
+            cursor_clause = "AND (c.started_at, c.call_id) < (%s, %s::uuid) "
+            params.extend([before[0], str(before[1])])
+        params.append(bounded_limit)
+        async with self.database.tenant_transaction(str(tenant_id)) as connection:
+            cursor = await connection.execute(
+                "SELECT c.call_id, c.session_id, c.agent_id, c.caller_id, "
+                "c.started_at, c.ended_at, c.end_reason, c.transport_type, "
+                "c.disposition, c.recording_state, c.recording_s3_uri, "
+                "c.dual_channel, c.recording_checksum, c.recording_channel_count, "
+                "c.recording_duration_seconds, c.recording_storage_region, "
+                "c.compliance_tier, c.metrics_snapshot, c.policy_snapshot, "
+                "c.provider_snapshot, c.usage_snapshot, c.recording_error_code, "
+                "c.intelligence_config_snapshot, COALESCE((SELECT jsonb_agg("
+                "t.turn_jsonb ORDER BY t.ordinal) FROM call_record_turns t "
+                "WHERE t.tenant_id = c.tenant_id AND t.session_id = c.session_id), "
+                "'[]'::jsonb) FROM call_records c "
+                "WHERE c.tenant_id = %s::uuid "
+                + cursor_clause
+                + "ORDER BY c.started_at DESC, c.call_id DESC LIMIT %s",
+                tuple(params),
+            )
+            rows = await cursor.fetchall()
+        records: list[CallRecord] = []
+        for row in rows:
+            recording_state = RecordingState(row[9])
+            recording = None
+            if recording_state is RecordingState.AVAILABLE:
+                recording = CallRecording(
+                    recording_s3_uri=row[10],
+                    dual_channel=row[11],
+                    checksum=row[12],
+                    channel_count=row[13],
+                    duration_sec=row[14],
+                    storage_region=row[15],
+                )
+            records.append(
+                CallRecord(
+                    call_id=row[0],
+                    tenant_id=tenant_id,
+                    session_id=row[1],
+                    agent_id=row[2],
+                    caller_id=row[3],
+                    started_at=row[4],
+                    ended_at=row[5],
+                    end_reason=row[6],
+                    transport_type=row[7],
+                    disposition=CallDisposition(row[8]),
+                    recording_state=recording_state,
+                    recording=recording,
+                    compliance_tier=row[16],
+                    metrics_snapshot=row[17] or {},
+                    policy_snapshot=row[18] or {},
+                    provider_snapshot=row[19] or {},
+                    usage_snapshot=row[20] or {},
+                    recording_error_code=row[21],
+                    intelligence_config_snapshot=row[22] or {},
+                    turns=[DiarizedTurn.model_validate(item) for item in row[23]],
+                )
+            )
+        return tuple(records)
 
     async def append_turn(
         self, *, tenant_id: UUID, session_id: UUID, ordinal: int, turn: DiarizedTurn

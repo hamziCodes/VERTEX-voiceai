@@ -14,6 +14,8 @@ class AuthContext:
     scopes: frozenset[str]
     auth_method: Literal["api_key", "oidc"]
     key_id: str | None = None
+    identity_issuer: str | None = None
+    external_subject_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.subject_id or not self.tenant_id or not self.roles:

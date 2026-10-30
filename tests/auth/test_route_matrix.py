@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -16,8 +17,9 @@ def client(monkeypatch: pytest.MonkeyPatch):
 
     with TestClient(app) as test_client:
         yield test_client
-    if hasattr(app.state, "oidc_provider"):
-        delattr(app.state, "oidc_provider")
+    for name in ("oidc_provider", "studio_repository"):
+        if hasattr(app.state, name):
+            delattr(app.state, name)
 
 
 def _key(
@@ -217,23 +219,57 @@ def test_identity_headers_cannot_raise_role(client: TestClient) -> None:
 
 def test_injected_oidc_identity_uses_same_tenant_boundary(client: TestClient) -> None:
     from control_plane.app import app
+    from control_plane.studio.models import (
+        IdentityContext,
+        UserIdentity,
+        WorkspaceMembership,
+    )
 
-    tenant_id = str(uuid4())
+    tenant_id = uuid4()
+    user_id = uuid4()
 
     class TestOIDCProvider:
         def authenticate_token(self, token: str) -> dict[str, object]:
             assert token == "signed-dashboard-token"
             return {
                 "sub": "dashboard-user",
-                "tenant_id": tenant_id,
-                "roles": ["tenant_viewer"],
-                "scopes": [],
+                "iss": "https://identity.test",
+                "tenant_id": str(uuid4()),
+                "roles": ["platform_admin"],
             }
 
+    class TestStudioRepository:
+        async def resolve_identity(
+            self, identity: IdentityContext
+        ) -> UserIdentity:
+            return UserIdentity(
+                user_id=user_id,
+                issuer=identity.issuer,
+                subject=identity.subject,
+            )
+
+        async def list_memberships(
+            self, requested_user_id
+        ) -> tuple[WorkspaceMembership, ...]:
+            assert requested_user_id == user_id
+            return (
+                WorkspaceMembership(
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    tenant_name="Dashboard tenant",
+                    role="tenant_viewer",
+                        created_at=datetime.now(UTC),
+                ),
+            )
+
     app.state.oidc_provider = TestOIDCProvider()
+    app.state.studio_repository = TestStudioRepository()
     response = client.get(
         "/v1/agents",
-        headers={"Authorization": "Bearer signed-dashboard-token"},
+        headers={
+            "Authorization": "Bearer signed-dashboard-token",
+            "X-Tenant-Id": str(tenant_id),
+        },
     )
     assert response.status_code == 200
 

@@ -19,8 +19,8 @@ from core.secrets.policy import CredentialTier, ResolvedCredential
 from core.secrets.repository import (
     CredentialRecord,
     InMemorySecretRepository,
-    SecretRepository,
     PostgresSecretRepository,
+    SecretRepository,
 )
 
 
@@ -34,7 +34,7 @@ class PlatformSecrets:
 
 
 class SecretVault:
-    """Tenant credential vault managing store, resolve, rotation, and envelope encryption."""
+    """Manage tenant credential storage, resolution, rotation, and encryption."""
 
     def __init__(
         self,
@@ -66,7 +66,7 @@ class SecretVault:
         return self._envelope
 
     def register_audit_hook(self, hook: Callable[[str, str, str], None]) -> None:
-        """Register audit callback for decrypt/resolve operations (Phase 12 integration)."""
+        """Register an audit callback for decrypt and resolve operations."""
         self.audit_hooks.append(hook)
 
     def _make_db_key(
@@ -423,6 +423,33 @@ class SecretVault:
             credential_type,
             credential_ref=credential_ref,
         )
+
+    async def alist_records(self, tenant_id: str) -> tuple[CredentialRecord, ...]:
+        pending = self.repository.list_for_tenant(tenant_id)
+        records = await pending if isawaitable(pending) else pending
+        return tuple(records)
+
+    async def arevoke(
+        self,
+        tenant_id: str,
+        provider_id: str,
+        credential_type: str = "api_key",
+        *,
+        credential_ref: str = "default",
+    ) -> bool:
+        pending = self.repository.delete(
+            tenant_id, provider_id, credential_type, credential_ref
+        )
+        removed = await pending if isawaitable(pending) else pending
+        self.cache.invalidate(
+            tenant_id=tenant_id,
+            provider_id=provider_id,
+            credential_type=credential_type,
+            credential_ref=credential_ref,
+        )
+        if removed:
+            self._notify_audit_hooks(tenant_id, provider_id, "revoke")
+        return bool(removed)
 
 
 def build_secret_vault(**kwargs: Any) -> SecretVault:

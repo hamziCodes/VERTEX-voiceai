@@ -16,6 +16,11 @@ def get_secret_vault() -> SecretVault:
     return _vault_instance
 
 
+def set_secret_vault(vault: SecretVault) -> None:
+    global _vault_instance
+    _vault_instance = vault
+
+
 async def handle_rotate_secret(
     tenant_id: str, provider_id: str, new_secret: str
 ) -> tuple[int, dict[str, Any]]:

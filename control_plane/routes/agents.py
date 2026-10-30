@@ -14,7 +14,10 @@ from control_plane.agents import (
     AgentNotFoundError,
     SessionConfigPin,
 )
-from control_plane.agents.repo import get_default_agent_config_repo
+from control_plane.agents.repo import (
+    AgentRevisionConflictError,
+    get_default_agent_config_repo,
+)
 from control_plane.auth.context import AuthContext
 from control_plane.auth.dependencies import require_permission
 
@@ -46,8 +49,13 @@ class CreateAgentBody(BaseModel):
 
 class AutosavePatchBody(BaseModel):
     patch: dict[str, Any]
+    expected_revision: int = Field(ge=1)
     debounce_seconds: float = 30.0
     force: bool = False
+
+
+class RevisionBody(BaseModel):
+    expected_revision: int = Field(ge=1)
 
 
 class PinSessionBody(BaseModel):
@@ -124,6 +132,7 @@ async def autosave_draft(
                 body.patch,
                 debounce_seconds=body.debounce_seconds,
                 force=body.force,
+                expected_revision=body.expected_revision,
             )
         )
         return {
@@ -132,18 +141,26 @@ async def autosave_draft(
         }
     except AgentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AgentRevisionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/{agent_id}/publish")
 async def publish_agent(
     agent_id: UUID,
+    body: RevisionBody,
     auth: AgentWriter,
 ) -> dict[str, Any]:
     """Validate and publish an agent draft into an immutable version snapshot."""
     tenant_uuid = UUID(auth.tenant_id)
     try:
         published, val_res = await _resolve(
-            _agent_repo.publish(tenant_uuid, agent_id, published_by=auth.subject_id)
+            _agent_repo.publish(
+                tenant_uuid,
+                agent_id,
+                published_by=auth.subject_id,
+                expected_revision=body.expected_revision,
+            )
         )
         return {
             "version": published.version,
@@ -154,8 +171,47 @@ async def publish_agent(
         }
     except AgentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AgentRevisionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{agent_id}/validate")
+async def validate_agent_draft(
+    agent_id: UUID,
+    auth: AgentReader,
+) -> dict[str, Any]:
+    tenant_uuid = UUID(auth.tenant_id)
+    try:
+        draft = await _resolve(_agent_repo.get_draft(tenant_uuid, agent_id))
+    except AgentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _agent_repo.validator.validate(draft).to_dict()
+
+
+@router.post("/{agent_id}/versions/{version}/restore")
+async def restore_agent_version(
+    agent_id: UUID,
+    version: int,
+    body: RevisionBody,
+    auth: AgentWriter,
+) -> dict[str, Any]:
+    tenant_uuid = UUID(auth.tenant_id)
+    try:
+        restored = await _resolve(
+            _agent_repo.restore_version(
+                tenant_uuid,
+                agent_id,
+                version,
+                expected_revision=body.expected_revision,
+            )
+        )
+    except AgentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AgentRevisionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return restored.model_dump(mode="json")
 
 
 @router.get("/{agent_id}/versions")

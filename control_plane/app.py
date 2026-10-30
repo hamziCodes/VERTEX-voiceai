@@ -28,20 +28,41 @@ from control_plane.middleware.security_headers import SecurityHeadersMiddleware
 from control_plane.openapi_serve import register_self_hosted_docs
 from control_plane.routes.agents import router as agents_router
 from control_plane.routes.alerts import router as alerts_router
+from control_plane.routes.api_keys import router as api_keys_router
+from control_plane.routes.conversations import router as conversations_router
 from control_plane.routes.extraction_schemas import router as extraction_router
+from control_plane.routes.identity import router as identity_router
 from control_plane.routes.knowledge_bases import router as kb_router
+from control_plane.routes.provider_credentials import router as credentials_router
 from control_plane.routes.session import (
     MintContext,
     get_default_mint_context,
     handle_session_mint,
     handle_session_refresh,
 )
+from control_plane.routes.studio import router as studio_router
 from control_plane.routes.telephony import router as telephony_router
 from control_plane.routes.usage import query_usage
-from control_plane.secrets_routes import handle_rotate_secret
+from control_plane.secrets_routes import handle_rotate_secret, set_secret_vault
+from control_plane.studio.pg_repository import PostgresStudioRepository
+from control_plane.studio.repository import InMemoryStudioRepository
+from control_plane.telephony_settings import (
+    InMemoryTelephonySettingsRepository,
+    PostgresTelephonySettingsRepository,
+)
 from core.db.async_pg import get_default_database
 from core.db.pg import use_memory_repos
+from core.db.repos.post_call_repo import (
+    InMemoryPostCallRepository,
+    PostgresPostCallRepository,
+)
 from core.runtime.env import get_ucve_env, require_production_secrets
+from core.secrets.repository import PostgresSecretRepository
+from core.secrets.vault import SecretVault, build_secret_vault
+from post_call.jobs.repository import (
+    InMemoryPostCallJobRepository,
+    PostgresPostCallJobRepository,
+)
 
 
 class QuickMintBody(BaseModel):
@@ -122,6 +143,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.api_keys.assert_runtime_ready(get_ucve_env())
     app.state.database = database
     app.state.db_pool = database.pool if database is not None else None
+    app.state.studio_repository = (
+        PostgresStudioRepository(database)
+        if database is not None
+        else InMemoryStudioRepository()
+    )
+    if database is not None:
+        app.state.post_call_repository = PostgresPostCallRepository(database)
+        app.state.post_call_job_repository = PostgresPostCallJobRepository(database)
+        app.state.telephony_settings_repository = (
+            PostgresTelephonySettingsRepository(database)
+        )
+        app.state.secret_vault = SecretVault(
+            repository=PostgresSecretRepository(database)
+        )
+    else:
+        call_repository = InMemoryPostCallRepository()
+        app.state.post_call_repository = call_repository
+        app.state.post_call_job_repository = InMemoryPostCallJobRepository(
+            call_repository
+        )
+        app.state.telephony_settings_repository = (
+            InMemoryTelephonySettingsRepository()
+        )
+        app.state.secret_vault = build_secret_vault()
+    set_secret_vault(app.state.secret_vault)
     app.state.redis = None
     outbound_runtime = None
     if database is not None and not hasattr(app.state, "outbound_call_service"):
@@ -162,7 +208,12 @@ app.include_router(telephony_router, prefix="/v1")
 app.include_router(extraction_router, prefix="/v1")
 app.include_router(kb_router, prefix="/v1")
 app.include_router(alerts_router, prefix="/v1")
+app.include_router(identity_router)
+app.include_router(studio_router)
 app.include_router(agents_router)
+app.include_router(conversations_router)
+app.include_router(api_keys_router)
+app.include_router(credentials_router)
 
 register_self_hosted_docs(app)
 

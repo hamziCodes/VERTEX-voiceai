@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Protocol
 
 from core.db.async_pg import AsyncDatabase, get_default_database
@@ -19,6 +20,8 @@ class CredentialRecord:
     encrypted_blob: str
     key_version: int
     rotation_version: int
+    created_at: datetime | None = None
+    rotated_at: datetime | None = None
 
 
 class SecretRepository(Protocol):
@@ -41,6 +44,8 @@ class SecretRepository(Protocol):
         credential_type: str,
         credential_ref: str,
     ) -> bool: ...
+
+    def list_for_tenant(self, tenant_id: str) -> list[CredentialRecord]: ...
 
 
 class InMemorySecretRepository:
@@ -104,6 +109,21 @@ class InMemorySecretRepository:
         self._rotation_versions.pop(key, None)
         return existed
 
+    def list_for_tenant(self, tenant_id: str) -> list[CredentialRecord]:
+        records: list[CredentialRecord] = []
+        for key in sorted(self.storage):
+            parts = key.split(":")
+            if not parts or parts[0] != tenant_id or len(parts) < 3:
+                continue
+            provider_id, credential_type = parts[1], parts[2]
+            credential_ref = parts[3] if len(parts) > 3 else "default"
+            record = self.get(
+                tenant_id, provider_id, credential_type, credential_ref
+            )
+            if record is not None:
+                records.append(record)
+        return records
+
 
 class PostgresSecretRepository:
     """Async encrypted-credential persistence under tenant RLS."""
@@ -121,7 +141,8 @@ class PostgresSecretRepository:
         async with self.database.tenant_transaction(tenant_id) as connection:
             cursor = await connection.execute(
                 "SELECT tenant_id::text, provider_id, credential_type, "
-                "credential_ref, encrypted_blob, key_version, rotation_version "
+                "credential_ref, encrypted_blob, key_version, rotation_version, "
+                "created_at, rotated_at "
                 "FROM tenant_credentials WHERE tenant_id = %s::uuid "
                 "AND provider_id = %s AND credential_type = %s "
                 "AND credential_ref = %s",
@@ -172,3 +193,16 @@ class PostgresSecretRepository:
                 (tenant_id, provider_id, credential_type, credential_ref),
             )
             return await cursor.fetchone() is not None
+
+    async def list_for_tenant(self, tenant_id: str) -> list[CredentialRecord]:
+        async with self.database.tenant_transaction(tenant_id) as connection:
+            cursor = await connection.execute(
+                "SELECT tenant_id::text, provider_id, credential_type, "
+                "credential_ref, encrypted_blob, key_version, rotation_version, "
+                "created_at, rotated_at FROM tenant_credentials "
+                "WHERE tenant_id = %s::uuid "
+                "ORDER BY provider_id, credential_type, credential_ref",
+                (tenant_id,),
+            )
+            rows = await cursor.fetchall()
+        return [CredentialRecord(*row) for row in rows]

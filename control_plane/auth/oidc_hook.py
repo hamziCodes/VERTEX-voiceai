@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Mapping
 from typing import Any, Protocol
 
 from core.runtime.env import is_protected_environment
 
 
-class OIDCNotConfigured(RuntimeError):
+class OIDCNotConfigured(RuntimeError):  # noqa: N818 - public compatibility
     """Raised when OIDC is required but no real provider is registered."""
 
 
 class OIDCProvider(Protocol):
-    """Protocol for enterprise SSO OIDC auth provider integrations (Auth0/Okta/Keycloak)."""
+    """Protocol for enterprise OIDC integrations such as Auth0 or Keycloak."""
 
-    def authenticate_token(self, token: str) -> dict[str, Any]:
+    def authenticate_token(
+        self, token: str
+    ) -> Mapping[str, Any] | Awaitable[Mapping[str, Any]]:
         """Authenticate ID token and return user profile claims."""
         ...
 
@@ -25,7 +28,8 @@ class OIDCProviderStub:
     def authenticate_token(self, token: str) -> dict[str, Any]:
         if is_protected_environment():
             raise OIDCNotConfigured(
-                "OIDC stub is disabled when UCVE_ENV=production; register a real provider."
+                "OIDC stub is disabled when UCVE_ENV=production; "
+                "register a real provider."
             )
         if not token:
             raise ValueError("OIDC token required.")
@@ -55,6 +59,8 @@ def get_oidc_provider() -> OIDCProvider:
     return OIDCProviderStub()
 
 
-def authenticate_token(token: str) -> dict[str, Any]:
+def authenticate_token(
+    token: str,
+) -> Mapping[str, Any] | Awaitable[Mapping[str, Any]]:
     """Authenticate via registered provider, or stub outside production."""
     return get_oidc_provider().authenticate_token(token)

@@ -44,7 +44,7 @@
 
 ### Control plane
 
-- `infra/db/migrations/029_studio_control_plane.sql` — external identities, invitations, onboarding profiles, entitlements, draft revisions, and required RLS.
+- `infra/db/migrations/030_studio_control_plane.sql` — external identities, invitations, onboarding profiles, entitlements, draft revisions, and required RLS.
 - `control_plane/studio/models.py` — public Studio domain/DTO models.
 - `control_plane/studio/repository.py` — repository protocol and in-memory test implementation.
 - `control_plane/studio/pg_repository.py` — PostgreSQL implementation with tenant transactions.
@@ -73,7 +73,7 @@
 ### Task 1: Durable Studio identity schema and repositories
 
 **Files:**
-- Create: `infra/db/migrations/029_studio_control_plane.sql`
+- Create: `infra/db/migrations/030_studio_control_plane.sql`
 - Create: `control_plane/studio/__init__.py`
 - Create: `control_plane/studio/models.py`
 - Create: `control_plane/studio/repository.py`
@@ -89,27 +89,27 @@
 - Produces: `StudioRepository.list_memberships(user_id) -> tuple[WorkspaceMembership, ...]`.
 - Produces: atomic organization, invitation, membership, onboarding, and entitlement methods.
 
-- [ ] **Step 1: Write failing repository tests**
+- [x] **Step 1: Write failing repository tests**
 
 Add tests named `test_external_identity_is_unique_by_issuer_and_subject`, `test_create_workspace_atomically_adds_owner`, `test_invitation_token_is_hashed_single_use_and_expiring`, `test_last_admin_cannot_be_removed_or_demoted`, `test_onboarding_and_entitlements_are_tenant_scoped`, and `test_repository_does_not_return_secret_material`.
 
-- [ ] **Step 2: Run the focused tests and confirm they fail**
+- [x] **Step 2: Run the focused tests and confirm they fail**
 
 Run: `py -3.12 -m pytest tests/studio/test_studio_repository.py tests/db/test_phase13_studio_migration.py -q`
 
 Expected: collection/import failures for missing Studio models, repository, and migration contracts.
 
-- [ ] **Step 3: Implement the migration**
+- [x] **Step 3: Implement the migration**
 
 Add `external_identities`, `workspace_invitations`, `tenant_onboarding_profiles`, and `tenant_entitlements`; add `draft_revision` to the durable agent draft representation. Use unique constraints, expiry/use timestamps, indexes, RLS, forced RLS, and the canonical `ucve_app` policies. Do not add local password login.
 
-- [ ] **Step 4: Implement repository contracts**
+- [x] **Step 4: Implement repository contracts**
 
 Keep invitation plaintext ephemeral: repository storage accepts only a token hash; service code returns plaintext once. Enforce last-admin invariants inside the transaction.
 
-- [ ] **Step 5: Run focused and migration-integrity tests**
+- [x] **Step 5: Run focused and migration-integrity tests**
 
-Run: `py -3.12 -m pytest tests/studio/test_studio_repository.py tests/db/test_phase13_studio_migration.py tests/db/test_migration_integrity.py -q`
+Run: `py -3.12 -m pytest tests/studio/test_studio_repository.py tests/db/test_phase13_studio_migration.py tests/db/test_phase09_database.py -q`
 
 Expected: all pass.
 
@@ -130,19 +130,19 @@ Expected: all pass.
 - Requires: tenant-scoped routes receive `X-Tenant-Id` or an equivalent explicit selected-tenant input.
 - Preserves: API-key authentication and existing RBAC permission semantics.
 
-- [ ] **Step 1: Write failing authorization tests**
+- [x] **Step 1: Write failing authorization tests**
 
 Cover valid membership, unknown subject, unowned tenant, tampered role header, conflicting token tenant/role claims, platform-admin explicit access, API-key compatibility, and protected-environment OIDC stub refusal.
 
-- [ ] **Step 2: Verify focused failures**
+- [x] **Step 2: Verify focused failures**
 
 Run: `py -3.12 -m pytest tests/auth/test_studio_identity.py tests/auth/test_route_matrix.py -q`
 
-- [ ] **Step 3: Separate identity authentication from tenant authorization**
+- [x] **Step 3: Separate identity authentication from tenant authorization**
 
 OIDC validation returns subject/issuer/email only. Resolve the selected tenant and role from the repository. Ignore OIDC tenant/role claims for authorization.
 
-- [ ] **Step 4: Run auth regressions**
+- [x] **Step 4: Run auth regressions**
 
 Run: `py -3.12 -m pytest tests/auth tests/security/test_provider_credentials.py -q`
 
@@ -162,19 +162,19 @@ Expected: all pass with API-key flows preserved.
 - Produces: bounded safe DTOs; invitation plaintext is returned only from create and never list/read.
 - Produces: deterministic onboarding requirement codes used by the frontend readiness checklist.
 
-- [ ] **Step 1: Write failing API tests**
+- [x] **Step 1: Write failing API tests**
 
 Cover first-workspace creation, membership listing, invite create/accept/replay/expiry, role change, last-admin protection, tenant mismatch, onboarding resume, and entitlement enforcement.
 
-- [ ] **Step 2: Verify failures**
+- [x] **Step 2: Verify failures**
 
 Run: `py -3.12 -m pytest tests/studio/test_identity_api.py tests/studio/test_onboarding_api.py -q`
 
-- [ ] **Step 3: Implement narrow routes and DTOs**
+- [x] **Step 3: Implement narrow routes and DTOs**
 
 Register routers under `/v1`. Apply permissions at the route and repository boundaries. Return correlation IDs through existing middleware.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run: `py -3.12 -m pytest tests/studio/test_identity_api.py tests/studio/test_onboarding_api.py tests/auth/test_route_matrix.py -q`
 
@@ -194,19 +194,19 @@ Run: `py -3.12 -m pytest tests/studio/test_identity_api.py tests/studio/test_onb
 - Produces: cursor-based `GET /v1/conversations`, call detail, intelligence, and review DTOs.
 - Produces: `GET/PUT /v1/telephony/settings` with readiness/policy metadata and no carrier action.
 
-- [ ] **Step 1: Write failing catalog/operations tests**
+- [x] **Step 1: Write failing catalog/operations tests**
 
 Test capability filtering, no secret/provider-internal fields, deterministic pagination, cross-tenant denial, deleted/expired recording states, unavailable intelligence, and telephony readiness without live action.
 
-- [ ] **Step 2: Verify failures**
+- [x] **Step 2: Verify failures**
 
 Run: `py -3.12 -m pytest tests/studio/test_catalog_api.py tests/studio/test_conversations_api.py tests/studio/test_telephony_settings_api.py -q`
 
-- [ ] **Step 3: Implement safe adapters over existing domains**
+- [x] **Step 3: Implement safe adapters over existing domains**
 
 Reuse `DEFAULT_PROVIDER_CATALOG`, source-controlled templates, Phase 11 repositories, and Phase 12 readiness services. Do not duplicate provider, post-call, or carrier state.
 
-- [ ] **Step 4: Run focused and related regression tests**
+- [x] **Step 4: Run focused and related regression tests**
 
 Run: `py -3.12 -m pytest tests/studio/test_catalog_api.py tests/studio/test_conversations_api.py tests/studio/test_telephony_settings_api.py tests/post_call tests/telephony/test_trunk_readiness.py -q`
 
@@ -226,19 +226,19 @@ Run: `py -3.12 -m pytest tests/studio/test_catalog_api.py tests/studio/test_conv
 - Produces: `POST /v1/agents/{agent_id}/versions/{version}/restore`.
 - Produces: HTTP 409 on stale autosave or publish revision with no mutation.
 
-- [ ] **Step 1: Write failing concurrency and restore tests**
+- [x] **Step 1: Write failing concurrency and restore tests**
 
 Test two-editor stale save, exact-revision publish, structured validation, immutable old version, restore-to-new-draft, and active session pin stability.
 
-- [ ] **Step 2: Verify failures**
+- [x] **Step 2: Verify failures**
 
 Run: `py -3.12 -m pytest tests/studio/test_agent_builder_api.py tests/agents/test_session_plan_compiler.py -q`
 
-- [ ] **Step 3: Implement revision compare-and-swap**
+- [x] **Step 3: Implement revision compare-and-swap**
 
 Increment draft revision only on committed mutation. Restore copies a snapshot into the draft and never rewrites a published row.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run: `py -3.12 -m pytest tests/studio/test_agent_builder_api.py tests/agents tests/e2e/test_published_agent_runtime.py -q`
 
@@ -256,19 +256,19 @@ Run: `py -3.12 -m pytest tests/studio/test_agent_builder_api.py tests/agents tes
 - Requires: created API-key plaintext appears once; all later representations expose prefix/metadata only.
 - Requires: provider credential responses and audit events omit secret values.
 
-- [ ] **Step 1: Write failing lifecycle/redaction tests**
+- [x] **Step 1: Write failing lifecycle/redaction tests**
 
 Cover role enforcement, quota, one-time plaintext, list/revoke, expired/revoked verification, credential create/status/revoke, cache invalidation, and recursive secret-pattern scans.
 
-- [ ] **Step 2: Verify failures**
+- [x] **Step 2: Verify failures**
 
 Run: `py -3.12 -m pytest tests/studio/test_api_key_management.py tests/studio/test_provider_credential_management.py -q`
 
-- [ ] **Step 3: Implement routes over existing managers/vault**
+- [x] **Step 3: Implement routes over existing managers/vault**
 
 Do not place secrets in URL parameters, exception strings, model reprs, audit payloads, or response metadata.
 
-- [ ] **Step 4: Run security regressions**
+- [x] **Step 4: Run security regressions**
 
 Run: `py -3.12 -m pytest tests/studio/test_api_key_management.py tests/studio/test_provider_credential_management.py tests/auth/test_durable_api_keys.py tests/security/test_durable_secrets.py -q`
 
@@ -283,19 +283,19 @@ Run: `py -3.12 -m pytest tests/studio/test_api_key_management.py tests/studio/te
 - Consumes: Tasks 1–6.
 - Produces: sanitized evidence for fresh migration, RLS isolation, invitation/revision concurrency, credential redaction, and operational pagination.
 
-- [ ] **Step 1: Run the complete forced-offline Python gate**
+- [x] **Step 1: Run the complete forced-offline Python gate**
 
 Run: `py -3.12 -m pytest tests/studio tests/auth tests/agents tests/providers tests/rag tests/post_call tests/telephony -q -p no:cacheprovider --basetemp hamza_local/pytest-phase13a`
 
-- [ ] **Step 2: Give Hamzi one disposable PostgreSQL/Redis command**
+- [x] **Step 2: Give Hamzi one disposable PostgreSQL/Redis command**
 
 Use a random local password, `UCVE_ENV=test`, live DB/Redis flags only, live providers off, and `tests/db/test_phase13_live_integration.py`. Expected: all pass and containers/volumes are removed.
 
-- [ ] **Step 3: Run static/security checks**
+- [x] **Step 3: Run static/security checks**
 
 Run changed-file Ruff, compile, migration integrity, `git diff --check`, protected-path scan, and credential-pattern scan. Record counts and limitations without secret values.
 
-- [ ] **Step 4: Stop for review and commit confirmation**
+- [x] **Step 4: Stop for review and commit confirmation**
 
 Do not begin 13B until Hamzi approves the 13A evidence and explicitly authorizes commit/push.
 

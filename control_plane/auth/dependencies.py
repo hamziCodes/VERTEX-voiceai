@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from inspect import isawaitable
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import Header, HTTPException, Request
 
 from control_plane.auth.context import AuthContext
-from control_plane.auth.oidc_hook import get_oidc_provider
 from control_plane.auth.rbac import RBACManager
+from control_plane.studio.dependencies import resolve_identity_context
+from control_plane.studio.repository import (
+    MembershipNotFoundError,
+    StudioRepositoryError,
+)
 
 
 async def resolve_auth_context(
@@ -37,30 +41,60 @@ async def resolve_auth_context(
                 key_id=str(record["key_id"]),
             )
         else:
-            provider = (
-                getattr(request.app.state, "oidc_provider", None) or get_oidc_provider()
+            if not x_tenant_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="X-Tenant-Id is required for tenant-scoped access.",
+                )
+            identity = await resolve_identity_context(request, authorization)
+            repository = getattr(request.app.state, "studio_repository", None)
+            if repository is None:
+                raise RuntimeError("Studio identity repository is unavailable.")
+            user = await repository.resolve_identity(identity)
+            if not user.is_active:
+                raise PermissionError("Identity is inactive.")
+            memberships = await repository.list_memberships(user.user_id)
+            membership = next(
+                (
+                    item
+                    for item in memberships
+                    if str(item.tenant_id) == x_tenant_id
+                ),
+                None,
             )
-            claims: dict[str, Any] = provider.authenticate_token(token)
-            raw_roles = claims.get("roles") or (
-                [claims["role"]] if claims.get("role") else []
-            )
+            if user.is_platform_admin:
+                roles = ("platform_admin",)
+            elif membership is not None:
+                roles = (membership.role,)
+            else:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Workspace membership is required.",
+                )
             context = AuthContext(
-                subject_id=str(claims.get("sub") or ""),
-                tenant_id=str(claims.get("tenant_id") or ""),
-                roles=tuple(str(role).lower() for role in raw_roles),
-                scopes=frozenset(str(scope) for scope in claims.get("scopes", ())),
+                subject_id=str(user.user_id),
+                tenant_id=x_tenant_id,
+                roles=roles,
+                scopes=frozenset(),
                 auth_method="oidc",
+                identity_issuer=identity.issuer,
+                external_subject_id=identity.subject,
             )
-    except (KeyError, PermissionError, RuntimeError, ValueError) as exc:
+    except HTTPException:
+        raise
+    except (
+        KeyError,
+        MembershipNotFoundError,
+        PermissionError,
+        RuntimeError,
+        StudioRepositoryError,
+        ValueError,
+    ) as exc:
         raise HTTPException(
             status_code=401, detail="Invalid or unauthorized credential."
         ) from exc
 
-    if (
-        x_tenant_id
-        and x_tenant_id != context.tenant_id
-        and not context.is_platform_admin
-    ):
+    if x_tenant_id and x_tenant_id != context.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant context mismatch.")
     if x_actor_role and x_actor_role.lower() not in context.roles:
         raise HTTPException(status_code=403, detail="Role context mismatch.")
