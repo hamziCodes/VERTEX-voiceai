@@ -344,23 +344,23 @@ Run: `npm.cmd --prefix studio run typecheck`, `npm.cmd --prefix studio run lint`
 - Produces: signed/HTTP-only selected-workspace cookie containing only a workspace identifier.
 - Consumes: `GET /v1/me` and organization/invitation APIs.
 
-- [ ] **Step 1: Pause if an OIDC provider is not selected**
+- [x] **Step 1: Pause if an OIDC provider is not selected**
 
 Hamzi supplies provider choice and confirms required environment variable names are locally configured. Do not request or display values.
 
-- [ ] **Step 2: Write failing session/workspace tests**
+- [x] **Step 2: Write failing session/workspace tests**
 
 Test cookie flags, token server-only behavior, invitation handoff, no-membership flow, two tenants, role-based navigation, forged workspace cookie, expired session, and sign-out.
 
-- [ ] **Step 3: Implement OIDC and workspace shell**
+- [x] **Step 3: Implement OIDC and workspace shell**
 
 Use Authorization Code + PKCE via the selected maintained library. Repeat permission checks in DAL/mutations; navigation hiding is not authorization.
 
-- [ ] **Step 4: Run unit and offline E2E tests**
+- [x] **Step 4: Run unit and offline E2E tests**
 
 Run: `npm.cmd --prefix studio run test` and `npm.cmd --prefix studio run test:e2e -- auth-workspaces.spec.ts`.
 
-- [ ] **Step 5: Stop for 13B review and commit confirmation**
+- [x] **Step 5: Stop for 13B review and commit confirmation**
 
 Verify client storage contains no tokens and built client chunks contain no server secrets. Do not begin 13C without approval.
 

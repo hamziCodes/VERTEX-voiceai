@@ -132,6 +132,11 @@ def _allowed_origins() -> list[str]:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     require_production_secrets()
+    from control_plane.auth.oidc_jwks import build_oidc_provider_from_environment
+
+    oidc_provider = build_oidc_provider_from_environment()
+    if oidc_provider is not None and not hasattr(app.state, "oidc_provider"):
+        app.state.oidc_provider = oidc_provider
     database = None
     if not use_memory_repos():
         database = get_default_database()
