@@ -16,6 +16,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@ucve/voice-sdk": "file:../sdk/typescript",
     "@workos-inc/authkit-nextjs": "4.6.2",
     "@workos-inc/node": "12.0.0",
     "next": "16.4.3",

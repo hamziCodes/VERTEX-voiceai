@@ -132,6 +132,8 @@ async def handle_session_mint(
     jwt_secret: str | None = None,
     requested_language: str | None = None,
     requested_voice_id: str | None = None,
+    requested_provider_mode: str | None = None,
+    requested_stt_transcript_mode: str | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """POST /v1/session — HMAC-authenticated room mint endpoint."""
     mint_ctx = ctx or _default_ctx
@@ -279,6 +281,8 @@ async def handle_session_mint(
             agent_config_version=plan.agent_version,
             session_language=selection.language,
             session_voice_id=selection.voice_id,
+            provider_mode_constraint=requested_provider_mode,
+            stt_transcript_mode_constraint=requested_stt_transcript_mode,
             unsafe_demo=plan.unsafe_demo,
         )
     except Exception:
@@ -341,6 +345,10 @@ async def handle_session_refresh(
             agent_config_version=payload.get("agent_config_version"),
             session_language=payload.get("session_language"),
             session_voice_id=payload.get("session_voice_id"),
+            provider_mode_constraint=payload.get("provider_mode_constraint"),
+            stt_transcript_mode_constraint=payload.get(
+                "stt_transcript_mode_constraint"
+            ),
             unsafe_demo=bool(payload.get("unsafe_demo", False)),
         )
         return 200, {"status": "success", "token": new_token, "ttl_sec": 120}

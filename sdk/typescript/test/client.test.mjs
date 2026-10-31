@@ -80,3 +80,23 @@ test('remote close and token expiry are surfaced to host callbacks', async () =>
   await Promise.resolve();
   assert.deepEqual(received.map(([kind]) => kind), ['expiry', 'close']);
 });
+
+test('audio lifecycle events expose the turn needed for playback acknowledgements', async () => {
+  FakeWebSocket.instances.length = 0;
+  const received = [];
+  const client = new UCVEVoiceClient('token', {
+    maxConnectAttempts: 1,
+    onAudioStart: (payload) => received.push(['start', payload.turn_id]),
+    onAudioEnd: (payload) => received.push(['end', payload.turn_id]),
+  });
+  const connecting = client.connect();
+  const socket = FakeWebSocket.instances[0];
+  socket.onopen();
+  socket.emitJson({ event_type: 'session.ready', payload: { protocol_version: '1.0.0' } });
+  await connecting;
+  socket.emitJson({ event_type: 'audio.start', payload: { turn_id: 'turn-1', server_send_ms: 1 } });
+  socket.emitJson({ event_type: 'audio.end', payload: { turn_id: 'turn-1' } });
+  await Promise.resolve();
+  assert.deepEqual(received, [['start', 'turn-1'], ['end', 'turn-1']]);
+  client.disconnect();
+});

@@ -1,6 +1,6 @@
 /** Wavia v1 raw-WebSocket browser client. */
 
-import type { AudioStartPayload, ClearAudioPayload, PlayedTextCommitPayload } from './events.js';
+import type { AudioEndPayload, AudioStartPayload, ClearAudioPayload, PlayedTextCommitPayload } from './events.js';
 import {
   PROTOCOL_VERSION,
   type RealtimeEvent,
@@ -17,6 +17,7 @@ export interface UCVEVoiceClientOptions {
   onTranscript?: (speaker: 'user' | 'agent', text: string) => void;
   onAudio?: (pcm16: Int16Array) => void;
   onAudioStart?: (event: AudioStartPayload) => void;
+  onAudioEnd?: (event: AudioEndPayload) => void;
   onBargeIn?: (event: Record<string, unknown>) => void;
   onClearAudio?: (event: ClearAudioPayload) => number | void | Promise<number | void>;
   onCancelPlayback?: () => void;
@@ -172,6 +173,8 @@ export class UCVEVoiceClient {
     } else if (eventType === 'audio.start' || eventType === 'audio_start') {
       this.activeTurnId = payload.turn_id || null;
       this.options.onAudioStart?.(payload as AudioStartPayload);
+    } else if (eventType === 'audio.end' || eventType === 'audio_end') {
+      this.options.onAudioEnd?.(payload as AudioEndPayload);
     } else if (eventType === 'control.barge_in' || eventType === 'barge_in') {
       this.options.onBargeIn?.(payload);
     } else if (eventType === 'control.clear_audio') {

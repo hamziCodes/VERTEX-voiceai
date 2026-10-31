@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from inspect import isawaitable
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -80,6 +80,13 @@ class QuickMintBody(BaseModel):
     voice_id: str | None = Field(default=None, max_length=255)
 
 
+class StudioMintBody(BaseModel):
+    agent_id: str = Field(min_length=1, max_length=128)
+    language: str | None = Field(default=None, max_length=32)
+    voice_id: str | None = Field(default=None, max_length=255)
+    test_mode: Literal["offline", "mock", "live"] = "offline"
+
+
 class RotateSecretBody(BaseModel):
     tenant_id: str
     provider_id: str
@@ -93,6 +100,7 @@ class RefreshBody(BaseModel):
 UsageReader = Annotated[AuthContext, Depends(require_permission("usage:read"))]
 AuditReader = Annotated[AuthContext, Depends(require_permission("audit:read"))]
 SecretRotator = Annotated[AuthContext, Depends(require_permission("secret:rotate"))]
+SessionMinter = Annotated[AuthContext, Depends(require_permission("session:mint"))]
 
 
 def _mint_secret() -> str:
@@ -399,6 +407,47 @@ async def quick_mint_session(
         )
     extra_headers = res_body.pop("_headers", {}) or {}
     return JSONResponse(content=res_body, headers=extra_headers)
+
+
+@app.post("/v1/studio/sessions")
+async def studio_mint_session(
+    body: StudioMintBody,
+    request: Request,
+    auth: SessionMinter,
+) -> JSONResponse:
+    """Mint a short-lived room token for an authenticated Studio workspace."""
+    timestamp = str(int(time.time()))
+    nonce = uuid.uuid4().hex
+    secret = _mint_secret()
+    signature = expected_signature(
+        secret, auth.tenant_id, timestamp, nonce, body.agent_id
+    )
+    ctx: MintContext = (
+        getattr(request.app.state, "mint_ctx", None) or get_default_mint_context()
+    )
+    status, payload = await handle_session_mint(
+        auth.tenant_id,
+        timestamp,
+        nonce,
+        body.agent_id,
+        signature,
+        secret=secret,
+        api_key_mint=True,
+        ctx=ctx,
+        requested_language=body.language,
+        requested_voice_id=body.voice_id,
+        requested_provider_mode="live" if body.test_mode == "live" else "mock",
+        requested_stt_transcript_mode=(
+            "fixed_mock" if body.test_mode == "mock" else None
+        ),
+    )
+    if status != 200:
+        raise HTTPException(
+            status_code=status,
+            detail=payload.get("error", "mint failed"),
+        )
+    extra_headers = payload.pop("_headers", {}) or {}
+    return JSONResponse(content=payload, headers=extra_headers)
 
 
 @app.post("/v1/session/refresh")

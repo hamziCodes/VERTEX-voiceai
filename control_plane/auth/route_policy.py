@@ -31,6 +31,9 @@ ROUTE_POLICIES: tuple[RoutePolicy, ...] = (
     RoutePolicy("POST", "/mint", "session"),
     RoutePolicy("POST", "/v1/session/refresh", "session"),
     RoutePolicy(
+        "POST", "/v1/studio/sessions", "management", "session:mint"
+    ),
+    RoutePolicy(
         "POST", "/v1/telephony/calls", "management", "telephony:write"
     ),
     RoutePolicy("GET", "/v1/me", "management", "identity:read"),

@@ -19,6 +19,7 @@
   "files": ["dist", "README.md"],
   "scripts": {
     "build": "tsc",
+    "prepare": "npm run build",
     "test": "npm run build --silent && node --test test/*.test.mjs"
   },
   "keywords": ["voice", "ai", "webrtc", "websocket", "streaming", "llm"],

@@ -144,12 +144,20 @@ async def test_refresh_rotates_once_and_checks_persisted_session(
         "tenant-a",
         Session(id="session-a", tenant_id="tenant-a", agent_id="agent-a"),
     )
-    token = issue_session_jwt("tenant-a", "session-a", "agent-a")
+    token = issue_session_jwt(
+        "tenant-a",
+        "session-a",
+        "agent-a",
+        provider_mode_constraint="mock",
+        stt_transcript_mode_constraint="fixed_mock",
+    )
 
     status, body = await handle_session_refresh(token, ctx=ctx)
     assert status == 200
     refreshed = verify_session_jwt(body["token"])
     assert refreshed["jti"] != verify_session_jwt(token)["jti"]
+    assert refreshed["provider_mode_constraint"] == "mock"
+    assert refreshed["stt_transcript_mode_constraint"] == "fixed_mock"
 
     replay_status, replay_body = await handle_session_refresh(token, ctx=ctx)
     assert replay_status == 401

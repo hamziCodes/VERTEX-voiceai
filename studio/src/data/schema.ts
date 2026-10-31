@@ -164,6 +164,16 @@ export const knowledgeBindingSchema = z.object({
   knowledge_revision: z.number().int().positive(),
 });
 
+export const voiceSessionSchema = z.object({
+  status: z.literal("success"),
+  session_id: z.string().min(1),
+  token: z.string().min(1),
+  ttl_sec: z.number().int().positive(),
+  ws_url: z.string().url(),
+  agent_config_version: z.number().int().positive(),
+  session_plan_ref: z.string().min(1),
+});
+
 export function parseControlPlaneDto<T>(
   schema: z.ZodType<T>,
   payload: unknown,

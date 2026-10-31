@@ -16,10 +16,11 @@ from control_plane.routes.session import (
     get_default_mint_context,
     unsafe_session_overrides_enabled,
 )
-from core.redis.nonce_store import ReplayStoreUnavailableError
-from core.redis.token_store import SessionTokenStore
 from core.db.async_pg import get_default_database
 from core.db.pg import use_memory_repos
+from core.providers.mode import provider_runtime_status
+from core.redis.nonce_store import ReplayStoreUnavailableError
+from core.redis.token_store import SessionTokenStore
 from core.runtime.admission import (
     AdmissionStoreUnavailableError,
     CapacityExceededError,
@@ -69,6 +70,29 @@ app.add_middleware(
 
 class SessionPlanLoadError(ValueError):
     """Raised when a worker cannot authenticate a session's pinned plan."""
+
+
+class ProviderModeConstraintError(ValueError):
+    """Raised before provider startup when signed runtime constraints do not match."""
+
+
+def _enforce_provider_mode_constraint(
+    token_payload: dict[str, object],
+    runtime_status: dict[str, str] | None = None,
+) -> None:
+    """Reject a signed Studio mode mismatch before any provider is initialized."""
+    status = runtime_status or provider_runtime_status()
+    expected_provider = token_payload.get("provider_mode_constraint")
+    if expected_provider is not None and expected_provider != status["provider_mode"]:
+        raise ProviderModeConstraintError("Signed provider mode constraint mismatch.")
+    expected_transcript = token_payload.get("stt_transcript_mode_constraint")
+    if (
+        expected_transcript is not None
+        and expected_transcript != status["stt_transcript_mode"]
+    ):
+        raise ProviderModeConstraintError(
+            "Signed STT transcript mode constraint mismatch."
+        )
 
 
 @app.get("/health")
@@ -187,11 +211,15 @@ async def ws_audio(websocket: WebSocket) -> None:
 
     try:
         payload = verify_session_jwt(token)
+        _enforce_provider_mode_constraint(payload)
         remaining = max(1, int(float(payload["exp"]) - time.time()))
         token_store = getattr(websocket.app.state, "token_store", _default_token_store)
         claimed = await token_store.claim_connection(
             str(payload["tenant_id"]), str(payload["jti"]), remaining
         )
+    except ProviderModeConstraintError:
+        await websocket.close(code=4403, reason="provider mode mismatch")
+        return
     except (KeyError, ReplayStoreUnavailableError, TypeError, ValueError):
         await websocket.close(code=4401, reason="invalid token")
         return

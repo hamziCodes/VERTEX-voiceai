@@ -4,6 +4,10 @@ export interface AudioStartPayload {
   clock_domain: 'server_monotonic_ms';
 }
 
+export interface AudioEndPayload {
+  turn_id: string;
+}
+
 export interface PlaybackStartedPayload {
   kind: 'playback_started';
   turn_id: string;

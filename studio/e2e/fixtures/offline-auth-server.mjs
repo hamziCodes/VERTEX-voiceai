@@ -226,6 +226,20 @@ async function handle(request, response) {
     agents.get(tenant).push(created);
     return json(response, 201, created);
   }
+  if (url.pathname === "/v1/studio/sessions" && request.method === "POST") {
+    const input = await bodyFromRequest(request);
+    const agent = findAgent(tenant, input.agent_id);
+    if (!agent?.is_published) return json(response, 409, { detail: "A valid published agent configuration is required." });
+    return json(response, 200, {
+      status: "success",
+      session_id: "offline-session-1",
+      token: "offline-ephemeral-room-token",
+      ttl_sec: 120,
+      ws_url: "ws://offline.worker.test/ws/audio",
+      agent_config_version: agent.version,
+      session_plan_ref: "offline-plan-1",
+    });
+  }
   if (url.pathname === "/v1/knowledge-bases" && request.method === "GET") return json(response, 200, knowledgeBases.get(tenant));
   if (url.pathname === "/v1/knowledge-bases" && request.method === "POST") {
     const input = await bodyFromRequest(request);

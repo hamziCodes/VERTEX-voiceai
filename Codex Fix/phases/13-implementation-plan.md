@@ -435,19 +435,19 @@ Run unit tests, `knowledge.spec.ts`, typecheck, lint, and build.
 - Consumes: Wavia TypeScript SDK and tenant-bound session-mint endpoint.
 - Produces: explicit offline/mock/live badge, mic and connection state, transcript, latency waterfall, interruption, quota, and typed failure UI.
 
-- [ ] **Step 1: Write failing protocol/UI tests**
+- [x] **Step 1: Write failing protocol/UI tests**
 
 Cover permission denial, unsupported browser, disconnected worker, mock transcript/audio, live-disabled state, barge-in clear, quota rejection, token expiry/replay, and session cleanup.
 
-- [ ] **Step 2: Implement using the SDK**
+- [x] **Step 2: Implement using the SDK**
 
 Do not reimplement the realtime protocol. If the SDK lacks an interface, add the smallest tested SDK contract first.
 
-- [ ] **Step 3: Verify without provider traffic**
+- [x] **Step 3: Verify without provider traffic**
 
 Run SDK build/tests, Studio unit/E2E tests, browser console scan, and media-session cleanup assertions with live providers disabled.
 
-- [ ] **Step 4: Stop for 13D review and commit confirmation**
+- [x] **Step 4: Stop for 13D review and commit confirmation**
 
 ## Phase 13E — Channels, credentials, and developer access
 
@@ -589,4 +589,4 @@ Execute natively, one subphase at a time, because the contracts are sequential a
 4. write sanitized evidence;
 5. stop for Hamzi's review and separate commit/push confirmation.
 
-**Next exact action:** Begin Phase 13A Task 1 by confirming `wavia-fixv1` is clean and at the pushed rollback SHA, then write the failing Studio repository and migration tests. Do not scaffold `studio/` yet.
+**Next exact action:** Review Phase 13D Task 12 evidence, then obtain Hamzi's explicit approval before committing and pushing the Phase 13D branch. Do not begin Phase 13E until that checkpoint is accepted.

@@ -3,6 +3,9 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
+  // The offline control-plane fixture is intentionally stateful; serialize journeys so
+  // one test's reset cannot invalidate another test's tenant or agent lifecycle.
+  workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: "html",
@@ -32,6 +35,7 @@ export default defineConfig({
         WORKOS_API_PORT: "3211",
         WORKOS_ISSUER: "http://127.0.0.1:3211/",
         WAVIA_CONTROL_PLANE_URL: "http://127.0.0.1:3211",
+        WAVIA_VOICE_TEST_MODE: "mock",
       },
     },
   ],

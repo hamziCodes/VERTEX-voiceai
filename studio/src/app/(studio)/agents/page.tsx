@@ -23,6 +23,7 @@ export default async function AgentsPage() {
               <p>{agent.description || "No description yet."}</p>
               <p>{agent.is_published ? `Published version ${agent.version}` : "Draft"}</p>
               <Link href={`/agents/${agent.agent_id}/build`}>{hasWorkspacePermission(membership.role, "agent:write") ? "Open builder" : "View agent"}</Link>
+              {agent.is_published ? <Link href={`/agents/${agent.agent_id}/test`}>Test voice</Link> : null}
             </li>
           ))}
         </ul>

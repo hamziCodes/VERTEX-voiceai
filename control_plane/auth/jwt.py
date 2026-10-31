@@ -20,6 +20,8 @@ _TOKEN_TYPE = "session_access"
 _DEFAULT_ISSUER = "wavia-control-plane"
 _DEFAULT_AUDIENCE = "wavia-worker"
 _MAX_TTL_SEC = 300
+_PROVIDER_MODE_CONSTRAINTS = frozenset({"live", "mock"})
+_STT_TRANSCRIPT_MODE_CONSTRAINTS = frozenset({"live", "fixed_mock", "disabled"})
 
 
 class JWTConfigurationError(ValueError):
@@ -47,6 +49,16 @@ def resolve_jwt_secret(secret: str | None = None) -> str:
     return resolved
 
 
+def _validate_runtime_constraint(
+    name: str, value: str | None, allowed: frozenset[str]
+) -> str | None:
+    if value is None:
+        return None
+    if value not in allowed:
+        raise ValueError(f"Invalid {name}.")
+    return value
+
+
 def issue_session_jwt(
     tenant_id: str,
     session_id: str,
@@ -59,6 +71,8 @@ def issue_session_jwt(
     agent_config_version: int | None = None,
     session_language: str | None = None,
     session_voice_id: str | None = None,
+    provider_mode_constraint: str | None = None,
+    stt_transcript_mode_constraint: str | None = None,
     unsafe_demo: bool = False,
 ) -> str:
     """Issue one short-lived, single-connection room token."""
@@ -86,6 +100,16 @@ def issue_session_jwt(
         "agent_config_version": agent_config_version,
         "session_language": session_language,
         "session_voice_id": session_voice_id,
+        "provider_mode_constraint": _validate_runtime_constraint(
+            "provider mode constraint",
+            provider_mode_constraint,
+            _PROVIDER_MODE_CONSTRAINTS,
+        ),
+        "stt_transcript_mode_constraint": _validate_runtime_constraint(
+            "STT transcript mode constraint",
+            stt_transcript_mode_constraint,
+            _STT_TRANSCRIPT_MODE_CONSTRAINTS,
+        ),
     }
     payload.update(
         {key: value for key, value in optional_claims.items() if value is not None}
@@ -129,4 +153,17 @@ def verify_session_jwt(token: str, secret: str | None = None) -> dict[str, Any]:
         raise ValueError("Invalid session token.")
     if not all(payload.get(name) for name in ("sub", "tenant_id", "agent_id", "jti")):
         raise ValueError("Invalid session token.")
+    try:
+        _validate_runtime_constraint(
+            "provider mode constraint",
+            payload.get("provider_mode_constraint"),
+            _PROVIDER_MODE_CONSTRAINTS,
+        )
+        _validate_runtime_constraint(
+            "STT transcript mode constraint",
+            payload.get("stt_transcript_mode_constraint"),
+            _STT_TRANSCRIPT_MODE_CONSTRAINTS,
+        )
+    except ValueError as exc:
+        raise ValueError("Invalid session token.") from exc
     return payload
