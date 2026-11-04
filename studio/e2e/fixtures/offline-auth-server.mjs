@@ -34,6 +34,11 @@ let knowledgeBases;
 let knowledgeSources;
 let nextKnowledgeBase;
 let nextKnowledgeSource;
+let apiKeys;
+let providerCredentials;
+let telephonySettings;
+let nextApiKey;
+let nextProviderCredential;
 
 function resetState() {
   onboarding = new Map([[workspaceA, structuredClone(initialOnboarding)], [workspaceB, structuredClone(initialOnboarding)]]);
@@ -45,9 +50,58 @@ function resetState() {
   knowledgeSources = new Map();
   nextKnowledgeBase = 1;
   nextKnowledgeSource = 1;
+  apiKeys = new Map([
+    [workspaceA, [{
+      key_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      name: "Production Web Client",
+      key_prefix: "wavia_live_prod_abc",
+      scopes: ["session:mint"],
+      role: "tenant_viewer",
+      created_at: "2026-10-01T00:00:00Z",
+      expires_at: null,
+      revoked_at: null,
+      last_used_at: "2026-10-30T12:00:00Z",
+    }]],
+    [workspaceB, []],
+  ]);
+  providerCredentials = new Map([[workspaceA, []], [workspaceB, []]]);
+  const defaultPolicy = {
+    outbound_enabled: false,
+    allowed_destinations: ["+14155550100"],
+    calling_timezone: "UTC",
+    window_start: "09:00:00",
+    window_end: "17:00:00",
+    max_concurrent_calls: 1,
+    max_calls_per_minute: 1,
+    daily_spend_cap_cents: 100,
+    reserved_spend_cents_per_call: 1,
+    max_call_duration_seconds: 600,
+  };
+  const defaultSettings = {
+    policy: defaultPolicy,
+    readiness: {
+      state: "not_configured",
+      trunk_configured: false,
+      telephony_entitled: false,
+      carrier_health: "unknown",
+    },
+    carrier_actions_allowed: false,
+  };
+  telephonySettings = new Map([
+    [workspaceA, structuredClone(defaultSettings)],
+    [workspaceB, structuredClone(defaultSettings)],
+  ]);
+  nextApiKey = 1;
+  nextProviderCredential = 1;
 }
 
 resetState();
+
+const providerCatalog = [
+  { provider_id: "gladia", category: "stt", languages: ["en", "ur"], streaming_input: true, streaming_output: false, supports_tools: false, models: ["default"], readiness: "production" },
+  { provider_id: "groq", category: "llm", languages: ["en"], streaming_input: false, streaming_output: true, supports_tools: true, models: ["llama-3.3-70b-versatile"], readiness: "production" },
+  { provider_id: "cartesia", category: "tts", languages: ["en"], streaming_input: false, streaming_output: true, supports_tools: false, models: ["sonic-english"], readiness: "production" },
+];
 
 function encode(value) {
   return Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -342,7 +396,82 @@ async function handle(request, response) {
       return json(response, 200, agent);
     }
   }
-  return json(response, 404, { detail: "Offline fixture route not found." });
+
+  // ── API Keys ──────────────────────────────────────────────────────────────
+  if (url.pathname === "/v1/api-keys" && request.method === "GET") {
+    return json(response, 200, { keys: apiKeys.get(tenant) ?? [] });
+  }
+  if (url.pathname === "/v1/api-keys" && request.method === "POST") {
+    const input = await bodyFromRequest(request);
+    const id = fixtureId("a", nextApiKey++);
+    const created = {
+      key_id: id,
+      name: input.name ?? "New Key",
+      key_prefix: `wavia_live_${String(nextApiKey).padStart(4, "0")}`,
+      role: input.role ?? "tenant_viewer",
+      scopes: input.scopes ?? ["session:mint"],
+      created_at: new Date().toISOString(),
+      expires_at: input.expires_at ?? null,
+      revoked_at: null,
+      last_used_at: null,
+    };
+    (apiKeys.get(tenant) ?? []).push(created);
+    return json(response, 201, {
+      api_key: "wavia_live_secret_plaintext_key_123456",
+      key: created,
+    });
+  }
+  const apiKeyMatch = url.pathname.match(/^\/v1\/api-keys\/([^/]+)$/i);
+  if (apiKeyMatch && request.method === "DELETE") {
+    const id = apiKeyMatch[1];
+    apiKeys.set(tenant, (apiKeys.get(tenant) ?? []).filter((k) => k.key_id !== id));
+    response.writeHead(204); return response.end();
+  }
+
+  // ── Provider Catalog ──────────────────────────────────────────────────────
+  if (url.pathname === "/v1/catalog/providers" && request.method === "GET") {
+    return json(response, 200, { providers: providerCatalog });
+  }
+
+  // ── Provider Credentials ──────────────────────────────────────────────────
+  if (url.pathname === "/v1/provider-credentials" && request.method === "GET") {
+    return json(response, 200, { credentials: providerCredentials.get(tenant) ?? [] });
+  }
+  if (url.pathname === "/v1/provider-credentials" && request.method === "POST") {
+    const input = await bodyFromRequest(request);
+    const id = String(nextProviderCredential++).padStart(64, "c");
+    const cred = {
+      credential_id: id,
+      provider_id: input.provider_id,
+      credential_type: input.credential_type ?? "api_key",
+      reference: input.reference ?? "default",
+      rotation_version: 1,
+      status: "active",
+      created_at: new Date().toISOString(),
+      rotated_at: null,
+    };
+    (providerCredentials.get(tenant) ?? []).push(cred);
+    return json(response, 201, cred);
+  }
+  const credMatch = url.pathname.match(/^\/v1\/provider-credentials\/([^/]+)$/i);
+  if (credMatch && request.method === "DELETE") {
+    const id = credMatch[1];
+    providerCredentials.set(tenant, (providerCredentials.get(tenant) ?? []).filter((c) => c.credential_id !== id));
+    response.writeHead(204); return response.end();
+  }
+
+  // ── Telephony Settings ────────────────────────────────────────────────────
+  if (url.pathname === "/v1/telephony/settings" && request.method === "GET") {
+    return json(response, 200, telephonySettings.get(tenant));
+  }
+  if (url.pathname === "/v1/telephony/settings" && request.method === "PUT") {
+    const input = await bodyFromRequest(request);
+    const current = telephonySettings.get(tenant);
+    telephonySettings.set(tenant, { ...current, policy: { ...current.policy, ...input } });
+    return json(response, 200, telephonySettings.get(tenant));
+  }
+
+    return json(response, 404, { detail: "Offline fixture route not found." });
 }
 
 const server = createServer((request, response) => {

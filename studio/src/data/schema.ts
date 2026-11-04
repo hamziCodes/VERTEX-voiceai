@@ -174,6 +174,93 @@ export const voiceSessionSchema = z.object({
   session_plan_ref: z.string().min(1),
 });
 
+export const apiKeySchema = z.object({
+  key_id: z.string().uuid(),
+  name: z.string().min(1),
+  key_prefix: z.string(),
+  scopes: z.array(z.string()),
+  role: z.string(),
+  created_at: z.string().nullable(),
+  expires_at: z.string().nullable(),
+  revoked_at: z.string().nullable(),
+  last_used_at: z.string().nullable(),
+});
+export type APIKeyDto = z.infer<typeof apiKeySchema>;
+
+export const apiKeyListSchema = z.object({
+  keys: z.array(apiKeySchema),
+});
+export type APIKeyListDto = z.infer<typeof apiKeyListSchema>;
+
+export const createApiKeyResponseSchema = z.object({
+  api_key: z.string().min(1),
+  key: apiKeySchema,
+});
+export type CreateApiKeyResponseDto = z.infer<typeof createApiKeyResponseSchema>;
+
+export const providerCredentialSchema = z.object({
+  credential_id: z.string().min(1),
+  provider_id: z.string().min(1),
+  credential_type: z.string(),
+  reference: z.string(),
+  rotation_version: z.number().int().nonnegative(),
+  status: z.string(),
+  created_at: z.string().nullable(),
+  rotated_at: z.string().nullable(),
+});
+export type ProviderCredentialDto = z.infer<typeof providerCredentialSchema>;
+
+export const providerCredentialListSchema = z.object({
+  credentials: z.array(providerCredentialSchema),
+});
+export type ProviderCredentialListDto = z.infer<typeof providerCredentialListSchema>;
+
+export const catalogProviderSchema = z.object({
+  provider_id: z.string().min(1),
+  category: z.string(),
+  languages: z.array(z.string()),
+  streaming_input: z.boolean(),
+  streaming_output: z.boolean(),
+  supports_tools: z.boolean(),
+  models: z.array(z.string()),
+  readiness: z.string(),
+});
+export type CatalogProviderDto = z.infer<typeof catalogProviderSchema>;
+
+export const catalogProviderListSchema = z.object({
+  providers: z.array(catalogProviderSchema),
+});
+export type CatalogProviderListDto = z.infer<typeof catalogProviderListSchema>;
+
+export const telephonyPolicySchema = z.object({
+  outbound_enabled: z.boolean().default(false),
+  allowed_destinations: z.array(z.string()).default([]),
+  calling_timezone: z.string().default("UTC"),
+  window_start: z.string().default("09:00:00"),
+  window_end: z.string().default("17:00:00"),
+  max_concurrent_calls: z.number().int().positive().default(1),
+  max_calls_per_minute: z.number().int().positive().default(1),
+  daily_spend_cap_cents: z.number().int().positive().default(100),
+  reserved_spend_cents_per_call: z.number().int().positive().default(1),
+  max_call_duration_seconds: z.number().int().positive().default(600),
+});
+export type TelephonyPolicyDto = z.infer<typeof telephonyPolicySchema>;
+
+export const telephonyReadinessSchema = z.object({
+  state: z.string(),
+  trunk_configured: z.boolean(),
+  telephony_entitled: z.boolean(),
+  carrier_health: z.string(),
+});
+export type TelephonyReadinessDto = z.infer<typeof telephonyReadinessSchema>;
+
+export const telephonySettingsSchema = z.object({
+  policy: telephonyPolicySchema,
+  readiness: telephonyReadinessSchema,
+  carrier_actions_allowed: z.boolean(),
+});
+export type TelephonySettingsDto = z.infer<typeof telephonySettingsSchema>;
+
 export function parseControlPlaneDto<T>(
   schema: z.ZodType<T>,
   payload: unknown,

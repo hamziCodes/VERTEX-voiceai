@@ -466,15 +466,15 @@ Run SDK build/tests, Studio unit/E2E tests, browser console scan, and media-sess
 - Consumes: safe credential/API-key/telephony/catalog APIs.
 - Produces: install snippets derived from actual package exports and a one-time API-key reveal requiring explicit acknowledgement.
 
-- [ ] **Step 1: Write failing safety/role tests**
+- [x] **Step 1: Write failing safety/role tests**
 
 Cover viewer denial, one-time key reveal, clipboard without persistence, revoke confirmation, credential form redaction, advanced routing eligibility, unqualified telephony, and absence of purchase/campaign actions.
 
-- [ ] **Step 2: Implement features**
+- [x] **Step 2: Implement features**
 
 Generated snippets use safe placeholders, never real keys. Telephony remains a readiness/configuration surface.
 
-- [ ] **Step 3: Verify and secret-scan**
+- [x] **Step 3: Verify and secret-scan**
 
 Run unit/E2E/type/lint/build, client-bundle token patterns, browser-storage inspection, URL/log inspection, and repository secret-pattern scan.
 

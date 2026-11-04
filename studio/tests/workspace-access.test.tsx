@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@workos-inc/authkit-nextjs", () => ({ withAuth: vi.fn() }));
@@ -64,5 +64,14 @@ describe("workspace authorization", () => {
     rerender(<WorkspaceNavigation role="tenant_admin" />);
     expect(screen.getByRole("link", { name: "Connect" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("lets editors open read-only channel readiness without exposing admin credential screens", () => {
+    const { container } = render(<WorkspaceNavigation role="tenant_editor" />);
+    const navigation = within(container);
+
+    expect(navigation.getByRole("link", { name: "Connect" })).toBeInTheDocument();
+    expect(navigation.queryByRole("link", { name: "API Keys" })).not.toBeInTheDocument();
+    expect(navigation.queryByRole("link", { name: "Providers" })).not.toBeInTheDocument();
   });
 });

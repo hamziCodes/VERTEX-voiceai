@@ -7,7 +7,9 @@ const ITEMS: ReadonlyArray<{ label: string; href: string; permission: WorkspaceP
   { label: "Build", href: "/agents", permission: "agent:read" },
   { label: "Knowledge", href: "/knowledge", permission: "knowledge:read" },
   { label: "Test", href: "/agents", permission: "session:read" },
-  { label: "Connect", href: "/channels", permission: "telephony:write" },
+  { label: "Connect", href: "/channels", permission: "telephony:read" },
+  { label: "API Keys", href: "/developers/api-keys", permission: "api_key:read" },
+  { label: "Providers", href: "/settings/providers", permission: "provider_credential:read" },
   { label: "Operate", href: "/operations", permission: "usage:read" },
   { label: "Settings", href: "/settings", permission: "member:write" },
 ];
