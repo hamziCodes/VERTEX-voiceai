@@ -2,7 +2,7 @@
 
 **Branch:** `wavia-fixv1-phase13g`  
 **Base:** `07892ec`  
-**Status:** Task 2 complete locally; Agent Directory implementation next
+**Status:** Task 3 complete locally; Persona Editor implementation next
 
 ## Completed
 
@@ -17,6 +17,9 @@
 - Added the Theme B token/font layer, responsive collapsible sidebar, role-filtered active navigation, workspace/account blocks and route-derived agent tabs.
 - Agent tabs intentionally link only the two routes that exist (`/build` and `/test`); no missing SCR route was fabricated.
 - Task 2 RED-to-GREEN evidence: focused shell/tab tests failed before implementation, then 90 Studio tests passed; typecheck, lint and production build passed. The build required network access only to fetch the four approved free Google fonts.
+- Redesigned SCR-01 with search across real agent fields, published/draft filtering, deterministic sorting, responsive table-to-card rows, role-aware actions and distinct empty workspace/filter states.
+- Added route-level Agent Directory loading skeleton and safe retryable error state.
+- Task 3 RED-to-GREEN evidence: the new directory test suite failed before the component existed, then its four focused tests and the full 93-test Studio suite passed; typecheck, lint and production build passed.
 
 ## Not started
 
@@ -31,7 +34,7 @@
 
 ## Next exact action
 
-Start Task 3 with failing Agent Directory tests for search, existing-state filter/sort, role-aware actions and empty-by-filter behavior; then implement SCR-01 without changing its data or API contracts.
+Start Task 4 with failing Persona Editor tests for dirty/saving sticky status, inline field validation and preserved viewer/conflict/publish behavior; then implement SCR-03 without changing any action signature.
 
 ## Resume prompt
 
