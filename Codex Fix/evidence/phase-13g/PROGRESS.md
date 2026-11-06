@@ -2,7 +2,7 @@
 
 **Branch:** `wavia-fixv1-phase13g`  
 **Base:** `07892ec`  
-**Status:** Task 4 complete locally; offline browser QA and closeout next
+**Status:** Phase 13G pilot complete locally; stopped for Hamzi review
 
 ## Completed
 
@@ -23,11 +23,18 @@
 - Redesigned SCR-03 into identity, conversation, advanced prompt, readiness and version-history regions while preserving the existing action contracts.
 - Added field-associated server validation, tenant prompt-isolation notice, dirty/saving sticky autosave status, view-only treatment and route-level loading/error states.
 - Task 4 RED-to-GREEN evidence: sticky-save and inline-validation tests failed against the old editor, then nine focused builder tests and the full 94-test Studio suite passed; typecheck, lint and production build passed.
+- Added the offline Playwright pilot journey covering directory creation/search/filter recovery, Persona editing, existing-route tabs, Axe, keyboard focus, reduced motion and 390px/320px overflow.
+- Fixed two QA findings: the wordmark's visible and accessible names now agree, and active navigation uses ink text plus a marigold inset indicator at sufficient contrast.
+- Preserved the existing operations navigation contract while keeping the visible `Conversations` label; both legacy operations journeys pass.
+- Inspected four fresh rendered captures. They use only the implemented Theme B UI and are stored under gitignored `hamza_local/phase13g-qa/`.
+- Final local verification: 94 unit tests, 17 Chromium journeys, typecheck, lint and production build passed.
 
-## Not started
+## Intentionally not performed
 
-- No screenshot captured.
 - No live provider, call, deployment, paid critic or image-generation action occurred.
+- No remaining Studio screen was redesigned.
+- No dark theme was tested because Studio has no theme mechanism.
+- No Safari, real-device, screen-reader, forced-colors, Lighthouse or production Core Web Vitals run was performed in this local pilot.
 
 ## Resolved inputs
 
@@ -37,8 +44,8 @@
 
 ## Next exact action
 
-Start Task 5 with Playwright assertions and fresh desktop/mobile captures, then run the complete offline test/build/pre-ship gate and write the final verification report. Stop after the pilot.
+STOP for Hamzi's pilot review. Do not redesign the remaining Studio screens, merge, push or deploy until Hamzi gives the next instruction.
 
 ## Resume prompt
 
-> Continue Phase 13G from `Codex Fix/evidence/phase-13g/PROGRESS.md` and the approved `docs/agent-studio/WAVIA_STUDIO_PILOT_DESIGN_BRIEF.md`. Implement only the shared shell, existing-route agent tabs, SCR-01 and SCR-03 using the Phase 13G plan. Preserve all behavior and tests; use offline fixtures only; store fresh Playwright captures under gitignored `hamza_local`; do not deploy, use live providers, place calls, generate images or run paid critics.
+> Phase 13G is complete locally on `wavia-fixv1-phase13g`. Review the shared shell, SCR-01 and SCR-03 pilot plus `Codex Fix/evidence/phase-13g/VERIFICATION.md`. Do not roll the design into remaining screens until Hamzi approves the pilot and gives the next scope.

@@ -73,6 +73,7 @@ describe("workspace authorization", () => {
     );
     const sidebar = within(container);
 
+    expect(sidebar.getByRole("link", { name: /^Wavia Studio$/ })).toBeVisible();
     const toggle = sidebar.getByRole("button", { name: "Collapse sidebar" });
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(sidebar.getByText("Alpha workspace")).toBeVisible();

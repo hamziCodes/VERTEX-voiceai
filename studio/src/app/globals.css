@@ -89,7 +89,7 @@ a { color: inherit; }
 .studio-nav-group__label { margin: 0 10px 4px; }
 .studio-nav-link { align-items: center; border-radius: var(--studio-radius-control); color: var(--studio-ink-muted); display: flex; font-size: 14px; font-weight: 600; gap: 11px; min-height: 44px; padding: 7px 10px; text-decoration: none; transition: background var(--studio-duration-fast) var(--studio-ease), color var(--studio-duration-fast) var(--studio-ease); white-space: nowrap; }
 .studio-nav-link:hover { background: var(--studio-surface-raised); color: var(--studio-ink); }
-.studio-nav-link[aria-current="page"] { background: var(--studio-accent-soft); color: var(--studio-accent); }
+.studio-nav-link[aria-current="page"] { background: var(--studio-accent-soft); box-shadow: inset 3px 0 0 var(--studio-accent); color: var(--studio-ink); }
 .studio-nav-link__glyph { align-items: center; border: 1px solid currentColor; border-radius: 8px; display: inline-flex; flex: 0 0 28px; font-family: var(--font-space-mono), monospace; font-size: 12px; height: 28px; justify-content: center; }
 .studio-account { align-items: center; border-top: 1px solid var(--studio-border); display: grid; gap: 10px; grid-template-columns: 34px minmax(0, 1fr) auto; margin-top: auto; padding-top: 16px; }
 .studio-account__avatar { background: var(--studio-surface-raised); color: var(--studio-ink); }

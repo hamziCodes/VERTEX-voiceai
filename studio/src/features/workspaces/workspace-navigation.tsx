@@ -9,6 +9,7 @@ import { hasWorkspacePermission, type WorkspacePermission, type WorkspaceRole } 
 type NavigationItem = {
   label: string;
   shortLabel: string;
+  screenReaderPrefix?: string;
   href: string;
   permission: WorkspacePermission;
   active(pathname: string): boolean;
@@ -32,7 +33,7 @@ const GROUPS: ReadonlyArray<NavigationGroup> = [
   {
     label: "Operate",
     items: [
-      { label: "Conversations", shortLabel: "O", href: "/conversations", permission: "conversation:read", active: startsWith("/conversations") },
+      { label: "Conversations", shortLabel: "O", screenReaderPrefix: "Operate", href: "/conversations", permission: "conversation:read", active: startsWith("/conversations") },
     ],
   },
   {
@@ -67,9 +68,9 @@ export function WorkspaceNavigation({
   return (
     <aside className="studio-sidebar" data-collapsed={collapsed}>
       <div className="studio-sidebar__brand-row">
-        <Link className="studio-wordmark" href="/dashboard" aria-label="Wavia Studio home">
+        <Link className="studio-wordmark" href="/dashboard">
           <span aria-hidden="true" className="studio-wordmark__mark">W</span>
-          <span className="studio-wordmark__text">Wavia</span>
+          <span className="studio-wordmark__text">Wavia Studio</span>
         </Link>
         <button
           aria-expanded={!collapsed}
@@ -104,6 +105,7 @@ export function WorkspaceNavigation({
                 return (
                   <Link aria-current={current ? "page" : undefined} className="studio-nav-link" href={item.href} key={item.label} title={collapsed ? item.label : undefined}>
                     <span aria-hidden="true" className="studio-nav-link__glyph">{item.shortLabel}</span>
+                    {item.screenReaderPrefix ? <span className="sr-only">{item.screenReaderPrefix} </span> : null}
                     <span className="studio-nav-link__label">{item.label}</span>
                   </Link>
                 );

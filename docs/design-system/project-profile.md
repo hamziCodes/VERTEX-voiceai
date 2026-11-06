@@ -1,7 +1,7 @@
 # Project Profile
 
 **Toolkit version in use:** `1.0.0`
-**Profile last reviewed:** `2026-11-06` by `Codex, revised direction approved by Hamzi`
+**Profile last reviewed:** `2026-11-07` by `Codex, Phase 13G pilot verified locally`
 
 ## 1. What this project is
 
@@ -29,11 +29,11 @@ The Phase 13G pilot covers only `SCR-01` Agent Directory and `SCR-03` Persona Ed
 | :--- | :--- | :--- |
 | Framework and version | Next.js `16.4.3`, App Router; React `19.3.1` | `studio/package.json`, `studio/src/app/` |
 | Language | Strict TypeScript | `studio/tsconfig.json` |
-| Styling | No styling framework or global stylesheet currently installed | Studio source inspection |
-| Token delivery path | Plain CSS custom properties, to be introduced in the pilot | No Tailwind dependency; repository toolkit plain-CSS guidance |
+| Styling | Plain CSS in `studio/src/app/globals.css`; no styling framework | Phase 13G implementation and `studio/package.json` |
+| Token delivery path | Plain CSS custom properties installed in the pilot | No Tailwind dependency; repository toolkit plain-CSS guidance |
 | Motion library | None | `studio/package.json` |
 | Icon library | None | `studio/package.json` |
-| Font loading | `next/font/google` in the pilot; current Studio has no font loader | Next.js framework confirmed from `studio/package.json`; Hamzi approved free Google Fonts delivery |
+| Font loading | `next/font/google` with Bricolage Grotesque, Instrument Sans, Space Mono and Instrument Serif | `studio/src/app/layout.tsx`; Hamzi approved free Google Fonts delivery |
 | Theme mechanism | None in the current Studio | No theme provider, class strategy, toggle or media-query theme found |
 | Target platforms | Desktop web primary; responsive tablet and mobile web required | Phase 13 requirements and pilot brief |
 | Browser floor | Current Chromium for automated evidence; Safari and real-device coverage not yet established | `studio/playwright.config.ts` and current test evidence |
@@ -75,7 +75,7 @@ The Phase 13G pilot covers only `SCR-01` Agent Directory and `SCR-03` Persona Ed
 | Field | Value |
 | :--- | :--- |
 | Conformance target | WCAG 2.2 AA |
-| Known gaps | Current browser-default Studio has no shared focus system, route loading UI or complete per-container state treatment. These are pilot work, not accepted behavior. |
+| Known gaps | Phase 13G adds a shared focus system plus loading/error/empty treatment for the two pilot screens only. Remaining screens require a separately approved rollout. |
 | Assistive tech tested | Automated Axe coverage exists; manual screen-reader testing has not yet been evidenced. |
 | Minimum touch target | 44x44px |
 
@@ -93,16 +93,16 @@ The Phase 13G pilot covers only `SCR-01` Agent Directory and `SCR-03` Persona Ed
 | :--- | :--- |
 | `--product-signal` in use | No separate signal; marigold is the single brand accent. |
 | Value if yes | n/a |
-| Contrast measured | Pending implemented-token verification. |
-| Approved by | Pending pilot approval. |
+| Contrast measured | Automated Axe reported no serious or critical findings on both pilot screens after the active-navigation contrast fix. |
+| Approved by | Pending Hamzi pilot review. |
 
 ## 8. Adoption status
 
 | Surface | Tokens installed | Converted | Both themes verified | Gate passed | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| Shared Studio shell | No | No | n/a, current Studio has no theme mechanism | No | Revised reference direction approved; ready for pilot implementation. |
-| `SCR-01` Agent Directory | No | No | n/a | No | Pilot target. |
-| `SCR-03` Persona Editor | No | No | n/a | No | Pilot target; current route is `/agents/[agentId]/build`. |
+| Shared Studio shell | Yes | Yes | n/a, current Studio has no theme mechanism | Yes | Responsive collapse, active routes, role filtering and focus order verified in unit and Chromium tests. |
+| `SCR-01` Agent Directory | Yes | Yes | n/a | Yes | Ready, empty-by-data, empty-by-filter, loading and error treatments implemented; desktop/390px/320px checked. |
+| `SCR-03` Persona Editor | Yes | Yes | n/a | Yes | Route `/agents/[agentId]/build`; validation, autosave, readiness, view-only, loading and error treatments verified. |
 | Remaining Studio screens | No | No | n/a | No | Explicitly outside the pilot until Hamzi approves it. |
 
 ## 9. Project-specific decisions
