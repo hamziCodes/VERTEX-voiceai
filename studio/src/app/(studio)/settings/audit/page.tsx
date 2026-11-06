@@ -8,7 +8,7 @@ export default async function AuditPage() {
   const events = await getAuditEvents(session, membership.tenant_id);
   return (
     <>
-      <OperationsNavigation role={membership.role} />
+      <OperationsNavigation capabilities={membership.capabilities} />
       <AuditView events={events} />
     </>
   );

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
-import { hasWorkspacePermission, requireWorkspace } from "@/auth/workspace";
+import { hasWorkspaceCapability, requireWorkspace } from "@/auth/workspace";
 import { AgentWorkspaceTabs } from "@/features/agents/agent-workspace-tabs";
 import { loadAgent } from "@/features/agents/data";
 import { mintVoiceSessionAction } from "@/features/voice-test/actions";
@@ -22,7 +22,7 @@ export default async function AgentTestPage({ params }: { params: Promise<{ agen
       <VoiceTestConsole
         agentId={agent.agent_id}
         agentName={agent.name}
-        canStart={agent.is_published && hasWorkspacePermission(membership.role, "session:mint")}
+        canStart={agent.is_published && hasWorkspaceCapability(membership.capabilities, "session:mint")}
         mintSession={mintVoiceSessionAction}
         mode={configuredVoiceTestMode()}
       />

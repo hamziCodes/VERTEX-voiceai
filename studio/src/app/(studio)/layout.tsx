@@ -8,7 +8,7 @@ export default async function StudioLayout({ children }: Readonly<{ children: Re
   const { membership, session } = await requireWorkspace();
   return (
     <div className="studio-shell" data-vertex-surface="dashboard" data-density="compact">
-      <WorkspaceNavigation displayName={session.displayName} role={membership.role} signOutAction={signOutAction} tenantName={membership.tenant_name} />
+      <WorkspaceNavigation capabilities={membership.capabilities} displayName={session.displayName} role={membership.role} signOutAction={signOutAction} tenantName={membership.tenant_name} />
       <div className="studio-frame">
         <main className="studio-main">{children}</main>
       </div>

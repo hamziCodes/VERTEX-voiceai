@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
-import { hasWorkspacePermission, requireWorkspace } from "@/auth/workspace";
+import { hasWorkspaceCapability, requireWorkspace } from "@/auth/workspace";
 import { publishAgentDraftAction, restoreAgentVersionAction, saveAgentDraftAction, validateAgentDraftAction } from "@/features/agents/actions";
 import { AgentDraftEditor } from "@/features/agents/agent-draft-editor";
 import { AgentWorkspaceTabs } from "@/features/agents/agent-workspace-tabs";
@@ -33,7 +33,7 @@ export default async function AgentBuildPage({ params }: { params: Promise<{ age
           publishDraft: publishAgentDraftAction,
           restoreVersion: restoreAgentVersionAction,
         }}
-        canEdit={hasWorkspacePermission(membership.role, "agent:write")}
+        canEdit={hasWorkspaceCapability(membership.capabilities, "agent:write")}
         initialAgent={agent}
         initialValidation={validation}
         versions={versions}

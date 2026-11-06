@@ -12,13 +12,13 @@ import { currentIdentitySchema } from "@/data/schema";
 import { workspaceCookieSecret } from "./config";
 import { requireSession, type StudioSession } from "./session";
 import {
-  hasWorkspacePermission,
-  type WorkspacePermission,
+  hasWorkspaceCapability,
+  type WorkspaceCapability,
 } from "./workspace-permissions";
 
 export {
-  hasWorkspacePermission,
-  type WorkspacePermission,
+  hasWorkspaceCapability,
+  type WorkspaceCapability,
   type WorkspaceRole,
 } from "./workspace-permissions";
 
@@ -81,7 +81,7 @@ export async function clearSelectedWorkspace(): Promise<void> {
   store.delete(WORKSPACE_COOKIE_NAME);
 }
 
-export async function requireWorkspace(permission?: WorkspacePermission): Promise<WorkspaceContext> {
+export async function requireWorkspace(capability?: WorkspaceCapability): Promise<WorkspaceContext> {
   const session = await requireSession();
   const identity = await listCurrentWorkspaces(session);
   const store = await cookies();
@@ -91,7 +91,7 @@ export async function requireWorkspace(permission?: WorkspacePermission): Promis
   if (!membership) {
     redirect("/workspaces");
   }
-  if (permission && !hasWorkspacePermission(membership.role, permission)) {
+  if (capability && !hasWorkspaceCapability(membership.capabilities, capability)) {
     redirect("/workspaces?error=forbidden");
   }
   return { session, identity, membership };

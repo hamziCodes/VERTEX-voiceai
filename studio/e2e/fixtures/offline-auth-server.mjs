@@ -8,6 +8,30 @@ const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 20
 const publicJwk = publicKey.export({ format: "jwk" });
 const workspaceA = "11111111-1111-4111-8111-111111111111";
 const workspaceB = "22222222-2222-4222-8222-222222222222";
+const roleCapabilities = {
+  tenant_admin: [
+    "agent:read", "agent:write", "alert:read", "alert:write", "api_key:read", "api_key:write", "audit:read",
+    "conversation:read", "entitlement:read", "extraction:read", "extraction:write", "knowledge:read", "knowledge:write",
+    "member:read", "member:write", "onboarding:read", "onboarding:write", "provider_credential:read",
+    "provider_credential:write", "secret:rotate", "session:mint", "session:read", "telephony:read", "telephony:write", "usage:read",
+  ],
+  tenant_editor: [
+    "agent:read", "agent:write", "alert:read", "alert:write", "audit:read", "conversation:read", "entitlement:read",
+    "extraction:read", "extraction:write", "knowledge:read", "knowledge:write", "member:read", "onboarding:read",
+    "onboarding:write", "session:mint", "session:read", "telephony:read", "usage:read",
+  ],
+  tenant_developer: [
+    "agent:read", "api_key:read", "api_key:write", "entitlement:read", "provider_credential:read", "session:mint",
+    "session:read", "telephony:read", "usage:read",
+  ],
+  tenant_viewer: [
+    "agent:read", "alert:read", "conversation:read", "entitlement:read", "extraction:read", "knowledge:read",
+    "onboarding:read", "session:read", "usage:read",
+  ],
+  compliance_admin: [
+    "audit:read", "compliance:write", "conversation:read", "entitlement:read", "erasure:execute", "legal_hold:manage",
+  ],
+};
 const initialOnboarding = {
   business_name: "Hamzi Stores",
   use_case: "customer_support",
@@ -311,9 +335,15 @@ async function handle(request, response) {
     const subject = subjectFromRequest(request);
     if (!subject) return json(response, 401, { detail: "Authentication required." });
     const createdAt = "2026-01-01T00:00:00Z";
+    const requestedRole = {
+      "user-editor": "tenant_editor",
+      "user-developer": "tenant_developer",
+      "user-viewer": "tenant_viewer",
+      "user-compliance": "compliance_admin",
+    }[subject] ?? "tenant_admin";
     const memberships = subject === "user-none" ? [] : [
-      { user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", tenant_id: workspaceA, tenant_name: "Alpha workspace", role: "tenant_admin", created_at: createdAt },
-      { user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", tenant_id: workspaceB, tenant_name: "Beta workspace", role: "tenant_viewer", created_at: createdAt },
+      { user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", tenant_id: workspaceA, tenant_name: "Alpha workspace", role: requestedRole, capabilities: roleCapabilities[requestedRole], created_at: createdAt },
+      { user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", tenant_id: workspaceB, tenant_name: "Beta workspace", role: "tenant_viewer", capabilities: roleCapabilities.tenant_viewer, created_at: createdAt },
     ];
     return json(response, 200, {
       user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",

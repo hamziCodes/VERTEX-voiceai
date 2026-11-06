@@ -13,7 +13,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
 
   return (
     <>
-      <OperationsNavigation role={membership.role} />
+      <OperationsNavigation capabilities={membership.capabilities} />
       <ConversationListView page={page} />
     </>
   );

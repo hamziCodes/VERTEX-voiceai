@@ -10,8 +10,8 @@ vi.mock("next/navigation", () => ({ usePathname: () => "/agents" }));
 
 import { WorkspaceNavigation } from "@/features/workspaces/workspace-navigation";
 import { sealInvitationToken, unsealInvitationToken } from "@/auth/invitation";
+import { hasWorkspaceCapability } from "@/auth/capabilities";
 import {
-  hasWorkspacePermission,
   signWorkspaceSelection,
   verifyWorkspaceSelection,
   workspaceCookieOptions,
@@ -48,28 +48,63 @@ describe("workspace authorization", () => {
     expect(sealed).not.toContain(token);
   });
 
-  it("mirrors the backend permission matrix for early UX checks", () => {
-    expect(hasWorkspacePermission("tenant_admin", "member:write")).toBe(true);
-    expect(hasWorkspacePermission("tenant_editor", "agent:write")).toBe(true);
-    expect(hasWorkspacePermission("tenant_editor", "member:write")).toBe(false);
-    expect(hasWorkspacePermission("tenant_viewer", "agent:write")).toBe(false);
-    expect(hasWorkspacePermission("compliance_admin", "audit:read")).toBe(true);
+  it("uses backend capabilities for presentation and fails closed", () => {
+    expect(hasWorkspaceCapability(["member:write"], "member:write")).toBe(true);
+    expect(hasWorkspaceCapability([], "member:write")).toBe(false);
+    expect(hasWorkspaceCapability(["future:unknown"], "agent:read")).toBe(false);
   });
 
-  it("renders task navigation from durable Wavia role permissions", () => {
-    const { rerender } = render(<WorkspaceNavigation role="tenant_viewer" />);
+  it("renders task navigation from backend-provided capabilities", () => {
+    const { rerender } = render(
+      <WorkspaceNavigation capabilities={["agent:read", "session:read"]} role="tenant_viewer" />,
+    );
     expect(screen.getByRole("link", { name: "Build" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("link", { name: "Connect" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
 
-    rerender(<WorkspaceNavigation role="tenant_admin" />);
+    rerender(
+      <WorkspaceNavigation capabilities={["agent:read", "telephony:read", "member:write"]} role="tenant_admin" />,
+    );
     expect(screen.getByRole("link", { name: "Connect" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
   });
 
+  it("does not trust forged administrator role text without capabilities", () => {
+    const { container } = render(<WorkspaceNavigation capabilities={[]} role="tenant_admin" />);
+    const navigation = within(container);
+
+    expect(navigation.queryByRole("link", { name: "Build" })).not.toBeInTheDocument();
+    expect(navigation.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
+  });
+
+  it("shows only the lean developer navigation bundle", () => {
+    const { container } = render(
+      <WorkspaceNavigation
+        capabilities={[
+          "agent:read",
+          "session:mint",
+          "session:read",
+          "usage:read",
+          "telephony:read",
+          "api_key:read",
+          "provider_credential:read",
+        ]}
+        role="tenant_developer"
+      />,
+    );
+    const navigation = within(container);
+
+    expect(navigation.getByRole("link", { name: "Build" })).toBeInTheDocument();
+    expect(navigation.getByRole("link", { name: "Test" })).toBeInTheDocument();
+    expect(navigation.getByRole("link", { name: "Connect" })).toBeInTheDocument();
+    expect(navigation.getByRole("link", { name: "API keys" })).toBeInTheDocument();
+    expect(navigation.getByRole("link", { name: "Providers" })).toBeInTheDocument();
+    expect(navigation.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
+  });
+
   it("collapses the workspace sidebar without removing accessible route names", () => {
     const { container } = render(
-      <WorkspaceNavigation displayName="Offline User" role="tenant_admin" tenantName="Alpha workspace" />,
+      <WorkspaceNavigation capabilities={["agent:read"]} displayName="Offline User" role="tenant_admin" tenantName="Alpha workspace" />,
     );
     const sidebar = within(container);
 
@@ -87,7 +122,9 @@ describe("workspace authorization", () => {
   });
 
   it("lets editors open read-only channel readiness without exposing admin credential screens", () => {
-    const { container } = render(<WorkspaceNavigation role="tenant_editor" />);
+    const { container } = render(
+      <WorkspaceNavigation capabilities={["telephony:read"]} role="tenant_editor" />,
+    );
     const navigation = within(container);
 
     expect(navigation.getByRole("link", { name: "Connect" })).toBeInTheDocument();

@@ -4,7 +4,14 @@ export const workspaceSummarySchema = z.object({
   user_id: z.string().uuid(),
   tenant_id: z.string().uuid(),
   tenant_name: z.string().trim().min(1),
-  role: z.enum(["tenant_admin", "tenant_editor", "tenant_viewer", "compliance_admin"]),
+  role: z.enum([
+    "tenant_admin",
+    "tenant_editor",
+    "tenant_developer",
+    "tenant_viewer",
+    "compliance_admin",
+  ]),
+  capabilities: z.array(z.string()),
   created_at: z.iso.datetime(),
 });
 

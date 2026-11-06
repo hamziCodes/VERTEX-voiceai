@@ -31,7 +31,7 @@ export default async function ConversationDetailPage({ params }: { params: Promi
   const [conversation, intelligence] = await loadConversationDetail(session, membership.tenant_id, callId);
   return (
     <>
-      <OperationsNavigation role={membership.role} />
+      <OperationsNavigation capabilities={membership.capabilities} />
       <ConversationDetailView conversation={conversation} intelligence={intelligence} />
     </>
   );

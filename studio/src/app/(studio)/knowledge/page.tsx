@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { z } from "zod";
 
-import { hasWorkspacePermission, requireWorkspace } from "@/auth/workspace";
+import { hasWorkspaceCapability, requireWorkspace } from "@/auth/workspace";
 import { activateKnowledgeBaseAction, addKnowledgeFaqAction, bindKnowledgeToAgentAction, createKnowledgeBaseAction, deleteKnowledgeSourceAction, previewKnowledgeAction, retryKnowledgeSourceAction, uploadKnowledgeSourceAction } from "@/features/knowledge/actions";
 import { loadKnowledgeAgents, loadKnowledgeBases, loadKnowledgeEntitlements, loadKnowledgeSources } from "@/features/knowledge/data";
 import { KnowledgeManager } from "@/features/knowledge/knowledge-manager";
@@ -35,7 +35,7 @@ export default async function KnowledgePage({ searchParams }: { searchParams: Pr
         }}
         agents={agents.map((agent) => ({ agent_id: agent.agent_id, name: agent.name }))}
         base={selected}
-        canEdit={hasWorkspacePermission(membership.role, "knowledge:write")}
+        canEdit={hasWorkspaceCapability(membership.capabilities, "knowledge:write")}
         maxUploadBytes={entitlements.max_knowledge_bytes}
         sources={sources}
       />

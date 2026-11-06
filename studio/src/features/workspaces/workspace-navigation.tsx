@@ -4,14 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
-import { hasWorkspacePermission, type WorkspacePermission, type WorkspaceRole } from "@/auth/workspace-permissions";
+import { hasWorkspaceCapability, type WorkspaceCapability, type WorkspaceRole } from "@/auth/workspace-permissions";
 
 type NavigationItem = {
   label: string;
   shortLabel: string;
   screenReaderPrefix?: string;
   href: string;
-  permission: WorkspacePermission;
+  permission: WorkspaceCapability;
   active(pathname: string): boolean;
 };
 
@@ -52,11 +52,13 @@ const GROUPS: ReadonlyArray<NavigationGroup> = [
 ];
 
 export function WorkspaceNavigation({
+  capabilities,
   role,
   tenantName,
   displayName,
   signOutAction,
 }: {
+  capabilities: readonly string[];
   role: WorkspaceRole;
   tenantName?: string;
   displayName?: string;
@@ -95,7 +97,7 @@ export function WorkspaceNavigation({
 
       <nav aria-label="Workspace" className="studio-sidebar__navigation">
         {GROUPS.map((group) => {
-          const permitted = group.items.filter((item) => hasWorkspacePermission(role, item.permission));
+          const permitted = group.items.filter((item) => hasWorkspaceCapability(capabilities, item.permission));
           if (permitted.length === 0) return null;
           return (
             <div className="studio-nav-group" key={group.label}>

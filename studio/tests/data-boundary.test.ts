@@ -5,6 +5,7 @@ import {
   ControlPlaneError,
   controlPlaneRequest,
 } from "@/data/control-plane";
+import { currentIdentitySchema } from "@/data/schema";
 
 const responseSchema = z.object({
   id: z.string().uuid(),
@@ -247,5 +248,47 @@ describe("controlPlaneRequest", () => {
     expect(serialized).not.toContain("test-password-value");
     expect(String(caught)).not.toContain(serverSession.accessToken);
     expect(String(caught)).not.toContain("test-password-value");
+  });
+});
+
+describe("current identity boundary", () => {
+  const membership = {
+    user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    tenant_id: "11111111-1111-4111-8111-111111111111",
+    tenant_name: "Alpha workspace",
+    role: "tenant_developer",
+    capabilities: ["agent:read", "future:unknown"],
+    created_at: "2026-01-01T00:00:00Z",
+  };
+
+  it("accepts the developer role and safe string capability arrays", () => {
+    const parsed = currentIdentitySchema.parse({
+      user_id: membership.user_id,
+      email: "developer@example.test",
+      is_active: true,
+      is_platform_admin: false,
+      memberships: [membership],
+    });
+
+    expect(parsed.memberships[0]).toMatchObject(membership);
+  });
+
+  it("rejects missing or malformed capability lists", () => {
+    const withoutCapabilities: Record<string, unknown> = { ...membership };
+    delete withoutCapabilities.capabilities;
+    expect(() => currentIdentitySchema.parse({
+      user_id: membership.user_id,
+      email: null,
+      is_active: true,
+      is_platform_admin: false,
+      memberships: [withoutCapabilities],
+    })).toThrow();
+    expect(() => currentIdentitySchema.parse({
+      user_id: membership.user_id,
+      email: null,
+      is_active: true,
+      is_platform_admin: false,
+      memberships: [{ ...membership, capabilities: ["agent:read", 7] }],
+    })).toThrow();
   });
 });

@@ -195,7 +195,9 @@ describe("AuditView", () => {
 
 describe("OperationsNavigation", () => {
   it("shows viewer conversation and usage access without audit access", () => {
-    const { container } = render(<OperationsNavigation role="tenant_viewer" />);
+    const { container } = render(
+      <OperationsNavigation capabilities={["conversation:read", "usage:read"]} />,
+    );
     const navigation = within(container);
 
     expect(navigation.getByRole("link", { name: "Conversations" })).toBeVisible();
@@ -204,7 +206,9 @@ describe("OperationsNavigation", () => {
   });
 
   it("shows compliance conversation and audit access without usage access", () => {
-    const { container } = render(<OperationsNavigation role="compliance_admin" />);
+    const { container } = render(
+      <OperationsNavigation capabilities={["conversation:read", "audit:read"]} />,
+    );
     const navigation = within(container);
 
     expect(navigation.getByRole("link", { name: "Conversations" })).toBeVisible();

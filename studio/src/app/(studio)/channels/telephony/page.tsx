@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { hasWorkspacePermission, requireWorkspace } from "@/auth/workspace";
+import { hasWorkspaceCapability, requireWorkspace } from "@/auth/workspace";
 import { getTelephonySettings } from "@/features/channels/data";
 import { saveTelephonyPolicyAction } from "@/features/channels/actions";
 import { TelephonyChannelView } from "@/features/channels/telephony-channel-view";
@@ -7,7 +7,7 @@ import { TelephonyChannelView } from "@/features/channels/telephony-channel-view
 export default async function TelephonyChannelPage() {
   const { membership } = await requireWorkspace("telephony:read");
   const settings = await getTelephonySettings();
-  const canEdit = hasWorkspacePermission(membership.role, "telephony:write");
+  const canEdit = hasWorkspaceCapability(membership.capabilities, "telephony:write");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>

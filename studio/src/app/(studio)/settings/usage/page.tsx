@@ -8,7 +8,7 @@ export default async function UsagePage() {
   const usage = await getUsage(session, membership.tenant_id);
   return (
     <>
-      <OperationsNavigation role={membership.role} />
+      <OperationsNavigation capabilities={membership.capabilities} />
       <UsageView usage={usage} />
     </>
   );

@@ -1,4 +1,4 @@
-import { hasWorkspacePermission, requireWorkspace } from "@/auth/workspace";
+import { hasWorkspaceCapability, requireWorkspace } from "@/auth/workspace";
 import { createAgentAction } from "@/features/agents/actions";
 import { AgentCreationWizard } from "@/features/agents/agent-creation-wizard";
 import { loadAgents, loadEntitlements, loadTemplates } from "@/features/agents/data";
@@ -16,7 +16,7 @@ export default async function NewAgentPage() {
       <p>Choose a tested starting point or begin with the default safe configuration.</p>
       <AgentCreationWizard
         agentCount={agents.length}
-        canEdit={hasWorkspacePermission(membership.role, "agent:write")}
+        canEdit={hasWorkspaceCapability(membership.capabilities, "agent:write")}
         createAction={createAgentAction}
         maxAgents={entitlements.max_agents}
         templates={templates}
