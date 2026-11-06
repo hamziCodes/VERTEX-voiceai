@@ -91,14 +91,14 @@ No `tenant_owner` role is added yet. `tenant_admin` remains the durable owner-le
 
 ### Platform staff roles
 
-Platform roles live in a new durable platform-membership model rather than a boolean wildcard.
+Platform roles live in a new durable platform-membership model rather than a boolean wildcard. Launch uses only the two roles needed to administer and support the product. Granular permissions remain extensible so more role bundles can be added later without redesigning identity storage.
 
 | Role | Purpose | Main capabilities |
 | :--- | :--- | :--- |
 | `platform_admin` | Wavia administration | Manage staff roles, tenant lifecycle metadata and entitlements; access remains permission-scoped rather than `*`. |
 | `platform_support` | Customer support | Search tenants, inspect safe configuration/readiness and create an audited, expiring support session after entering a reason. Read-only by default. |
-| `platform_operations` | Service operations | View provider, queue, telephony, runtime and quota health; acknowledge operational incidents; no customer secret or transcript access. |
-| `platform_auditor` | Internal compliance/security | Cross-tenant audit and compliance evidence with redaction; no customer configuration writes. |
+
+Separate platform operations or auditor roles are intentionally deferred. At launch, operational health belongs to `platform_admin`, while support receives only its explicitly enumerated read permissions. A future dedicated team can receive a new role bundle without changing the underlying permission model.
 
 Emergency break-glass access is operational procedure, not a normal UI role. It requires strong identity controls and separate audit policy before implementation.
 
@@ -158,11 +158,11 @@ Dedicated agent routes for language/voice, provider chains, tools/MCP, extractio
 
 | Route | Purpose | Default platform roles |
 | :--- | :--- | :--- |
-| `/admin` | Internal overview and actionable platform status | all platform roles, capability-filtered |
-| `/admin/tenants` | Tenant directory with search, status and entitlement summary | admin, support, operations, auditor read scopes |
+| `/admin` | Internal overview and actionable platform status | platform admin and support, capability-filtered |
+| `/admin/tenants` | Tenant directory with search, status and entitlement summary | admin and support read scopes |
 | `/admin/tenants/[tenantId]` | Safe tenant profile, readiness, usage and audit summary | capability-filtered |
-| `/admin/operations` | Provider/runtime/queue/telephony health | admin, operations; support read subset |
-| `/admin/audit` | Cross-tenant internal and customer-boundary audit | admin, auditor |
+| `/admin/operations` | Provider/runtime/queue/telephony health | platform admin; support receives only a safe read subset where required for troubleshooting |
+| `/admin/audit` | Cross-tenant internal and customer-boundary audit | platform admin only at launch |
 | `/admin/staff` | Platform staff role assignment and revocation | platform admin only |
 | `/admin/support-sessions` | Request, inspect and terminate reasoned support sessions | admin and support |
 
@@ -217,9 +217,9 @@ Internal views show safe metadata, readiness, redacted diagnostics and aggregate
 - Remove route-local browser-default and inline styling.
 - Verify all functional states and existing end-to-end journeys.
 
-### Phase 13J — Platform management security foundation
+### Phase 13J — Lean platform management security foundation
 
-- Add durable platform roles, explicit permission matrix, migration from the boolean flag, internal route group and safe tenant directory/detail.
+- Add only `platform_admin` and `platform_support`, an explicit permission matrix, migration from the boolean flag, internal route group and safe tenant directory/detail.
 - Add platform audit and staff management.
 - Keep support sessions read-only and time-bounded.
 
@@ -238,7 +238,7 @@ Each phase must end in a small verified commit set and update the execution trac
 - Route matrix tests for unauthenticated, wrong-role, wrong-tenant, unknown-role and expired support-grant cases.
 - Disposable PostgreSQL tests for platform-role migration, RLS, membership changes, last-admin protection and support-grant audit.
 - Studio unit tests for capability-filtered navigation/actions and all component states.
-- Playwright journeys for self-serve admin, editor, developer, viewer, compliance, platform support, operations, auditor and platform admin.
+- Playwright journeys for self-serve admin, editor, developer, viewer, compliance, platform support and platform admin.
 - Cross-tenant tampering tests remain mandatory.
 - Browser QA at desktop, 390px and 320px, plus keyboard, reduced motion, Axe and overflow checks.
 - Final release qualification records Safari, physical device, screen-reader, forced-colors, Lighthouse and Core Web Vitals separately.
