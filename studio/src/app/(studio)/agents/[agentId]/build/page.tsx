@@ -19,8 +19,13 @@ export default async function AgentBuildPage({ params }: { params: Promise<{ age
   return (
     <div className="agent-workspace">
       <AgentWorkspaceTabs agentId={agent.agent_id} />
-      <h1>Build {agent.name}</h1>
-      <p>Changes save automatically. Publishing creates an immutable version for new sessions.</p>
+      <header className="screen-header">
+        <div>
+          <p className="screen-eyebrow">Agents / Persona</p>
+          <h1>Build {agent.name}</h1>
+          <p className="screen-summary">Changes save automatically. Publishing creates an immutable version for new sessions.</p>
+        </div>
+      </header>
       <AgentDraftEditor
         actions={{
           saveDraft: saveAgentDraftAction,

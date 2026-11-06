@@ -117,6 +117,7 @@ describe("revision-safe draft editor", () => {
     );
 
     fireEvent.change(screen.getByLabelText("Agent name"), { target: { value: "Updated assistant" } });
+    expect(screen.getByRole("status", { name: "Draft save status" })).toHaveTextContent("Saving changes");
     expect(screen.getByText("Saving…")).toBeVisible();
     await act(async () => {
       vi.advanceTimersByTime(700);
@@ -128,6 +129,26 @@ describe("revision-safe draft editor", () => {
     expect(autosavePatch).not.toHaveProperty("providers");
     expect(autosavePatch).not.toHaveProperty("compliance");
     expect(screen.getByText("Saved at revision 4.")).toBeVisible();
+    expect(screen.queryByRole("status", { name: "Draft save status" })).not.toBeInTheDocument();
+  });
+
+  it("associates server validation with its field and explains prompt isolation", () => {
+    render(
+      <AgentDraftEditor
+        initialAgent={agent}
+        initialValidation={{ is_valid: false, errors: [{ code: "required", message: "Agent name is required.", field: "name" }] }}
+        versions={[]}
+        canEdit
+        actions={{ saveDraft: vi.fn(), validateDraft: vi.fn(), publishDraft: vi.fn(), restoreVersion: vi.fn() }}
+      />,
+    );
+
+    expect(screen.getByLabelText("Agent name")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("Agent name")).toHaveAttribute("aria-describedby", "agent-name-error");
+    expect(document.getElementById("agent-name-error")).toHaveTextContent("Agent name is required.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+    expect(screen.getByText(/Tenant data stays isolated from Wavia's core prompts/i)).toBeVisible();
   });
 
   it("surfaces stale conflicts and never claims the draft was saved", async () => {

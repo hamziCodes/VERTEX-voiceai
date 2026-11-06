@@ -2,7 +2,7 @@
 
 **Branch:** `wavia-fixv1-phase13g`  
 **Base:** `07892ec`  
-**Status:** Task 3 complete locally; Persona Editor implementation next
+**Status:** Task 4 complete locally; offline browser QA and closeout next
 
 ## Completed
 
@@ -20,6 +20,9 @@
 - Redesigned SCR-01 with search across real agent fields, published/draft filtering, deterministic sorting, responsive table-to-card rows, role-aware actions and distinct empty workspace/filter states.
 - Added route-level Agent Directory loading skeleton and safe retryable error state.
 - Task 3 RED-to-GREEN evidence: the new directory test suite failed before the component existed, then its four focused tests and the full 93-test Studio suite passed; typecheck, lint and production build passed.
+- Redesigned SCR-03 into identity, conversation, advanced prompt, readiness and version-history regions while preserving the existing action contracts.
+- Added field-associated server validation, tenant prompt-isolation notice, dirty/saving sticky autosave status, view-only treatment and route-level loading/error states.
+- Task 4 RED-to-GREEN evidence: sticky-save and inline-validation tests failed against the old editor, then nine focused builder tests and the full 94-test Studio suite passed; typecheck, lint and production build passed.
 
 ## Not started
 
@@ -34,7 +37,7 @@
 
 ## Next exact action
 
-Start Task 4 with failing Persona Editor tests for dirty/saving sticky status, inline field validation and preserved viewer/conflict/publish behavior; then implement SCR-03 without changing any action signature.
+Start Task 5 with Playwright assertions and fresh desktop/mobile captures, then run the complete offline test/build/pre-ship gate and write the final verification report. Stop after the pilot.
 
 ## Resume prompt
 
