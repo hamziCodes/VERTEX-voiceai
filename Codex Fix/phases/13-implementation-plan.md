@@ -589,4 +589,4 @@ Execute natively, one subphase at a time, because the contracts are sequential a
 4. write sanitized evidence;
 5. stop for Hamzi's review and separate commit/push confirmation.
 
-**Next exact action:** Review `Codex Fix/evidence/phase-13f/VERIFICATION.md`, then obtain Hamzi's explicit approval before committing and pushing `wavia-fixv1-phase13f`. After publication, fast-forward `wavia-fixv1` to the verified Phase 13F commit and stop before Phase 13G visual work until the design brief/reference gate is approved.
+**Next exact action:** Phase 13F is published as implementation commit `5df5479`. Stop and obtain Hamzi's visual references or explicit design-brief approval before Phase 13G. Capture fresh desktop and 390 px baselines before changing styles.

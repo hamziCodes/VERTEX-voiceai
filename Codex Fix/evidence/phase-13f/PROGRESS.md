@@ -44,16 +44,17 @@ Complete Task 14: tenant-scoped conversation history/detail, post-call intellige
 | Plan integrity | PASS - 36 phases, tests, and trackers verified |
 | Diff/protected-path/client-bundle/source scans | PASS |
 | Related Python contracts | NOT RERUN - Windows Store Python 3.12 launcher failed before pytest with a terminated logon-session error; Phase 13F changes no Python/backend files, and the Phase 13E backend/full-suite evidence remains unchanged |
-| Commit/push | AUTHORIZED BY HAMZI ON 2026-11-06; publication in progress |
+| Commit/push | PUBLISHED - implementation commit `5df5479` verified on both `origin/wavia-fixv1-phase13f` and `origin/wavia-fixv1` |
+| Integration-checkout rerun | NOT STARTED - `vitest` is not installed in the clean integration checkout; the hash-identical Phase 13F worktree passed the complete gate immediately before publication |
 
 ## Current checkpoint
 
-Phase 13F implementation and offline Studio verification are complete. Hamzi authorized the clean Phase 13F commit/push on 2026-11-06. Do not begin Phase 13G until the visual design/reference gate is approved.
+Phase 13F implementation is complete and published as `5df5479`. Both remote branches were directly verified at that implementation commit. Do not begin Phase 13G until the visual design/reference gate is approved.
 
 ## Human intervention
 
-No intervention is currently required. Publish the verified branch, fast-forward `wavia-fixv1`, verify local/remote hashes, and stop before Phase 13G.
+No intervention is currently required. Phase 13G must begin with the visual design/reference brief gate.
 
 ## Next continuation prompt
 
-> Resume Phase 13F in `.worktrees/phase-13f`. Read `Codex Fix/evidence/phase-13f/PROGRESS.md` and `VERIFICATION.md` first. Re-check branch/status and `git diff --check`; if Hamzi has explicitly authorized publication, commit the verified Phase 13F scope once, push `wavia-fixv1-phase13f`, verify local/remote hashes, fast-forward and push `wavia-fixv1`, then update the ledger. Do not begin Phase 13G until its design brief/reference gate is approved. Never force-push or touch `.github/workflows`.
+> Phase 13F is complete. Begin Phase 13G only after Hamzi approves the visual design/reference brief. Read `Codex Fix/phases/13-implementation-plan.md`, `Codex Fix/evidence/phase-13f/VERIFICATION.md`, and the current tracker first; capture fresh desktop and 390 px baselines before changing styles. Do not change validated business behavior, deploy, use live providers, or touch `.github/workflows`.

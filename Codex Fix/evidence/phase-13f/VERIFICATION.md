@@ -53,10 +53,12 @@ The desktop capture shows the complete conversation detail, transcript, recordin
 
 The related Python conversation/RBAC/usage/audit contracts were queued but did not start because the Windows Store Python 3.12 launcher returned a terminated logon-session error after the IDE crash. Phase 13F changes no Python or backend files. The last verified Phase 13E evidence remains 29/29 backend contracts and 699 passed/14 skipped for the complete forced-offline Python suite. This is recorded as an environment limitation, not as a passing rerun.
 
+After fast-forwarding the clean integration checkout to `5df5479`, its `npm.cmd --prefix studio run test` command could not start because that checkout does not have `vitest` installed. The source tree was hash-identical to the Phase 13F worktree that had immediately passed 88/88 unit tests, 16/16 Chromium journeys, lint, typecheck, and build. The missing dependency result is recorded as an integration-checkout environment limitation, not as a test pass or product failure.
+
 ## Review outcome
 
-No blocking functional, authorization, tenant-isolation, contract, or client-secret finding remains in the Phase 13F diff. Hamzi authorized the clean Phase 13F commit/push on 2026-11-06. The implementation is ready for publication; it is not deployed or live-tested.
+No blocking functional, authorization, tenant-isolation, contract, or client-secret finding remains in the Phase 13F diff. Hamzi authorized publication on 2026-11-06. Implementation commit `5df5479` was pushed and directly verified on both `origin/wavia-fixv1-phase13f` and `origin/wavia-fixv1`. It is not deployed or live-tested.
 
 ## Next exact action
 
-Re-check branch/status and `git diff --check`, commit the Phase 13F scope once, push `wavia-fixv1-phase13f`, verify local/remote hashes, fast-forward and push `wavia-fixv1`, update the progress/tracker evidence, and stop before Phase 13G.
+Stop before Phase 13G. Its first action is the separately approved visual design/reference brief, followed by fresh desktop and 390 px baseline captures.
