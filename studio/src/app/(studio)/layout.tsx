@@ -7,14 +7,11 @@ import { signOutAction } from "@/features/workspaces/actions";
 export default async function StudioLayout({ children }: Readonly<{ children: ReactNode }>) {
   const { membership, session } = await requireWorkspace();
   return (
-    <div>
-      <header>
-        <strong>{membership.tenant_name}</strong>
-        <span>{session.displayName}</span>
-        <form action={signOutAction}><button type="submit">Sign out</button></form>
-      </header>
-      <WorkspaceNavigation role={membership.role} />
-      <main>{children}</main>
+    <div className="studio-shell" data-vertex-surface="dashboard" data-density="compact">
+      <WorkspaceNavigation displayName={session.displayName} role={membership.role} signOutAction={signOutAction} tenantName={membership.tenant_name} />
+      <div className="studio-frame">
+        <main className="studio-main">{children}</main>
+      </div>
     </div>
   );
 }

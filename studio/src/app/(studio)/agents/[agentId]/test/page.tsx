@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 
 import { hasWorkspacePermission, requireWorkspace } from "@/auth/workspace";
+import { AgentWorkspaceTabs } from "@/features/agents/agent-workspace-tabs";
 import { loadAgent } from "@/features/agents/data";
 import { mintVoiceSessionAction } from "@/features/voice-test/actions";
 import { configuredVoiceTestMode } from "@/features/voice-test/config";
@@ -13,7 +14,8 @@ export default async function AgentTestPage({ params }: { params: Promise<{ agen
   const { session, membership } = await requireWorkspace("session:read");
   const agent = await loadAgent(session, membership.tenant_id, agentId);
   return (
-    <>
+    <div className="agent-workspace">
+      <AgentWorkspaceTabs agentId={agent.agent_id} />
       <h1>Browser voice test</h1>
       <p>Check conversation behavior, interruption, and turn timing before connecting a phone number or website.</p>
       {!agent.is_published ? <p role="alert">This agent has no published version. Publish it before starting a test.</p> : null}
@@ -24,6 +26,6 @@ export default async function AgentTestPage({ params }: { params: Promise<{ agen
         mintSession={mintVoiceSessionAction}
         mode={configuredVoiceTestMode()}
       />
-    </>
+    </div>
   );
 }

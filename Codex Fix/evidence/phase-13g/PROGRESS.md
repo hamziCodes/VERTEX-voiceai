@@ -2,7 +2,7 @@
 
 **Branch:** `wavia-fixv1-phase13g`  
 **Base:** `07892ec`  
-**Status:** revised design direction approved; implementation planning in progress
+**Status:** Task 2 complete locally; Agent Directory implementation next
 
 ## Completed
 
@@ -13,13 +13,14 @@
 - Replaced the cancelled Mobbin dependency and superseded website themes with the approved Wavia Theme B values.
 - Recorded the explicit Wavia-over-VERTEX brand deviation in `docs/design-system/project-profile.md`.
 - Wrote `docs/agent-studio/WAVIA_STUDIO_PILOT_DESIGN_BRIEF.md` with the screen audit, component inventory, token mapping, pilot composition, state contract and QA plan.
+- Baseline passed before visual code: Studio 88 tests, typecheck, lint and production build.
+- Added the Theme B token/font layer, responsive collapsible sidebar, role-filtered active navigation, workspace/account blocks and route-derived agent tabs.
+- Agent tabs intentionally link only the two routes that exist (`/build` and `/test`); no missing SCR route was fabricated.
+- Task 2 RED-to-GREEN evidence: focused shell/tab tests failed before implementation, then 90 Studio tests passed; typecheck, lint and production build passed. The build required network access only to fetch the four approved free Google fonts.
 
 ## Not started
 
-- No Studio source or behavior changed.
-- No dependencies installed.
 - No screenshot captured.
-- No tests/build run for this documentation-only checkpoint.
 - No live provider, call, deployment, paid critic or image-generation action occurred.
 
 ## Resolved inputs
@@ -30,7 +31,7 @@
 
 ## Next exact action
 
-Write and self-review the Phase 13G pilot implementation plan, commit the corrected brief/profile checkpoint, install the existing workspaces, run the offline baseline, then implement only the shared shell/primitives, route-derived agent tabs, `SCR-01` and `SCR-03` with test-first changes.
+Start Task 3 with failing Agent Directory tests for search, existing-state filter/sort, role-aware actions and empty-by-filter behavior; then implement SCR-01 without changing its data or API contracts.
 
 ## Resume prompt
 

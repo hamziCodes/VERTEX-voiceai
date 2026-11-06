@@ -2,10 +2,11 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@workos-inc/authkit-nextjs", () => ({ withAuth: vi.fn() }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/agents" }));
 
 import { WorkspaceNavigation } from "@/features/workspaces/workspace-navigation";
 import { sealInvitationToken, unsealInvitationToken } from "@/auth/invitation";
@@ -57,13 +58,31 @@ describe("workspace authorization", () => {
 
   it("renders task navigation from durable Wavia role permissions", () => {
     const { rerender } = render(<WorkspaceNavigation role="tenant_viewer" />);
-    expect(screen.getByRole("link", { name: "Build" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Build" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("link", { name: "Connect" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
 
     rerender(<WorkspaceNavigation role="tenant_admin" />);
     expect(screen.getByRole("link", { name: "Connect" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("collapses the workspace sidebar without removing accessible route names", () => {
+    const { container } = render(
+      <WorkspaceNavigation displayName="Offline User" role="tenant_admin" tenantName="Alpha workspace" />,
+    );
+    const sidebar = within(container);
+
+    const toggle = sidebar.getByRole("button", { name: "Collapse sidebar" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(sidebar.getByText("Alpha workspace")).toBeVisible();
+    expect(sidebar.getByText("Offline User")).toBeVisible();
+
+    fireEvent.click(toggle);
+
+    expect(sidebar.getByRole("button", { name: "Expand sidebar" })).toHaveAttribute("aria-expanded", "false");
+    expect(container.querySelector("[data-collapsed='true']")).toBeInTheDocument();
+    expect(sidebar.getByRole("link", { name: "Build" })).toBeInTheDocument();
   });
 
   it("lets editors open read-only channel readiness without exposing admin credential screens", () => {
