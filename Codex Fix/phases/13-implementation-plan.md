@@ -478,7 +478,7 @@ Generated snippets use safe placeholders, never real keys. Telephony remains a r
 
 Run unit/E2E/type/lint/build, client-bundle token patterns, browser-storage inspection, URL/log inspection, and repository secret-pattern scan.
 
-- [ ] **Step 4: Stop for 13E review and commit confirmation**
+- [x] **Step 4: Stop for 13E review and commit confirmation**
 
 ## Phase 13F — Conversations and operations
 
@@ -497,19 +497,19 @@ Run unit/E2E/type/lint/build, client-bundle token patterns, browser-storage insp
 - Consumes: conversation/intelligence/review/usage/audit APIs.
 - Produces: cursor pagination/filtering, transcript/detail, retention-aware recording state, review state, entitlements, and audit history.
 
-- [ ] **Step 1: Write failing operational-state tests**
+- [x] **Step 1: Write failing operational-state tests**
 
 Cover empty tenant, pagination, filters, pending intelligence, review required, recording unavailable/deleted/consent-blocked, quota exceeded, degraded provider, and viewer/compliance role differences.
 
-- [ ] **Step 2: Implement truthful operational views**
+- [x] **Step 2: Implement truthful operational views**
 
 No invented charts, price estimates, summaries, or success rates. Render only durable source data and explicitly label missing periods.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run unit/E2E/type/lint/build and two-tenant data-isolation journeys.
 
-- [ ] **Step 4: Stop for 13F review and commit confirmation**
+- [x] **Step 4: Stop for 13F review and commit confirmation**
 
 ## Phase 13G — Visual system and production QA
 
@@ -589,4 +589,4 @@ Execute natively, one subphase at a time, because the contracts are sequential a
 4. write sanitized evidence;
 5. stop for Hamzi's review and separate commit/push confirmation.
 
-**Next exact action:** Review Phase 13D Task 12 evidence, then obtain Hamzi's explicit approval before committing and pushing the Phase 13D branch. Do not begin Phase 13E until that checkpoint is accepted.
+**Next exact action:** Review `Codex Fix/evidence/phase-13f/VERIFICATION.md`, then obtain Hamzi's explicit approval before committing and pushing `wavia-fixv1-phase13f`. After publication, fast-forward `wavia-fixv1` to the verified Phase 13F commit and stop before Phase 13G visual work until the design brief/reference gate is approved.

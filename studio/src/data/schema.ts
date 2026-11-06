@@ -261,6 +261,104 @@ export const telephonySettingsSchema = z.object({
 });
 export type TelephonySettingsDto = z.infer<typeof telephonySettingsSchema>;
 
+export const conversationSummarySchema = z.object({
+  call_id: z.string().uuid(),
+  agent_id: z.string().uuid(),
+  started_at: z.string().min(1),
+  ended_at: z.string().nullable(),
+  transport_type: z.string().min(1),
+  disposition: z.string().min(1),
+  recording_state: z.string().min(1),
+  turn_count: z.number().int().nonnegative(),
+});
+
+export const conversationPageSchema = z.object({
+  items: z.array(conversationSummarySchema),
+  next_cursor: z.string().nullable(),
+});
+
+export const conversationDetailSchema = conversationSummarySchema.extend({
+  end_reason: z.string().nullable(),
+  transcript: z.array(z.object({
+    speaker: z.string().min(1),
+    text: z.string(),
+    start_ms: z.number().int(),
+    end_ms: z.number().int(),
+    language: z.string().min(1),
+    confidence: z.number().min(0).max(1),
+  })),
+  usage: z.record(z.string(), z.number()),
+  recording: z.object({
+    state: z.string().min(1),
+    access: z.string().min(1),
+    duration_sec: z.number().nonnegative().optional(),
+    error_code: z.string().nullable().optional(),
+  }),
+});
+
+const reviewSchema = z.object({
+  review_id: z.string().uuid(),
+  call_id: z.string().uuid(),
+  result_id: z.string().uuid(),
+  reasons: z.array(z.string()),
+  state: z.string().min(1),
+  decided_by: z.string().nullable(),
+  decision_note: z.string().nullable(),
+  created_at: z.string().min(1),
+  decided_at: z.string().nullable(),
+});
+
+const intelligenceResultSchema = z.object({
+  result_id: z.string().uuid(),
+  call_id: z.string().uuid(),
+  extraction: z.record(z.string(), z.unknown()).nullable(),
+  summary: z.record(z.string(), z.unknown()).nullable(),
+  verification_issue_codes: z.array(z.string()),
+  created_at: z.string().min(1),
+});
+
+export const conversationIntelligenceSchema = z.object({
+  state: z.string().min(1),
+  result: intelligenceResultSchema.nullable(),
+  review: reviewSchema.nullable(),
+});
+
+export const usageSchema = z.object({
+  status: z.string().min(1),
+  tenant_id: z.string().min(1),
+  quota: z.object({
+    max_concurrent: z.number().int().nonnegative(),
+    max_minutes_month: z.number().nonnegative(),
+    max_llm_tokens_month: z.number().nonnegative().optional(),
+    current_concurrent: z.number().int().nonnegative(),
+    current_monthly_minutes: z.number().nonnegative(),
+    current_monthly_llm_tokens: z.number().nonnegative().optional(),
+    soft_cap_percent: z.number().nonnegative().optional(),
+    hard_cap_percent: z.number().positive().optional(),
+  }),
+  totals: z.record(z.string(), z.number()),
+});
+
+export const auditEventSchema = z.object({
+  id: z.string().uuid(),
+  tenant_id: z.string().min(1),
+  actor_id: z.string(),
+  actor_type: z.string(),
+  action: z.string().min(1),
+  resource_type: z.string().min(1),
+  resource_id: z.string(),
+  detail: z.record(z.string(), z.unknown()),
+  ip: z.string().nullable(),
+  user_agent: z.string().nullable(),
+  created_at: z.string().min(1),
+});
+
+export const auditResponseSchema = z.object({
+  status: z.string().min(1),
+  count: z.number().int().nonnegative(),
+  events: z.array(auditEventSchema),
+});
+
 export function parseControlPlaneDto<T>(
   schema: z.ZodType<T>,
   payload: unknown,

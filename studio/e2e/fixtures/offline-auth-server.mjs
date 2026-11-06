@@ -37,6 +37,10 @@ let nextKnowledgeSource;
 let apiKeys;
 let providerCredentials;
 let telephonySettings;
+let conversations;
+let conversationIntelligence;
+let usage;
+let auditEvents;
 let nextApiKey;
 let nextProviderCredential;
 
@@ -90,6 +94,77 @@ function resetState() {
   telephonySettings = new Map([
     [workspaceA, structuredClone(defaultSettings)],
     [workspaceB, structuredClone(defaultSettings)],
+  ]);
+  const alphaCallId = "91111111-1111-4111-8111-111111111111";
+  const alphaConversation = {
+    call_id: alphaCallId,
+    agent_id: "33333333-3333-4333-8333-000000000001",
+    started_at: "2026-11-04T09:00:00Z",
+    ended_at: "2026-11-04T09:02:00Z",
+    transport_type: "websocket",
+    disposition: "completed",
+    recording_state: "available",
+    turn_count: 2,
+    end_reason: "completed",
+    transcript: [
+      { speaker: "user", text: "I need help with an order", start_ms: 0, end_ms: 900, language: "en", confidence: 0.98 },
+      { speaker: "assistant", text: "I can help with that order.", start_ms: 1000, end_ms: 1800, language: "en", confidence: 1 },
+    ],
+    usage: { stt_sec: 1.8, tts_sec: 0.8, llm_tokens: 22, agent_sec: 2.1 },
+    recording: { state: "available", access: "gated", duration_sec: 2 },
+  };
+  conversations = new Map([[workspaceA, [alphaConversation]], [workspaceB, []]]);
+  conversationIntelligence = new Map([[alphaCallId, {
+    state: "available",
+    result: {
+      result_id: "92222222-2222-4222-8222-222222222222",
+      call_id: alphaCallId,
+      extraction: null,
+      summary: { text: "Customer requested help with an order." },
+      verification_issue_codes: ["sensitive_field"],
+      created_at: "2026-11-04T09:03:00Z",
+    },
+    review: {
+      review_id: "93333333-3333-4333-8333-333333333333",
+      call_id: alphaCallId,
+      result_id: "92222222-2222-4222-8222-222222222222",
+      reasons: ["sensitive_field"],
+      state: "pending",
+      decided_by: null,
+      decision_note: null,
+      created_at: "2026-11-04T09:03:00Z",
+      decided_at: null,
+    },
+  }]]);
+  usage = new Map([
+    [workspaceA, {
+      status: "success",
+      tenant_id: workspaceA,
+      quota: { max_concurrent: 10, max_minutes_month: 1000, max_llm_tokens_month: 100000, current_concurrent: 1, current_monthly_minutes: 12.5, current_monthly_llm_tokens: 2400, soft_cap_percent: 80, hard_cap_percent: 100 },
+      totals: { stt_sec: 300, tts_sec: 240, llm_tokens: 2400, agent_sec: 750, telephony_sec: 0 },
+    }],
+    [workspaceB, {
+      status: "success",
+      tenant_id: workspaceB,
+      quota: { max_concurrent: 2, max_minutes_month: 100, max_llm_tokens_month: 10000, current_concurrent: 0, current_monthly_minutes: 0, current_monthly_llm_tokens: 0, soft_cap_percent: 80, hard_cap_percent: 100 },
+      totals: { stt_sec: 0, tts_sec: 0, llm_tokens: 0, agent_sec: 0, telephony_sec: 0 },
+    }],
+  ]);
+  auditEvents = new Map([
+    [workspaceA, [{
+      id: "94444444-4444-4444-8444-444444444444",
+      tenant_id: workspaceA,
+      actor_id: "system",
+      actor_type: "system",
+      action: "provider.degraded",
+      resource_type: "provider",
+      resource_id: "groq",
+      detail: { state: "degraded" },
+      ip: null,
+      user_agent: null,
+      created_at: "2026-11-04T09:04:00Z",
+    }]],
+    [workspaceB, []],
   ]);
   nextApiKey = 1;
   nextProviderCredential = 1;
@@ -251,6 +326,37 @@ async function handle(request, response) {
   const tenant = tenantFromRequest(request);
   if (!subjectFromRequest(request)) return json(response, 401, { detail: "Authentication required." });
   if (!tenant || !agents.has(tenant)) return json(response, 403, { detail: "Workspace required." });
+
+  if (url.pathname === "/v1/conversations" && request.method === "GET") {
+    const items = (conversations.get(tenant) ?? []).map((item) => ({
+      call_id: item.call_id,
+      agent_id: item.agent_id,
+      started_at: item.started_at,
+      ended_at: item.ended_at,
+      transport_type: item.transport_type,
+      disposition: item.disposition,
+      recording_state: item.recording_state,
+      turn_count: item.turn_count,
+    }));
+    return json(response, 200, { items, next_cursor: null });
+  }
+  const conversationMatch = url.pathname.match(/^\/v1\/conversations\/([0-9a-f-]+)(?:\/(intelligence))?$/i);
+  if (conversationMatch && request.method === "GET") {
+    const [, callId, tail] = conversationMatch;
+    const conversation = (conversations.get(tenant) ?? []).find((item) => item.call_id === callId);
+    if (!conversation) return json(response, 404, { detail: "Conversation not found." });
+    if (tail === "intelligence") {
+      return json(response, 200, conversationIntelligence.get(callId) ?? { state: "unavailable", result: null, review: null });
+    }
+    return json(response, 200, conversation);
+  }
+  if (url.pathname === "/v1/usage" && request.method === "GET") {
+    return json(response, 200, usage.get(tenant));
+  }
+  if (url.pathname === "/v1/audit" && request.method === "GET") {
+    const events = auditEvents.get(tenant) ?? [];
+    return json(response, 200, { status: "success", count: events.length, events });
+  }
 
   if (url.pathname === "/v1/onboarding" && request.method === "GET") {
     const profile = onboarding.get(tenant);

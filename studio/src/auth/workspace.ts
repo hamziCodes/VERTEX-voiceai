@@ -11,34 +11,21 @@ import { currentIdentitySchema } from "@/data/schema";
 
 import { workspaceCookieSecret } from "./config";
 import { requireSession, type StudioSession } from "./session";
+import {
+  hasWorkspacePermission,
+  type WorkspacePermission,
+} from "./workspace-permissions";
+
+export {
+  hasWorkspacePermission,
+  type WorkspacePermission,
+  type WorkspaceRole,
+} from "./workspace-permissions";
 
 export const WORKSPACE_COOKIE_NAME = "wavia-workspace";
 const COOKIE_VERSION = "v1";
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
-export type WorkspaceRole = WorkspaceSummaryDto["role"];
-export type WorkspacePermission =
-  | "agent:read" | "agent:write" | "session:mint" | "session:read"
-  | "usage:read" | "member:read" | "member:write" | "audit:read"
-  | "telephony:read" | "telephony:write" | "conversation:read"
-  | "onboarding:read" | "onboarding:write" | "knowledge:read" | "knowledge:write"
-  | "secret:rotate" | "api_key:read" | "api_key:write"
-  | "provider_credential:read" | "provider_credential:write"
-  | "entitlement:read";
-
-const ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, ReadonlySet<string>>> = {
-  tenant_admin: new Set([
-    "agent:read", "agent:write", "session:mint", "session:read", "usage:read", "member:read", "member:write", "audit:read",
-    "telephony:read", "telephony:write", "conversation:read", "onboarding:read", "onboarding:write", "knowledge:read", "knowledge:write",
-    "secret:rotate", "api_key:read", "api_key:write", "provider_credential:read", "provider_credential:write", "entitlement:read"
-  ]),
-  tenant_editor: new Set([
-    "agent:read", "agent:write", "session:mint", "session:read", "usage:read", "member:read", "audit:read",
-    "telephony:read", "conversation:read", "onboarding:read", "onboarding:write", "knowledge:read", "knowledge:write", "entitlement:read"
-  ]),
-  tenant_viewer: new Set(["agent:read", "session:read", "usage:read", "conversation:read", "onboarding:read", "knowledge:read", "entitlement:read"]),
-  compliance_admin: new Set(["audit:read", "conversation:read", "entitlement:read"]),
-};
 
 function signature(payload: string, secret: string): Buffer {
   return createHmac("sha256", secret).update(`wavia:selected-workspace:${payload}`).digest();
@@ -67,10 +54,6 @@ export function verifyWorkspaceSelection(value: string, secret: string): string 
 
 export function workspaceCookieOptions(secure = process.env.NODE_ENV === "production") {
   return { httpOnly: true as const, sameSite: "lax" as const, secure, path: "/" as const, maxAge: COOKIE_MAX_AGE_SECONDS };
-}
-
-export function hasWorkspacePermission(role: WorkspaceRole, permission: WorkspacePermission): boolean {
-  return ROLE_PERMISSIONS[role].has(permission);
 }
 
 export interface WorkspaceContext {

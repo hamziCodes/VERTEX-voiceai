@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { hasWorkspacePermission, type WorkspacePermission, type WorkspaceRole } from "@/auth/workspace";
+import { hasWorkspacePermission, type WorkspacePermission, type WorkspaceRole } from "@/auth/workspace-permissions";
 
 const ITEMS: ReadonlyArray<{ label: string; href: string; permission: WorkspacePermission }> = [
   { label: "Setup", href: "/onboarding", permission: "onboarding:read" },
@@ -10,7 +10,7 @@ const ITEMS: ReadonlyArray<{ label: string; href: string; permission: WorkspaceP
   { label: "Connect", href: "/channels", permission: "telephony:read" },
   { label: "API Keys", href: "/developers/api-keys", permission: "api_key:read" },
   { label: "Providers", href: "/settings/providers", permission: "provider_credential:read" },
-  { label: "Operate", href: "/operations", permission: "usage:read" },
+  { label: "Operate", href: "/conversations", permission: "conversation:read" },
   { label: "Settings", href: "/settings", permission: "member:write" },
 ];
 
