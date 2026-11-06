@@ -55,6 +55,17 @@ class RBACManager:
             "telephony:read",
             "conversation:read",
         },
+        "tenant_developer": {
+            "agent:read",
+            "session:mint",
+            "session:read",
+            "usage:read",
+            "entitlement:read",
+            "telephony:read",
+            "api_key:read",
+            "api_key:write",
+            "provider_credential:read",
+        },
         "tenant_viewer": {
             "agent:read",
             "session:read",
@@ -81,10 +92,16 @@ class RBACManager:
         return frozenset(cls._matrix)
 
     @classmethod
+    def permissions_for_role(cls, role: str) -> frozenset[str]:
+        """Return an immutable permission snapshot for a normalized role."""
+
+        return frozenset(cls._matrix.get(role.lower(), set()))
+
+    @classmethod
     def check_permission(cls, role: str, resource: str, action: str) -> bool:
         """Return True if role possesses permission for action on resource."""
         perm = f"{resource}:{action}"
-        role_perms = cls._matrix.get(role.lower(), set())
+        role_perms = cls.permissions_for_role(role)
 
         if "*" in role_perms or perm in role_perms or f"{resource}:*" in role_perms:
             return True

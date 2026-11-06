@@ -98,6 +98,30 @@ async def test_invitation_token_is_hashed_single_use_and_expiring() -> None:
 
 
 @pytest.mark.asyncio
+async def test_developer_is_a_supported_human_membership_role() -> None:
+    repo = InMemoryStudioRepository()
+    owner = await repo.resolve_identity(_identity("owner", "owner@example.com"))
+    developer = await repo.resolve_identity(
+        _identity("developer", "developer@example.com")
+    )
+    workspace = await repo.create_workspace(owner.user_id, "Northwind")
+    token_hash = _token_hash("developer-invitation")
+    now = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
+
+    await repo.create_invitation(
+        workspace.tenant_id,
+        email="developer@example.com",
+        role="tenant_developer",
+        token_hash=token_hash,
+        expires_at=now + timedelta(hours=1),
+        invited_by=owner.user_id,
+    )
+    membership = await repo.accept_invitation(token_hash, developer.user_id, now=now)
+
+    assert membership.role == "tenant_developer"
+
+
+@pytest.mark.asyncio
 async def test_last_admin_cannot_be_removed_or_demoted() -> None:
     repo = InMemoryStudioRepository()
     owner = await repo.resolve_identity(_identity("owner", "owner@example.com"))

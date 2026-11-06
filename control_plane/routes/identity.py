@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from control_plane.auth.context import AuthContext
 from control_plane.auth.dependencies import enforce_tenant_access, require_permission
+from control_plane.auth.rbac import RBACManager
 from control_plane.studio.dependencies import resolve_identity_context
 from control_plane.studio.models import IdentityContext, StudioRole, UserIdentity
 from control_plane.studio.repository import (
@@ -102,7 +103,13 @@ async def get_current_identity(
     memberships = await _repository(request).list_memberships(user.user_id)
     return {
         **user.model_dump(mode="json", exclude={"issuer", "subject"}),
-        "memberships": [item.model_dump(mode="json") for item in memberships],
+        "memberships": [
+            {
+                **item.model_dump(mode="json"),
+                "capabilities": sorted(RBACManager.permissions_for_role(item.role)),
+            }
+            for item in memberships
+        ],
     }
 
 

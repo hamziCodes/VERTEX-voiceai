@@ -6,6 +6,8 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from control_plane.auth.rbac import RBACManager
+
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch):
@@ -39,6 +41,23 @@ def _key(
         subject_id="route-test-service",
     )
     return raw
+
+
+def test_tenant_developer_has_the_exact_launch_permission_bundle() -> None:
+    assert RBACManager.permissions_for_role("tenant_developer") == frozenset(
+        {
+            "agent:read",
+            "session:mint",
+            "session:read",
+            "usage:read",
+            "entitlement:read",
+            "telephony:read",
+            "api_key:read",
+            "api_key:write",
+            "provider_credential:read",
+        }
+    )
+    assert RBACManager.permissions_for_role("UNKNOWN") == frozenset()
 
 
 def test_route_policy_classifies_every_management_route(client: TestClient) -> None:

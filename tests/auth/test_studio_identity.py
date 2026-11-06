@@ -175,6 +175,28 @@ def test_oidc_tenant_role_and_scope_claims_never_grant_access(studio_client) -> 
     assert write.status_code == 403
 
 
+def test_oidc_developer_can_read_and_test_but_cannot_edit_agents(studio_client) -> None:
+    client, app = studio_client
+    tenant_id = uuid4()
+    _install_identity(app, tenant_id=tenant_id, role="tenant_developer")
+
+    read = client.get("/v1/agents", headers=_headers(tenant_id))
+    mint = client.post(
+        "/v1/sessions/mint",
+        headers=_headers(tenant_id),
+        json={"agent_id": str(uuid4())},
+    )
+    write = client.post(
+        "/v1/agents",
+        headers=_headers(tenant_id),
+        json={"name": "Must not be created"},
+    )
+
+    assert read.status_code == 200
+    assert mint.status_code != 403
+    assert write.status_code == 403
+
+
 def test_durable_platform_admin_requires_explicit_tenant(studio_client) -> None:
     client, app = studio_client
     selected_tenant = uuid4()

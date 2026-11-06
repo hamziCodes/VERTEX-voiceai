@@ -42,6 +42,33 @@ def test_first_workspace_creation_and_me_are_identity_scoped(studio_api) -> None
             "tenant_id": str(tenant_id),
             "tenant_name": "Acme Support",
             "role": "tenant_admin",
+            "capabilities": [
+                "agent:read",
+                "agent:write",
+                "alert:read",
+                "alert:write",
+                "api_key:read",
+                "api_key:write",
+                "audit:read",
+                "conversation:read",
+                "entitlement:read",
+                "extraction:read",
+                "extraction:write",
+                "knowledge:read",
+                "knowledge:write",
+                "member:read",
+                "member:write",
+                "onboarding:read",
+                "onboarding:write",
+                "provider_credential:read",
+                "provider_credential:write",
+                "secret:rotate",
+                "session:mint",
+                "session:read",
+                "telephony:read",
+                "telephony:write",
+                "usage:read",
+            ],
             "created_at": after.json()["memberships"][0]["created_at"],
         }
     ]
@@ -137,3 +164,36 @@ def test_workspace_routes_reject_tenant_mismatch(studio_api) -> None:
     )
 
     assert response.status_code == 403
+
+
+def test_developer_invitation_exposes_backend_derived_capabilities(studio_api) -> None:
+    client, _ = studio_api
+    tenant_id, _ = _create_workspace(client)
+    created = client.post(
+        f"/v1/organizations/{tenant_id}/invitations",
+        headers=_headers("owner-token", tenant_id),
+        json={"email": "member@example.com", "role": "tenant_developer"},
+    )
+
+    assert created.status_code == 201, created.text
+    accepted = client.post(
+        "/v1/invitations/accept",
+        headers=_headers("member-token"),
+        json={"token": created.json()["token"]},
+    )
+    identity = client.get("/v1/me", headers=_headers("member-token"))
+
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["role"] == "tenant_developer"
+    assert identity.status_code == 200, identity.text
+    assert identity.json()["memberships"][0]["capabilities"] == [
+        "agent:read",
+        "api_key:read",
+        "api_key:write",
+        "entitlement:read",
+        "provider_credential:read",
+        "session:mint",
+        "session:read",
+        "telephony:read",
+        "usage:read",
+    ]

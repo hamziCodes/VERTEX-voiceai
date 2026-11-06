@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 StudioRole = Literal[
     "tenant_admin",
     "tenant_editor",
+    "tenant_developer",
     "tenant_viewer",
     "compliance_admin",
 ]
