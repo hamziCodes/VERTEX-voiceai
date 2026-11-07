@@ -1,10 +1,13 @@
 import { expect, test, type BrowserContext } from "@playwright/test";
 import { sealData } from "iron-session";
+import path from "node:path";
 
 const cookiePassword = `test-${"x".repeat(32)}`;
+const fixtureBaseUrl = `http://127.0.0.1:${process.env.WAVIA_E2E_FIXTURE_PORT ?? "3211"}`;
+const captureDirectory = path.resolve(process.cwd(), "../hamza_local/phase13h-qa");
 
 async function authenticate(context: BrowserContext, subject: string, expired = false) {
-  const tokenResponse = await fetch(`http://127.0.0.1:3211/token?sub=${subject}&expired=${expired ? "1" : "0"}`, { headers: { connection: "close" } });
+  const tokenResponse = await fetch(`${fixtureBaseUrl}/token?sub=${subject}&expired=${expired ? "1" : "0"}`, { headers: { connection: "close" } });
   const { accessToken } = await tokenResponse.json() as { accessToken: string };
   const value = await sealData({
     accessToken,
@@ -15,9 +18,17 @@ async function authenticate(context: BrowserContext, subject: string, expired = 
 }
 
 test("public sign-in starts no provider call before user confirmation", async ({ page }) => {
-  await page.goto("/sign-in");
-  await expect(page.getByRole("heading", { name: "Sign in to your workspace" })).toBeVisible();
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Build and operate your voice agents" })).toBeVisible();
+  await page.getByRole("link", { name: "Sign in to Studio" }).click();
+  await expect(page.getByRole("heading", { name: "Sign in to Wavia Studio" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue securely" })).toBeVisible();
+  if (process.env.CAPTURE_PHASE13H === "1") {
+    await page.screenshot({ path: path.join(captureDirectory, "phase13h-sign-in-desktop-20261107.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await page.screenshot({ path: path.join(captureDirectory, "phase13h-sign-in-mobile-390-20261107.png"), fullPage: true });
+  }
 });
 
 test("selects between two durable Wavia memberships and keeps tokens server-only", async ({ context, page }) => {
@@ -25,6 +36,13 @@ test("selects between two durable Wavia memberships and keeps tokens server-only
   await page.goto("/workspaces");
   await expect(page.getByRole("button", { name: /Alpha workspace/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Beta workspace/ })).toBeVisible();
+  if (process.env.CAPTURE_PHASE13H === "1") {
+    await page.screenshot({ path: path.join(captureDirectory, "phase13h-workspaces-desktop-20261107.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await page.screenshot({ path: path.join(captureDirectory, "phase13h-workspaces-mobile-390-20261107.png"), fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 720 });
+  }
 
   await page.getByRole("button", { name: /Beta workspace/ }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
@@ -48,7 +66,7 @@ test("rejects a forged selected-workspace cookie", async ({ context, page }) => 
 test("shows an explicit no-membership state", async ({ context, page }) => {
   await authenticate(context, "user-none");
   await page.goto("/workspaces");
-  await expect(page.getByText("No workspace membership is available yet.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No workspace access yet" })).toBeVisible();
 });
 
 test("rejects an expired WorkOS session", async ({ context, page }) => {

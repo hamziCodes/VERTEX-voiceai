@@ -3,39 +3,83 @@ import { cookies } from "next/headers";
 import { INVITATION_COOKIE_NAME } from "@/auth/invitation";
 import { requireSession } from "@/auth/session";
 import { listCurrentWorkspaces } from "@/auth/workspace";
+import { PageHeader } from "@/components/studio/page-header";
+import { StatePanel } from "@/components/studio/state-panel";
+import { StatusBadge } from "@/components/studio/status-badge";
 import { acceptPendingInvitationAction, selectWorkspaceAction, signOutAction } from "@/features/workspaces/actions";
 
-export default async function WorkspacesPage() {
+interface WorkspacesPageProps {
+  searchParams: Promise<{ error?: string }>;
+}
+
+const ERROR_MESSAGES: Record<string, string> = {
+  forbidden: "You do not have permission to open that area.",
+  "invalid-invitation": "That invitation is invalid or has expired.",
+  "invalid-workspace": "That workspace is not available to your account.",
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  tenant_admin: "Administrator",
+  tenant_editor: "Editor",
+  tenant_developer: "Developer",
+  tenant_viewer: "Read-only operator",
+  compliance_admin: "Compliance administrator",
+};
+
+export default async function WorkspacesPage({ searchParams }: WorkspacesPageProps) {
+  const { error = "" } = await searchParams;
   const session = await requireSession();
   const identity = await listCurrentWorkspaces(session);
   const hasInvitation = Boolean((await cookies()).get(INVITATION_COOKIE_NAME));
   return (
-    <main>
-      <header>
-        <p>Signed in as {session.displayName}</p>
-        <form action={signOutAction}><button type="submit">Sign out</button></form>
-      </header>
-      <h1>Choose a workspace</h1>
-      {hasInvitation ? (
-        <form action={acceptPendingInvitationAction}>
-          <p>You have a pending workspace invitation.</p>
-          <button type="submit">Accept invitation</button>
-        </form>
-      ) : null}
-      {identity.memberships.length === 0 ? (
-        <p>No workspace membership is available yet. Ask an administrator for an invitation.</p>
-      ) : (
-        <ul>
-          {identity.memberships.map((membership) => (
-            <li key={membership.tenant_id}>
-              <form action={selectWorkspaceAction}>
-                <input name="workspaceId" type="hidden" value={membership.tenant_id} />
-                <button type="submit">{membership.tenant_name} <span>({membership.role})</span></button>
-              </form>
-            </li>
-          ))}
-        </ul>
-      )}
+    <main className="workspace-entry">
+      <div className="workspace-entry__topbar">
+        <div className="entry-wordmark"><span aria-hidden="true">W</span> Wavia Studio</div>
+        <div className="workspace-entry__account">
+          <span>Signed in as <strong>{session.displayName}</strong></span>
+          <form action={signOutAction}><button className="button button--secondary" type="submit">Sign out</button></form>
+        </div>
+      </div>
+      <div className="workspace-entry__content">
+        <PageHeader eyebrow="Workspace access" title="Choose a workspace" summary="Your role and permissions are specific to each workspace." />
+        {error && ERROR_MESSAGES[error] ? (
+          <div className="inline-notice inline-notice--danger" role="alert">{ERROR_MESSAGES[error]}</div>
+        ) : null}
+        {hasInvitation ? (
+          <form action={acceptPendingInvitationAction} className="invitation-panel">
+            <div>
+              <StatusBadge tone="info">Invitation ready</StatusBadge>
+              <h2>Join a workspace</h2>
+              <p>A workspace administrator invited this account. Accept to add the membership.</p>
+            </div>
+            <button className="button button--primary" type="submit">Accept invitation</button>
+          </form>
+        ) : null}
+        {identity.memberships.length === 0 ? (
+          <StatePanel
+            description="Ask a workspace administrator to invite this account. If you already have an invitation, open its original link and sign in again."
+            title="No workspace access yet"
+          />
+        ) : (
+          <ul aria-label="Available workspaces" className="workspace-list">
+            {identity.memberships.map((membership) => (
+              <li key={membership.tenant_id}>
+                <form action={selectWorkspaceAction}>
+                  <input name="workspaceId" type="hidden" value={membership.tenant_id} />
+                  <button className="workspace-choice" type="submit">
+                    <span aria-hidden="true" className="workspace-choice__mark">{membership.tenant_name.slice(0, 1).toUpperCase()}</span>
+                    <span className="workspace-choice__copy">
+                      <strong>{membership.tenant_name}</strong>
+                      <span>{ROLE_LABELS[membership.role] ?? "Workspace member"}</span>
+                    </span>
+                    <span aria-hidden="true" className="workspace-choice__arrow">→</span>
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </main>
   );
 }
