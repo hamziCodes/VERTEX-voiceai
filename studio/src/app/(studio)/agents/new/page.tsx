@@ -1,4 +1,5 @@
 import { hasWorkspaceCapability, requireWorkspace } from "@/auth/workspace";
+import { PageHeader } from "@/components/studio/page-header";
 import { createAgentAction } from "@/features/agents/actions";
 import { AgentCreationWizard } from "@/features/agents/agent-creation-wizard";
 import { loadAgents, loadEntitlements, loadTemplates } from "@/features/agents/data";
@@ -11,9 +12,12 @@ export default async function NewAgentPage() {
     loadTemplates(session, membership.tenant_id),
   ]);
   return (
-    <>
-      <h1>Create an agent</h1>
-      <p>Choose a tested starting point or begin with the default safe configuration.</p>
+    <section className="guided-page">
+      <PageHeader
+        eyebrow="Build"
+        summary="Choose a tested starting point or begin with the default safe configuration. You can review every setting before publishing."
+        title="Create an agent"
+      />
       <AgentCreationWizard
         agentCount={agents.length}
         canEdit={hasWorkspaceCapability(membership.capabilities, "agent:write")}
@@ -21,6 +25,6 @@ export default async function NewAgentPage() {
         maxAgents={entitlements.max_agents}
         templates={templates}
       />
-    </>
+    </section>
   );
 }

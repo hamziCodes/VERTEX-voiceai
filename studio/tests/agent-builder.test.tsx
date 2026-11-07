@@ -75,6 +75,30 @@ describe("guided onboarding", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await waitFor(() => expect(screen.getByText("Onboarding saved.")).toBeVisible());
   });
+
+  it("renders an explicit read-only state and safe save errors", async () => {
+    const saveAction = vi.fn().mockResolvedValue({ state: "error" as const, message: "Setup is temporarily unavailable." });
+    const values = {
+      business_name: "Hamzi Stores",
+      use_case: "customer_support",
+      languages: ["en"],
+      operating_region: "Pakistan",
+      timezone: "Asia/Karachi",
+      escalation_email: null,
+      completed_steps: [],
+    };
+    const { rerender } = render(
+      <OnboardingForm initial={values} requirementCodes={[]} canEdit={false} saveAction={saveAction} />,
+    );
+
+    expect(screen.getByText("You have view-only access.")).toBeVisible();
+    expect(screen.getByLabelText("Business name")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save and continue" })).toBeDisabled();
+
+    rerender(<OnboardingForm initial={values} requirementCodes={[]} canEdit saveAction={saveAction} />);
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Setup is temporarily unavailable."));
+  });
 });
 
 describe("agent creation", () => {
@@ -99,6 +123,22 @@ describe("agent creation", () => {
 
     expect(screen.getByText("Your workspace has reached its 1-agent limit.")).toBeVisible();
     expect(screen.getByRole("button", { name: "Create agent" })).toBeDisabled();
+  });
+
+  it("shows view-only and action-error states without exposing an internal ID", async () => {
+    const createAction = vi.fn().mockResolvedValue({ state: "error" as const, message: "Agent creation is temporarily unavailable." });
+    const { rerender } = render(
+      <AgentCreationWizard templates={templates} agentCount={0} maxAgents={2} canEdit={false} createAction={createAction} />,
+    );
+
+    expect(screen.getByText("You have view-only access.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Create agent" })).toBeDisabled();
+
+    rerender(<AgentCreationWizard templates={templates} agentCount={0} maxAgents={2} canEdit createAction={createAction} />);
+    fireEvent.change(screen.getByLabelText("Agent name"), { target: { value: "Support agent" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create agent" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Agent creation is temporarily unavailable."));
+    expect(document.body.textContent).not.toContain(agent.agent_id);
   });
 });
 
