@@ -4,10 +4,11 @@ import { sealData } from "iron-session";
 import path from "node:path";
 
 const cookiePassword = `test-${"x".repeat(32)}`;
-const captureDirectory = path.resolve(process.cwd(), "../hamza_local/phase13g-qa");
+const captureDirectory = path.resolve(process.cwd(), "../hamza_local/phase13h-qa");
+const fixtureBaseUrl = `http://127.0.0.1:${process.env.WAVIA_E2E_FIXTURE_PORT ?? "3211"}`;
 
 async function authenticate(context: BrowserContext) {
-  const tokenResponse = await fetch("http://127.0.0.1:3211/token?sub=user-two", { headers: { connection: "close" } });
+  const tokenResponse = await fetch(`${fixtureBaseUrl}/token?sub=user-two`, { headers: { connection: "close" } });
   const { accessToken } = await tokenResponse.json() as { accessToken: string };
   const value = await sealData({
     accessToken,
@@ -29,12 +30,14 @@ async function expectNoSeriousAccessibilityViolations(page: Page) {
 test.describe.configure({ mode: "serial" });
 
 test.beforeEach(async ({ context }) => {
-  await fetch("http://127.0.0.1:3211/reset", { method: "POST", headers: { connection: "close" } });
+  await fetch(`${fixtureBaseUrl}/reset`, { method: "POST", headers: { connection: "close" } });
   await authenticate(context);
 });
 
 test("verifies the Agent Directory and Persona Editor pilot at desktop and mobile widths", async ({ page }) => {
   await page.goto("/workspaces");
+  await page.evaluate(() => localStorage.removeItem("wavia:studio:sidebar:v1"));
+  await page.reload();
   await page.getByRole("button", { name: /Alpha workspace/ }).click();
   await page.getByRole("link", { name: "Build" }).click();
 
@@ -58,12 +61,16 @@ test("verifies the Agent Directory and Persona Editor pilot at desktop and mobil
   await expect(page.getByRole("link", { name: "Tools" })).toHaveCount(0);
   await page.getByRole("button", { name: "Advanced" }).click();
   await expect(page.getByText(/Tenant data stays isolated/)).toBeVisible();
+  await expect(page.locator(".studio-sidebar")).toHaveAttribute("data-collapsed", "false");
+  await expect.poll(async () => page.locator(".studio-sidebar").evaluate(
+    (sidebar) => Math.round(sidebar.getBoundingClientRect().width),
+  )).toBe(248);
   await expectNoOverflow(page);
   await expectNoSeriousAccessibilityViolations(page);
 
-  if (process.env.CAPTURE_PHASE13G === "1") {
+  if (process.env.CAPTURE_PHASE13H === "1") {
     await page.evaluate(() => window.scrollTo({ top: 0 }));
-    await page.screenshot({ path: path.join(captureDirectory, "phase13g-persona-desktop-20261106.png"), fullPage: true });
+    await page.screenshot({ path: path.join(captureDirectory, "phase13h-persona-desktop-20261107.png"), fullPage: true });
   }
 
   await page.goto("/agents");
@@ -80,22 +87,39 @@ test("verifies the Agent Directory and Persona Editor pilot at desktop and mobil
   await expect(page.getByRole("link", { name: "Wavia Studio", exact: true })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Collapse sidebar" })).toBeFocused();
+  await expect(page.locator(".studio-mobile-nav-trigger")).toHaveCount(1);
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(page.locator(".studio-sidebar")).toHaveAttribute("data-collapsed", "true");
+  expect(await page.evaluate(() => localStorage.getItem("wavia:studio:sidebar:v1"))).toBe("collapsed");
+  await page.reload();
+  expect(await page.evaluate(() => localStorage.getItem("wavia:studio:sidebar:v1"))).toBe("collapsed");
+  await expect(page.locator(".studio-sidebar")).toHaveAttribute("data-collapsed", "true");
+  await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
 
-  if (process.env.CAPTURE_PHASE13G === "1") {
-    await page.screenshot({ path: path.join(captureDirectory, "phase13g-agents-desktop-20261106.png"), fullPage: true });
+  if (process.env.CAPTURE_PHASE13H === "1") {
+    await page.screenshot({ path: path.join(captureDirectory, "phase13h-agents-desktop-20261107.png"), fullPage: true });
   }
 
   await page.setViewportSize({ width: 390, height: 844 });
+  const mobileTrigger = page.getByRole("button", { name: "Open navigation" });
+  await mobileTrigger.click();
+  await expect(page.getByRole("button", { name: "Close navigation" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(mobileTrigger).toBeFocused();
+  await expect(page.locator(".studio-sidebar")).toHaveAttribute("data-mobile-open", "false");
+  await expect.poll(async () => page.locator(".studio-sidebar").evaluate(
+    (sidebar) => sidebar.getBoundingClientRect().right <= 0,
+  )).toBe(true);
   await expectNoOverflow(page);
-  if (process.env.CAPTURE_PHASE13G === "1") {
-    await page.screenshot({ path: path.join(captureDirectory, "phase13g-agents-mobile-390-20261106.png"), fullPage: true });
+  if (process.env.CAPTURE_PHASE13H === "1") {
+    await page.screenshot({ path: path.join(captureDirectory, "phase13h-agents-mobile-390-20261107.png"), fullPage: true });
   }
 
   await page.getByRole("link", { name: "Open builder" }).click();
   await expect(page.getByRole("heading", { name: /Build Store assistant/ })).toBeVisible();
   await expectNoOverflow(page);
-  if (process.env.CAPTURE_PHASE13G === "1") {
-    await page.screenshot({ path: path.join(captureDirectory, "phase13g-persona-mobile-390-20261106.png"), fullPage: true });
+  if (process.env.CAPTURE_PHASE13H === "1") {
+    await page.screenshot({ path: path.join(captureDirectory, "phase13h-persona-mobile-390-20261107.png"), fullPage: true });
   }
 
   await page.setViewportSize({ width: 320, height: 800 });

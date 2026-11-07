@@ -2,8 +2,8 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@workos-inc/authkit-nextjs", () => ({ withAuth: vi.fn() }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/agents" }));
@@ -19,8 +19,17 @@ import {
 
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 const COOKIE_SECRET = "test-cookie-password-that-is-long-enough";
+const SIDEBAR_PREFERENCE_KEY = "wavia:studio:sidebar:v1";
 
 describe("workspace authorization", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
   it("signs only the workspace ID and rejects forged selections", () => {
     const signed = signWorkspaceSelection(WORKSPACE_ID, COOKIE_SECRET);
 
@@ -119,6 +128,40 @@ describe("workspace authorization", () => {
     expect(sidebar.getByRole("button", { name: "Expand sidebar" })).toHaveAttribute("aria-expanded", "false");
     expect(container.querySelector("[data-collapsed='true']")).toBeInTheDocument();
     expect(sidebar.getByRole("link", { name: "Build" })).toBeInTheDocument();
+    expect(localStorage.getItem(SIDEBAR_PREFERENCE_KEY)).toBe("collapsed");
+  });
+
+  it("restores only a valid saved desktop collapse preference", async () => {
+    localStorage.setItem(SIDEBAR_PREFERENCE_KEY, "collapsed");
+    const saved = render(
+      <WorkspaceNavigation capabilities={["agent:read"]} role="tenant_viewer" />,
+    );
+
+    await waitFor(() => {
+      expect(saved.container.querySelector("[data-collapsed='true']")).toBeInTheDocument();
+    });
+    saved.unmount();
+
+    localStorage.setItem(SIDEBAR_PREFERENCE_KEY, "not-a-preference");
+    const invalid = render(
+      <WorkspaceNavigation capabilities={["agent:read"]} role="tenant_viewer" />,
+    );
+    await waitFor(() => {
+      expect(invalid.container.querySelector("[data-collapsed='false']")).toBeInTheDocument();
+    });
+  });
+
+  it("closes the mobile drawer with Escape and returns focus to its trigger", () => {
+    render(<WorkspaceNavigation capabilities={["agent:read"]} role="tenant_viewer" />);
+    const trigger = screen.getByRole("button", { name: "Open navigation" });
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole("button", { name: "Close navigation" })).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.getByRole("button", { name: "Open navigation" })).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveFocus();
   });
 
   it("lets editors open read-only channel readiness without exposing admin credential screens", () => {

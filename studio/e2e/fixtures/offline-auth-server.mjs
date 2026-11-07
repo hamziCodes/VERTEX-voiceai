@@ -2,7 +2,8 @@ import { createSign, generateKeyPairSync } from "node:crypto";
 import { createServer } from "node:http";
 
 const host = "127.0.0.1";
-const port = 3211;
+const port = Number(process.env.WAVIA_E2E_FIXTURE_PORT ?? "3211");
+const appPort = Number(process.env.WAVIA_E2E_APP_PORT ?? "3100");
 const issuer = `http://${host}:${port}/`;
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const publicJwk = publicKey.export({ format: "jwk" });
@@ -328,7 +329,7 @@ async function handle(request, response) {
   }
   if (url.pathname === "/user_management/sessions/logout") {
     const returnTo = url.searchParams.get("return_to") || "/sign-in";
-    response.writeHead(302, { location: new URL(returnTo, "http://127.0.0.1:3100").toString() });
+    response.writeHead(302, { location: new URL(returnTo, `http://127.0.0.1:${appPort}`).toString() });
     return response.end();
   }
   if (url.pathname === "/v1/me") {
