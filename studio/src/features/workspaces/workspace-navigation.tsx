@@ -49,7 +49,7 @@ const GROUPS: ReadonlyArray<NavigationGroup> = [
       { label: "Setup", shortLabel: "S", href: "/onboarding", permission: "onboarding:read", active: startsWith("/onboarding") },
       { label: "Build", shortLabel: "B", href: "/agents", permission: "agent:read", active: (path) => startsWith("/agents")(path) && !path.endsWith("/test") },
       { label: "Knowledge", shortLabel: "K", href: "/knowledge", permission: "knowledge:read", active: startsWith("/knowledge") },
-      { label: "Test", shortLabel: "T", href: "/agents", permission: "session:read", active: (path) => path.startsWith("/agents/") && path.endsWith("/test") },
+      { label: "Test", shortLabel: "T", href: "/test", permission: "session:read", active: (path) => path === "/test" || (path.startsWith("/agents/") && path.endsWith("/test")) },
       { label: "Connect", shortLabel: "C", href: "/channels", permission: "telephony:read", active: startsWith("/channels") },
     ],
   },

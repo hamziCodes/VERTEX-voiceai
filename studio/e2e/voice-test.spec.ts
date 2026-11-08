@@ -1,10 +1,13 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { sealData } from "iron-session";
+import path from "node:path";
 
 const cookiePassword = `test-${"x".repeat(32)}`;
+const fixtureBaseUrl = `http://127.0.0.1:${process.env.WAVIA_E2E_FIXTURE_PORT ?? "3211"}`;
+const captureDirectory = path.resolve(process.cwd(), "../hamza_local/phase13h-qa");
 
 async function authenticate(context: BrowserContext) {
-  const tokenResponse = await fetch("http://127.0.0.1:3211/token?sub=user-two", { headers: { connection: "close" } });
+  const tokenResponse = await fetch(`${fixtureBaseUrl}/token?sub=user-two`, { headers: { connection: "close" } });
   const { accessToken } = await tokenResponse.json() as { accessToken: string };
   const value = await sealData({
     accessToken,
@@ -86,7 +89,7 @@ async function installOfflineWorker(page: Page) {
 }
 
 test.beforeEach(async ({ context, page }) => {
-  await fetch("http://127.0.0.1:3211/reset", { method: "POST", headers: { connection: "close" } });
+  await fetch(`${fixtureBaseUrl}/reset`, { method: "POST", headers: { connection: "close" } });
   await authenticate(context);
   await installOfflineMedia(page);
 });
@@ -96,8 +99,10 @@ test("runs an SDK-backed offline voice test and releases browser media", async (
   page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   await page.goto("/workspaces");
   await page.getByRole("button", { name: /Alpha workspace/ }).click();
-  await page.getByRole("link", { name: "Build" }).click();
+  await page.getByRole("link", { name: "Build", exact: true }).click();
+  await expect(page).toHaveURL(/\/agents$/);
   await page.getByRole("link", { name: "Create agent" }).click();
+  await expect(page).toHaveURL(/\/agents\/new$/);
   await page.getByLabel(/Retail customer care/).check();
   await page.getByLabel("Agent name").fill("Voice test agent");
   await page.getByRole("button", { name: "Create agent" }).click();
@@ -105,8 +110,15 @@ test("runs an SDK-backed offline voice test and releases browser media", async (
   await page.getByRole("button", { name: "Check readiness" }).click();
   await page.getByRole("button", { name: "Publish agent" }).click();
   await expect(page.getByText("Published version 1.")).toBeVisible();
-  await page.getByRole("link", { name: "Build" }).click();
-  await page.getByRole("link", { name: "Test voice" }).click();
+  await page.getByRole("link", { name: "Test", exact: true }).click();
+  await expect(page).toHaveURL(/\/test$/);
+  await expect(page.getByRole("heading", { name: "Test an agent" })).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { __voiceTestState: { mediaRequests: number } }).__voiceTestState.mediaRequests)).toBe(0);
+  if (process.env.CAPTURE_PHASE13H === "1") {
+    await page.screenshot({ path: path.join(captureDirectory, "phase13h-test-selector-desktop-20261107.png") });
+  }
+  await page.getByRole("link", { name: "Open Voice test agent test sandbox" }).click();
+  await expect(page.getByRole("heading", { name: "Browser voice test" })).toBeVisible();
 
   await expect(page.getByText("Mock mode")).toBeVisible();
   await installOfflineWorker(page);
@@ -132,5 +144,4 @@ test("runs an SDK-backed offline voice test and releases browser media", async (
   expect(clearAck?.payload?.played_audio_ms).toBe(0);
   expect(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length, href: location.href }))).toEqual({ local: 0, session: 0, href: expect.not.stringContaining("offline-ephemeral-room-token") });
   expect(consoleErrors).toEqual([]);
-  if (process.env.CAPTURE_PHASE13D === "1") await page.screenshot({ path: "test-results/phase13d-voice-test.png", fullPage: true });
 });
