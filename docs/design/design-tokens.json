@@ -1,0 +1,272 @@
+{
+  "name": "wavia-ripple",
+  "version": "1.1.0",
+  "note": "Dashboard values are mock until real data is wired. Contrast: never lilac or lime text on bone.",
+  "color": {
+    "aubergine": "#1A0B2E",
+    "lime": "#C8F169",
+    "lilac": "#B8A4FF",
+    "bone": "#F4EFE6",
+    "lilacDeep": "#7A5BC4",
+    "aubergineRaised": "#2A1647",
+    "aubergineLine": "#3F2765",
+    "studioPaper": "#FFF6E5"
+  },
+  "role": {
+    "teaser": {
+      "ground": "aubergine",
+      "text": "bone",
+      "accent": "lime",
+      "secondary": "lilac",
+      "label": "lilac"
+    },
+    "dashboard": {
+      "ground": "bone",
+      "text": "aubergine",
+      "highlight": "lime",
+      "block": "lilac",
+      "rule": "aubergine"
+    }
+  },
+  "font": {
+    "teaserDisplay": {
+      "family": "Bricolage Grotesque",
+      "weights": [
+        500,
+        800
+      ],
+      "fallback": "system-ui, sans-serif"
+    },
+    "dashboardDisplay": {
+      "family": "Instrument Serif",
+      "weights": [
+        400
+      ],
+      "styles": [
+        "normal",
+        "italic"
+      ],
+      "fallback": "Georgia, serif"
+    },
+    "mono": {
+      "family": "Space Mono",
+      "weights": [
+        400,
+        700
+      ],
+      "fallback": "ui-monospace, monospace"
+    }
+  },
+  "type": {
+    "teaser": {
+      "headline": {
+        "size": 128,
+        "weight": 800,
+        "tracking": -4,
+        "lineHeight": 0.98
+      },
+      "pill": {
+        "lineHeight": 1.05,
+        "paddingX": 18,
+        "radius": 70
+      },
+      "wordmark": {
+        "size": 60,
+        "weight": 800,
+        "tracking": -2
+      },
+      "label": {
+        "size": 20,
+        "weight": 400,
+        "tracking": 2,
+        "case": "upper"
+      }
+    },
+    "dashboard": {
+      "wordmark": {
+        "size": 44,
+        "style": "italic"
+      },
+      "kpi": {
+        "size": 84,
+        "tracking": -3,
+        "lineHeight": 0.95
+      },
+      "kpiUnit": {
+        "size": 40,
+        "style": "italic"
+      },
+      "quote": {
+        "size": 66,
+        "tracking": -2,
+        "lineHeight": 1.02
+      },
+      "reply": {
+        "size": 38,
+        "style": "italic"
+      },
+      "label": {
+        "size": 11,
+        "tracking": 1.5,
+        "case": "upper"
+      },
+      "event": {
+        "size": 11
+      }
+    }
+  },
+  "space": {
+    "teaser": {
+      "margin": 60,
+      "footerBottom": 54,
+      "headlineBottom": 120
+    },
+    "dashboard": {
+      "padX": 44,
+      "padY": 30,
+      "columns": [
+        300,
+        "1fr",
+        330
+      ],
+      "gap": 34,
+      "gridTop": 22,
+      "centreGap": 18
+    }
+  },
+  "radius": {
+    "pill": 70,
+    "circle": "50%",
+    "panel": 18,
+    "dashboard": 0
+  },
+  "border": {
+    "mastTop": 2,
+    "rule": 1,
+    "panel": 3
+  },
+  "canvas": {
+    "teaser": {
+      "w": 1080,
+      "h": 1350
+    },
+    "reelCover": {
+      "w": 540,
+      "h": 960
+    },
+    "studioPost": {
+      "w": 1080,
+      "h": 1350
+    },
+    "dashboard": {
+      "w": 1280,
+      "h": 800
+    }
+  },
+  "ripple": {
+    "dotPitch": 28,
+    "dotRadius": 4,
+    "dotSoftEdge": 4.6,
+    "center": {
+      "x": "50%",
+      "y": "38%"
+    },
+    "ringOn": 54,
+    "ringOff": 54,
+    "vignette": {
+      "clearUntil": "18%",
+      "solidAt": "74%"
+    },
+    "core": {
+      "size": 300,
+      "left": 390,
+      "top": 370,
+      "gap": 18,
+      "ring": 4
+    }
+  },
+  "timingBar": {
+    "height": 30,
+    "segments": [
+      {
+        "label": "VAD",
+        "ms": 120,
+        "fill": "lilac"
+      },
+      {
+        "label": "STT",
+        "ms": 310,
+        "fill": "lime"
+      },
+      {
+        "label": "LLM",
+        "ms": 260,
+        "fill": "aubergine"
+      },
+      {
+        "label": "TTS",
+        "ms": 150,
+        "fill": "lilacDeep"
+      }
+    ],
+    "totalMs": 840
+  },
+  "copy": {
+    "teaserHeadline": "a first listen is coming.",
+    "teaserTopRight": "01 \u2014 SIGNAL",
+    "teaserFooter": "VOICE AI ENGINE \u00b7 SOON",
+    "demoQuestion": "What time do you close today?",
+    "demoReply": "We close at 6 p.m. today.",
+    "modePill": [
+      "Live provider \u00b7 mock data",
+      "Offline mock"
+    ],
+    "mockNote": "Illustrative data"
+  },
+  "nav": {
+    "items": [
+      "Live",
+      "Agents",
+      "Sessions",
+      "Providers",
+      "Latency",
+      "Events"
+    ],
+    "font": "mono",
+    "size": 11,
+    "tracking": 1.5,
+    "case": "upper",
+    "itemPadding": "4px 10px",
+    "gap": 6,
+    "activeFill": "lime",
+    "rule": 1,
+    "focusRing": {
+      "width": 2,
+      "offset": 2,
+      "color": "aubergine"
+    }
+  },
+  "breakpoints": {
+    "tablet": 1100,
+    "phone": 560
+  },
+  "responsive": {
+    "tablet": {
+      "columns": 1,
+      "kpiColumns": 3,
+      "kpiSize": 56,
+      "quoteSize": 44,
+      "replySize": 30,
+      "pad": 20
+    },
+    "phone": {
+      "kpiColumns": 1,
+      "hideMastLabel": true,
+      "wordmarkSize": 34
+    }
+  },
+  "decisions": {
+    "surfaces": "dark aubergine = brand/social; bone paper = product UI",
+    "studioPilot": "untouched until migrated; mapping in DESIGN.md section 9"
+  }
+}
