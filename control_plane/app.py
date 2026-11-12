@@ -32,8 +32,8 @@ from control_plane.routes.api_keys import router as api_keys_router
 from control_plane.routes.conversations import router as conversations_router
 from control_plane.routes.extraction_schemas import router as extraction_router
 from control_plane.routes.identity import router as identity_router
-from control_plane.routes.platform import router as platform_router
 from control_plane.routes.knowledge_bases import router as kb_router
+from control_plane.routes.platform import router as platform_router
 from control_plane.routes.provider_credentials import router as credentials_router
 from control_plane.routes.session import (
     MintContext,

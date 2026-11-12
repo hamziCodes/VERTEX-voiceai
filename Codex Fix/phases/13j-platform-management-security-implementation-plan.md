@@ -8,6 +8,10 @@
 
 **Tech stack:** Python 3.12, FastAPI, Pydantic, psycopg async, PostgreSQL with RLS; Next.js 16 App Router, React 19, strict TypeScript, zod v4, Vitest, Playwright offline fixture.
 
+## Execution status (2026-11-12)
+
+All seven tasks complete and the close gate passed locally (`111b153`, `b115593`, `a5389eb`, `6999faa`, `ecf0c5c`, `40e4b34`, `f2ccc1d`, then the close-gate commit). Evidence: `Codex Fix/evidence/phase-13j/`. Deviation: revocation is `POST /v1/platform/staff/{user_id}/revoke` with a JSON reason instead of `DELETE` with a body.
+
 **Spec:** `docs/superpowers/specs/2026-11-07-wavia-studio-complete-operations-design.md` (sections "Platform staff roles", "Wavia management area", "Backend changes", Phase 13J). **Prerequisite:** Phase 13I closed locally (`a049602`); Hamzi asked to start 13J on 2026-11-12. Nothing is pushed until the whole program is complete.
 
 ## Audit (2026-11-12)

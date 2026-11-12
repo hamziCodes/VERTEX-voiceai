@@ -4,8 +4,6 @@ import { hasPlatformCapability, type PlatformCapability } from "@/auth/platform-
 import { SidebarShell, startsWith, type SidebarItem } from "@/components/studio/sidebar-shell";
 import type { PlatformRole } from "@/data/schema";
 
-import { PLATFORM_ROLE_DETAILS } from "./types";
-
 type AdminItem = SidebarItem & { permission?: PlatformCapability };
 
 const ITEMS: ReadonlyArray<AdminItem> = [
@@ -28,7 +26,8 @@ export function AdminNavigation({
   signOutAction?: () => Promise<void>;
 }) {
   const items = ITEMS.filter((item) => !item.permission || hasPlatformCapability(capabilities, item.permission));
-  const roleLabel = PLATFORM_ROLE_DETAILS[role].label;
+  // Short form, like the workspace shell ("tenant admin"); the overview shows the full label.
+  const roleLabel = role === "platform_admin" ? "platform admin" : "platform support";
   return (
     <SidebarShell
       account={displayName ? { displayName, roleLabel, signOutAction } : undefined}

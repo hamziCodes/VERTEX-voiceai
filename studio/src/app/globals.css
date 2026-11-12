@@ -719,6 +719,11 @@ a { color: inherit; }
 .admin-staff__hint { display: block; font-size: 12px; margin-top: 4px; }
 .admin-staff__reason { display: block; max-width: 34ch; overflow-wrap: anywhere; }
 .admin-audit__details { display: grid; gap: 2px; max-width: 40ch; overflow-wrap: anywhere; }
+.admin-staff__identity { display: grid; gap: 4px; min-width: 0; }
+.admin-staff__identity .admin-staff__hint { margin-top: 0; }
+.admin-staff__actions { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.admin-nowrap { white-space: nowrap; }
+.admin-tenant .token-list { list-style: none; margin: 0; padding: 0; }
 
 @media (max-width: 640px) {
   .admin-search__row { flex-direction: column; }

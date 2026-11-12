@@ -169,19 +169,22 @@ export function StaffManager({ staff: initialStaff, currentUserId, canManage, on
               return (
                 <tr key={member.user_id}>
                   <td data-label="Person">
-                    <span className="admin-staff__person">
-                      <strong>{label}</strong>
-                      {isSelf ? <span className="admin-staff__you">You</span> : null}
-                    </span>
-                    {lastAdmin && canManage ? <span className="muted-copy admin-staff__hint">Last platform administrator.</span> : null}
+                    <div className="admin-staff__identity">
+                      <span className="admin-staff__person">
+                        <strong>{label}</strong>
+                        {isSelf ? <span className="admin-staff__you">You</span> : null}
+                      </span>
+                      {lastAdmin && canManage ? <span className="muted-copy admin-staff__hint">Last platform administrator.</span> : null}
+                    </div>
                   </td>
                   <td data-label="Role">
                     <StatusBadge tone={member.role === "platform_admin" ? "info" : "neutral"}>{PLATFORM_ROLE_DETAILS[member.role].label}</StatusBadge>
                   </td>
-                  <td data-label="Granted"><span className="technical-value">{formatDate(member.granted_at)}</span></td>
+                  <td data-label="Granted"><span className="technical-value admin-nowrap">{formatDate(member.granted_at)}</span></td>
                   <td data-label="Reason"><span className="admin-staff__reason">{member.reason}</span></td>
                   {canManage ? (
                     <td className="data-table__actions" data-label="Actions">
+                      <div className="admin-staff__actions">
                       <button
                         aria-label={`Change role for ${label}`}
                         className="button button--secondary"
@@ -200,6 +203,7 @@ export function StaffManager({ staff: initialStaff, currentUserId, canManage, on
                       >
                         Revoke
                       </button>
+                      </div>
                     </td>
                   ) : null}
                 </tr>

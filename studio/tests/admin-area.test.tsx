@@ -109,7 +109,7 @@ describe("internal admin area", () => {
     for (const name of ["Tenants", "Staff", "Audit"]) expect(within(nav).getByRole("link", { name })).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Workspace" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Build" })).not.toBeInTheDocument();
-    expect(screen.getByText("Platform administrator")).toBeInTheDocument();
+    expect(screen.getByText("platform admin")).toBeInTheDocument();
 
     pathname.value = `/admin/tenants/${TENANT}`;
     rerender(<AdminNavigation capabilities={SUPPORT_CAPABILITIES} displayName="Sam Support" role="platform_support" />);

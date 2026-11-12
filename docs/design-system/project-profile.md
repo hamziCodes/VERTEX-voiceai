@@ -1,7 +1,7 @@
 # Project Profile
 
 **Toolkit version in use:** `1.0.0`
-**Profile last reviewed:** `2026-11-12` by `Claude, Phase 13I operational surfaces close gate`
+**Profile last reviewed:** `2026-11-12` by `Claude, Phase 13J platform security close gate`
 
 ## 1. What this project is
 
@@ -21,7 +21,7 @@
 | Conversation, audit and monitoring data | `console` inside the dashboard shell | `dense` | Wavia warm paper field | Technical values use Space Mono; tables become cards below 800px. |
 | Agent and onboarding editors | `form-flow` inside the dashboard shell | `comfortable` form regions | Wavia warm paper field | Single-column field reading order with sticky save/status controls where useful. |
 
-The Phase 13G pilot covered `SCR-01` Agent Directory and `SCR-03` Persona Editor. Phase 13H extended Theme B to the customer foundation routes: sign-in, workspace selection, dashboard, onboarding, agent creation, `/test`, `/settings` and `/settings/members`. Phase 13I then converted the operational routes: knowledge, the per-agent browser voice test, web and telephony channels, API keys, provider credentials, conversations, usage and audit. The public Wavia website is out of scope.
+The Phase 13G pilot covered `SCR-01` Agent Directory and `SCR-03` Persona Editor. Phase 13H extended Theme B to the customer foundation routes: sign-in, workspace selection, dashboard, onboarding, agent creation, `/test`, `/settings` and `/settings/members`. Phase 13I then converted the operational routes: knowledge, the per-agent browser voice test, web and telephony channels, API keys, provider credentials, conversations, usage and audit. Phase 13J added the internal `/admin` area (overview, tenant directory, tenant summary, staff, platform audit) with its own navigation built on the same shared sidebar shell and tokens. The public Wavia website is out of scope.
 
 `docs/DESIGN.md` and `docs/design/design-tokens.json` (Wavia Ripple, supplied by Hamzi on 2026-11-10) govern future dashboard frontend work. Their §9 keeps this Theme B Studio untouched until a deliberately approved migration, and the suggested Theme B → Ripple mapping there is not yet approved. Phase 13H therefore stayed on Theme B.
 
@@ -110,6 +110,7 @@ The Phase 13G pilot covered `SCR-01` Agent Directory and `SCR-03` Persona Editor
 | `/test` selector | Yes | Yes | n/a | Yes | Phase 13H Task 6. |
 | `/settings`, `/settings/members` | Yes | Yes | n/a | Yes | Phase 13H Task 7; only existing `--studio-*` tokens. Members are shown by account ID because the control-plane list exposes no name or email. |
 | Operational routes (knowledge, voice test, channels, API keys, providers, conversations, usage, audit) | Yes | Yes | n/a | Yes | Phase 13I. No inline styles or colour literals remain in `studio/src`; colours are defined only in the `:root` token block. |
+| Internal area (`/admin`, tenants, tenant summary, staff, platform audit) | Yes | Yes | n/a | Yes | Phase 13J. Separate "Wavia admin" navigation through the shared `SidebarShell`; customers receive not-found. |
 
 ## 9. Project-specific decisions
 

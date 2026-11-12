@@ -159,3 +159,65 @@ test("desktop sidebar collapse persists across reloads and navigation keeps visi
   if (capture) await page.screenshot({ path: path.join(captureDirectory, "phase13h-qa-keyboard-focus-desktop-20261112.png"), caret: "initial" });
   expect(errors).toEqual([]);
 });
+
+// Phase 13J internal area: separate shell, same responsive and accessibility bar.
+const ADMIN_ROUTES: ReadonlyArray<{ path: string; heading: RegExp; name: string }> = [
+  { path: "/admin", heading: /^Platform overview$/, name: "overview" },
+  { path: "/admin/tenants", heading: /^Tenants$/, name: "tenants" },
+  { path: "/admin/tenants/11111111-1111-4111-8111-111111111111", heading: /^Alpha workspace$/, name: "tenant-detail" },
+  { path: "/admin/staff", heading: /^Staff$/, name: "staff" },
+  { path: "/admin/audit", heading: /^Platform audit$/, name: "audit" },
+];
+const phase13jCaptureDirectory = path.resolve(process.cwd(), "../hamza_local/phase13j-qa");
+const capture13j = process.env.CAPTURE_PHASE13J === "1";
+
+async function authenticateAs(context: BrowserContext, subject: string) {
+  const tokenResponse = await fetch(`${fixtureBaseUrl}/token?sub=${subject}`, { headers: { connection: "close" } });
+  const { accessToken } = await tokenResponse.json() as { accessToken: string };
+  const value = await sealData({
+    accessToken,
+    refreshToken: "offline-refresh-token",
+    user: { id: subject, email: `${subject}@example.test`, firstName: "Offline", lastName: "Staff" },
+  }, { password: cookiePassword, ttl: 0 });
+  await context.addCookies([{ name: "wos-session", value, domain: "127.0.0.1", path: "/", httpOnly: true, sameSite: "Lax" }]);
+}
+
+test("internal admin routes render at desktop and 390px with their own dismissible navigation", async ({ context, page }) => {
+  const errors = collectConsoleErrors(page);
+  await authenticateAs(context, "user-platform-admin");
+
+  for (const [viewport, size] of [["desktop", { width: 1280, height: 800 }], ["mobile-390", { width: 390, height: 844 }]] as const) {
+    await page.setViewportSize(size);
+    for (const route of ADMIN_ROUTES) {
+      await page.goto(route.path);
+      await expect(page.getByRole("heading", { level: 1, name: route.heading })).toBeVisible();
+      await noHorizontalOverflow(page);
+      const navigation = page.getByRole("navigation", { name: "Wavia admin" });
+      if (viewport === "desktop") await expect(navigation).toBeVisible();
+      else await expect(navigation).toBeHidden();
+      await expect(page.getByRole("navigation", { name: "Workspace" })).toHaveCount(0);
+      if (capture13j) await page.screenshot({ path: path.join(phase13jCaptureDirectory, `phase13j-qa-${route.name}-${viewport}-20261112.png`), caret: "initial" });
+    }
+  }
+
+  await page.goto("/admin/staff");
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  const navigation = page.getByRole("navigation", { name: "Wavia admin" });
+  await expect(navigation).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Staff" })).toHaveAttribute("aria-current", "page");
+  if (capture13j) {
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(phase13jCaptureDirectory, "phase13j-qa-drawer-mobile-390-20261112.png"), caret: "initial" });
+  }
+  await page.keyboard.press("Escape");
+  await expect(navigation).toBeHidden();
+  await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/admin/staff");
+  await page.getByRole("button", { name: "Grant a role" }).click();
+  if (capture13j) await page.screenshot({ path: path.join(phase13jCaptureDirectory, "phase13j-qa-grant-dialog-desktop-20261112.png"), caret: "initial" });
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Grant a role" })).toBeFocused();
+  expect(errors).toEqual([]);
+});
