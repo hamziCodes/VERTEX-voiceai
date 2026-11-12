@@ -101,6 +101,13 @@ class InMemoryPostCallJobRepository:
             return job.model_copy(deep=True)
         return None
 
+    async def count_jobs_by_state(self) -> dict[str, int]:
+        """Aggregate counts only (Phase 13K operations health); no job content."""
+        counts = {state.value: 0 for state in PostCallJobState}
+        for job in self._jobs.values():
+            counts[job.state.value] += 1
+        return counts
+
     def _leased_job(self, job_id: UUID, worker_id: str) -> PostCallJob:
         job = self._jobs.get(job_id)
         if job is None:
@@ -199,6 +206,18 @@ class PostgresPostCallJobRepository:
 
     def __init__(self, database: AsyncDatabase | Any | None = None) -> None:
         self.database = database or get_default_database()
+
+    async def count_jobs_by_state(self) -> dict[str, int]:
+        """Aggregate counts across tenants for platform operations health only."""
+        counts = {state.value: 0 for state in PostCallJobState}
+        async with self.database.platform_transaction() as connection:
+            cursor = await connection.execute(
+                "SELECT state, COUNT(*) FROM post_call_jobs GROUP BY state"
+            )
+            for state, count in await cursor.fetchall():
+                if state in counts:
+                    counts[state] = int(count)
+        return counts
 
     @staticmethod
     def _job_from_row(row: Any) -> PostCallJob:

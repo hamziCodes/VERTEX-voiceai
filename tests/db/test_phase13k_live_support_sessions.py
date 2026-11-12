@@ -192,6 +192,34 @@ async def test_phase13k_migration_033_support_sessions() -> None:
             async with fixture.transaction():
                 await fixture.execute("SET LOCAL ROLE ucve_app")
                 await fixture.execute("SELECT count(*) FROM platform_support_sessions")
+
+        # Operations health against the real database: trivial query and
+        # aggregate job counts only.
+        from types import SimpleNamespace
+
+        from control_plane.platform.operations import build_operations_snapshot
+        from post_call.jobs.repository import PostgresPostCallJobRepository
+
+        counts = await PostgresPostCallJobRepository(database).count_jobs_by_state()
+        assert set(counts) == {
+            "queued",
+            "running",
+            "retry_wait",
+            "succeeded",
+            "dead_letter",
+        }
+        snapshot = await build_operations_snapshot(
+            SimpleNamespace(
+                database=database,
+                post_call_job_repository=PostgresPostCallJobRepository(database),
+                oidc_provider=None,
+            ),
+            studio,
+        )
+        signals = {item["key"]: item for item in snapshot["signals"]}
+        assert signals["database"]["status"] == "healthy"
+        assert signals["identity"]["status"] == "not_configured"
+        assert "postgresql://" not in str(snapshot)
     finally:
         await fixture.close()
         await database.close()
