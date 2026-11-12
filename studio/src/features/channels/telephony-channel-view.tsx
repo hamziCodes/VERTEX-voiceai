@@ -1,6 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
+
+import { FormField } from "@/components/studio/form-field";
+import { StatusBadge } from "@/components/studio/status-badge";
+
 import type { TelephonyPolicyDto, TelephonySettingsDto } from "./types";
 
 export interface TelephonyChannelViewProps {
@@ -9,24 +13,26 @@ export interface TelephonyChannelViewProps {
   onSave: (policy: TelephonyPolicyDto) => Promise<{ success: boolean; error?: string }>;
 }
 
+type SaveStatus = { tone: "success" | "danger"; message: string } | null;
+
 export function TelephonyChannelView({ settings, canEdit, onSave }: TelephonyChannelViewProps) {
   const [policy, setPolicy] = useState<TelephonyPolicyDto>(settings.policy);
   const [destinationsInput, setDestinationsInput] = useState<string>(
     settings.policy.allowed_destinations.join(", ")
   );
   const [isSaving, setIsSaving] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [status, setStatus] = useState<SaveStatus>(null);
 
   const readinessState = settings.readiness.state;
   const isReady = readinessState === "ready";
   const isNotConfigured = readinessState === "not_configured";
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!canEdit) return;
 
     setIsSaving(true);
-    setStatusMessage(null);
+    setStatus(null);
 
     const parsedDestinations = destinationsInput
       .split(/[,\n]/)
@@ -38,185 +44,122 @@ export function TelephonyChannelView({ settings, canEdit, onSave }: TelephonyCha
       allowed_destinations: parsedDestinations,
     };
 
-    const res = await onSave(updated);
-    setIsSaving(false);
-    if (res.success) {
-      setPolicy(updated);
-      setStatusMessage("Telephony policy saved successfully.");
-    } else {
-      setStatusMessage(res.error ?? "Failed to save policy.");
+    try {
+      const res = await onSave(updated);
+      if (res.success) {
+        setPolicy(updated);
+        setStatus({ tone: "success", message: "Telephony policy saved successfully." });
+      } else {
+        setStatus({ tone: "danger", message: res.error ?? "Failed to save policy." });
+      }
+    } catch {
+      setStatus({ tone: "danger", message: "Failed to save policy." });
+    } finally {
+      setIsSaving(false);
     }
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      <header>
-        <h2>Telephony Voice Channel</h2>
-        <p>
-          Configure call limits, calling windows, and outbound destination policies for phone calls.
-        </p>
-      </header>
-
-      <section
-        style={{
-          border: "1px solid #e4e4e7",
-          borderRadius: "8px",
-          padding: "1rem",
-          background: "#fafafa",
-        }}
-      >
-        <h3>Trunk Readiness</h3>
-        <div style={{ display: "flex", gap: "1.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
-          <div>
-            <strong>Status: </strong>
-            <span
-              style={{
-                fontWeight: 600,
-                color: isReady ? "#16a34a" : isNotConfigured ? "#dc2626" : "#d97706",
-              }}
-            >
-              {isReady ? "Ready" : isNotConfigured ? "Not configured" : "Readiness unknown"}
-            </span>
-          </div>
-          <div>
-            <strong>SIP Trunk: </strong>
-            {settings.readiness.trunk_configured ? "Configured" : "Unconfigured"}
-          </div>
-          <div>
-            <strong>Telephony Entitlement: </strong>
-            {settings.readiness.telephony_entitled ? "Enabled" : "Disabled"}
-          </div>
-          <div>
-            <strong>Carrier Health: </strong>
-            {settings.readiness.carrier_health}
-          </div>
+    <div className="channel-view">
+      <section aria-labelledby="telephony-heading" className="form-panel">
+        <div className="panel-heading">
+          <p className="screen-eyebrow">Telephony</p>
+          <h2 id="telephony-heading">Telephony voice channel</h2>
+          <p>Configure call limits, calling windows and outbound destination policy for phone calls.</p>
         </div>
+        {!canEdit ? (
+          <p className="inline-notice inline-notice--info">Your role can review telephony readiness and policy but cannot change them.</p>
+        ) : null}
 
-        <div
-          style={{
-            marginTop: "1rem",
-            padding: "0.75rem",
-            background: "#fef3c7",
-            borderRadius: "6px",
-            fontSize: "0.9rem",
-            color: "#92400e",
-          }}
-        >
+        <section aria-labelledby="trunk-readiness-heading" className="readiness-list">
+          <h3 id="trunk-readiness-heading">Trunk readiness</h3>
+          <dl>
+            <div>
+              <dt>Status</dt>
+              <dd>
+                <StatusBadge tone={isReady ? "success" : isNotConfigured ? "danger" : "warning"}>
+                  {isReady ? "Ready" : isNotConfigured ? "Not configured" : "Readiness unknown"}
+                </StatusBadge>
+              </dd>
+            </div>
+            <div>
+              <dt>SIP trunk</dt>
+              <dd><StatusBadge tone={settings.readiness.trunk_configured ? "success" : "neutral"}>{settings.readiness.trunk_configured ? "Configured" : "Unconfigured"}</StatusBadge></dd>
+            </div>
+            <div>
+              <dt>Telephony entitlement</dt>
+              <dd><StatusBadge tone={settings.readiness.telephony_entitled ? "success" : "neutral"}>{settings.readiness.telephony_entitled ? "Enabled" : "Disabled"}</StatusBadge></dd>
+            </div>
+            <div>
+              <dt>Carrier health</dt>
+              <dd className="technical-value">{settings.readiness.carrier_health}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <p className="inline-notice inline-notice--warning">
           <strong>Notice:</strong> Carrier purchase and provisioning is not automated in self-serve
           mode; contact support to attach a dedicated Telnyx SIP trunk.
-        </div>
+        </p>
       </section>
 
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-        <h3>Outbound Calling Policy</h3>
-
-        <div>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <input
-              type="checkbox"
-              aria-label="Allow outbound calls"
-              checked={policy.outbound_enabled}
-              disabled={!canEdit}
-              onChange={(e) => setPolicy({ ...policy, outbound_enabled: e.target.checked })}
-            />
-            Allow outbound calls
-          </label>
+      <form aria-labelledby="outbound-policy-heading" className="form-panel telephony-policy" onSubmit={handleSubmit}>
+        <div className="panel-heading">
+          <p className="screen-eyebrow">Policy</p>
+          <h3 id="outbound-policy-heading">Outbound calling policy</h3>
+          <p>Outbound calls stay limited to these destinations and hours. Saving a policy does not place a call.</p>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", maxWidth: "500px" }}>
-          <div>
-            <label htmlFor="window-start" style={{ display: "block", fontSize: "0.9rem" }}>
-              Calling Window Start
-            </label>
-            <input
-              id="window-start"
-              type="text"
-              value={policy.window_start}
-              disabled={!canEdit}
-              onChange={(e) => setPolicy({ ...policy, window_start: e.target.value })}
-              style={{ width: "100%", padding: "0.5rem" }}
-            />
-          </div>
-          <div>
-            <label htmlFor="window-end" style={{ display: "block", fontSize: "0.9rem" }}>
-              Calling Window End
-            </label>
-            <input
-              id="window-end"
-              type="text"
-              value={policy.window_end}
-              disabled={!canEdit}
-              onChange={(e) => setPolicy({ ...policy, window_end: e.target.value })}
-              style={{ width: "100%", padding: "0.5rem" }}
-            />
-          </div>
-        </div>
-
-        <div style={{ maxWidth: "500px" }}>
-          <label htmlFor="calling-timezone" style={{ display: "block", fontSize: "0.9rem" }}>
-            Calling Timezone
-          </label>
+        <label className="checkbox-row">
           <input
-            id="calling-timezone"
-            type="text"
-            value={policy.calling_timezone}
+            aria-label="Allow outbound calls"
+            checked={policy.outbound_enabled}
             disabled={!canEdit}
-            onChange={(e) => setPolicy({ ...policy, calling_timezone: e.target.value })}
-            style={{ width: "100%", padding: "0.5rem" }}
+            onChange={(e) => setPolicy({ ...policy, outbound_enabled: e.target.checked })}
+            type="checkbox"
           />
+          <span>Allow outbound calls</span>
+        </label>
+
+        <div className="field-grid">
+          <FormField hint="24-hour time, for example 09:00:00." label="Calling window start" name="window-start">
+            <input disabled={!canEdit} onChange={(e) => setPolicy({ ...policy, window_start: e.target.value })} type="text" value={policy.window_start} />
+          </FormField>
+          <FormField hint="24-hour time, for example 17:00:00." label="Calling window end" name="window-end">
+            <input disabled={!canEdit} onChange={(e) => setPolicy({ ...policy, window_end: e.target.value })} type="text" value={policy.window_end} />
+          </FormField>
         </div>
 
-        <div style={{ maxWidth: "500px" }}>
-          <label htmlFor="max-duration" style={{ display: "block", fontSize: "0.9rem" }}>
-            Max Call Duration (seconds)
-          </label>
-          <input
-            id="max-duration"
-            type="number"
-            value={policy.max_call_duration_seconds}
-            disabled={!canEdit}
-            onChange={(e) =>
-              setPolicy({ ...policy, max_call_duration_seconds: parseInt(e.target.value, 10) || 600 })
-            }
-            style={{ width: "100%", padding: "0.5rem" }}
-          />
+        <div className="field-grid">
+          <FormField hint="IANA name, for example Asia/Karachi." label="Calling timezone" name="calling-timezone">
+            <input disabled={!canEdit} onChange={(e) => setPolicy({ ...policy, calling_timezone: e.target.value })} type="text" value={policy.calling_timezone} />
+          </FormField>
+          <FormField label="Max call duration (seconds)" name="max-duration">
+            <input
+              disabled={!canEdit}
+              min={1}
+              onChange={(e) => setPolicy({ ...policy, max_call_duration_seconds: parseInt(e.target.value, 10) || 600 })}
+              type="number"
+              value={policy.max_call_duration_seconds}
+            />
+          </FormField>
         </div>
 
-        <div style={{ maxWidth: "500px" }}>
-          <label htmlFor="allowed-destinations" style={{ display: "block", fontSize: "0.9rem" }}>
-            Allowed Destinations (E.164, comma-separated)
-          </label>
-          <textarea
-            id="allowed-destinations"
-            value={destinationsInput}
-            disabled={!canEdit}
-            onChange={(e) => setDestinationsInput(e.target.value)}
-            rows={3}
-            style={{ width: "100%", padding: "0.5rem" }}
-          />
-        </div>
+        <FormField hint="E.164 numbers separated by commas or new lines, for example +14155550100." label="Allowed destinations" name="allowed-destinations">
+          <textarea disabled={!canEdit} onChange={(e) => setDestinationsInput(e.target.value)} rows={3} value={destinationsInput} />
+        </FormField>
 
-        {statusMessage && (
-          <div
-            style={{
-              padding: "0.5rem",
-              borderRadius: "4px",
-              background: statusMessage.includes("success") ? "#dcfce7" : "#fee2e2",
-              color: statusMessage.includes("success") ? "#15803d" : "#b91c1c",
-              fontSize: "0.9rem",
-            }}
-          >
-            {statusMessage}
-          </div>
-        )}
+        {status ? (
+          <p className={`inline-notice inline-notice--${status.tone}`} role={status.tone === "success" ? "status" : "alert"}>{status.message}</p>
+        ) : null}
 
-        {canEdit && (
-          <div>
-            <button type="submit" disabled={isSaving}>
-              {isSaving ? "Saving..." : "Save Policy"}
+        {canEdit ? (
+          <div className="panel-actions panel-actions--inline">
+            <button className="button button--primary" disabled={isSaving} type="submit">
+              {isSaving ? "Saving…" : "Save policy"}
             </button>
           </div>
-        )}
+        ) : null}
       </form>
     </div>
   );

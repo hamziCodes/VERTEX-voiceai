@@ -564,6 +564,38 @@ a { color: inherit; }
   .voice-console__buttons, .voice-console__buttons .button { width: 100%; }
 }
 
+/* Phase 13I channels */
+.channels-page { min-width: 0; }
+.channel-view { display: grid; gap: 18px; min-width: 0; }
+.channel-view .form-panel { margin: 0; }
+.channel-view .inline-notice { margin: 14px 0 0; }
+.channel-agent-picker { display: grid; gap: 10px; max-width: 520px; }
+.channel-agent-picker__meta { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+.channel-agent-picker__meta .technical-value { color: var(--studio-ink-muted); overflow-wrap: anywhere; }
+.channel-step__heading { align-items: center; display: flex; gap: 12px; margin-bottom: 12px; }
+.channel-step__heading h3 { font-family: var(--font-bricolage), sans-serif; font-size: 19px; margin: 0; }
+.channel-step__number { align-items: center; background: var(--studio-accent-soft); border-radius: 999px; color: var(--studio-accent); display: inline-flex; flex: 0 0 30px; font-family: var(--font-space-mono), monospace; font-size: 13px; font-weight: 700; height: 30px; justify-content: center; }
+.code-block { align-items: flex-start; display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) auto; margin-top: 12px; }
+.code-block pre { background: var(--studio-paper); border: 1px solid var(--studio-border); border-radius: var(--studio-radius-control); font-family: var(--font-space-mono), monospace; font-size: 12px; line-height: 1.6; margin: 0; max-width: 100%; overflow-x: auto; padding: 12px 14px; }
+.code-block--dark pre { background: var(--studio-dark); border-color: var(--studio-dark); color: var(--studio-surface); }
+.readiness-list { margin-top: 4px; }
+.readiness-list h3 { font-size: 15px; margin: 0 0 8px; }
+.readiness-list dl { display: grid; gap: 0 18px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin: 0; }
+.readiness-list dl > div { border-top: 1px solid var(--studio-border); display: grid; gap: 6px; padding: 12px 0; }
+.readiness-list dt { color: var(--studio-ink-muted); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.readiness-list dd { margin: 0; }
+.telephony-policy { display: grid; gap: 16px; }
+.telephony-policy .field-grid { align-items: start; }
+.telephony-policy .panel-heading { margin-bottom: 4px; }
+.telephony-policy .inline-notice { margin: 0; }
+.checkbox-row { align-items: center; cursor: pointer; display: inline-flex; font-weight: 700; gap: 10px; min-height: 44px; }
+.checkbox-row input { height: 18px; width: 18px; }
+
+@media (max-width: 640px) {
+  .code-block { grid-template-columns: 1fr; }
+  .code-block .button { width: 100%; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
 }

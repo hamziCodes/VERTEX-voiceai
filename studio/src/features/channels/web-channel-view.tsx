@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+
+import { FormField } from "@/components/studio/form-field";
+import { StatusBadge } from "@/components/studio/status-badge";
+
 import type { AgentSummary } from "./types";
 
 export interface WebChannelViewProps {
@@ -12,8 +16,7 @@ export function WebChannelView({ agents, defaultAgentId }: WebChannelViewProps) 
   const [selectedAgentId, setSelectedAgentId] = useState<string>(
     defaultAgentId ?? agents[0]?.agent_id ?? "YOUR_AGENT_ID"
   );
-  const [copiedScript, setCopiedScript] = useState(false);
-  const [copiedNpm, setCopiedNpm] = useState(false);
+  const [copied, setCopied] = useState<"npm" | "script" | null>(null);
 
   const selectedAgent = agents.find((a) => a.agent_id === selectedAgentId);
 
@@ -40,101 +43,75 @@ const client = new UCVEVoiceClient(token, {
 
 await client.connect();`;
 
-  async function handleCopy(text: string, setCopied: (v: boolean) => void) {
+  async function handleCopy(text: string, which: "npm" | "script") {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopied(which);
+      setTimeout(() => setCopied((current) => (current === which ? null : current)), 2000);
     }
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      <header>
-        <h2>Web Voice Integration</h2>
-        <p>
-          Integrate real-time AI voice agents directly into your web applications using the official{" "}
-          <code>@ucve/voice-sdk</code> package.
-        </p>
-      </header>
-
-      <section style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        <label htmlFor="agent-selector" style={{ fontWeight: 600 }}>
-          Select Agent
-        </label>
-        <select
-          id="agent-selector"
-          aria-label="Select Agent"
-          value={selectedAgentId}
-          onChange={(e) => setSelectedAgentId(e.target.value)}
-          style={{ maxWidth: "400px", padding: "0.5rem" }}
-        >
-          {agents.map((agent) => (
-            <option key={agent.agent_id} value={agent.agent_id}>
-              {agent.name} {agent.is_published ? "(Published)" : "(Draft)"} - {agent.agent_id}
-            </option>
-          ))}
-          {agents.length === 0 && (
-            <option value="YOUR_AGENT_ID">No agents created yet</option>
-          )}
-        </select>
-        {selectedAgent && (
-          <small style={{ color: "#666" }}>
-            Target Agent: <code>{selectedAgent.agent_id}</code>
-          </small>
+    <div className="channel-view">
+      <section aria-labelledby="web-channel-heading" className="form-panel">
+        <div className="panel-heading">
+          <p className="screen-eyebrow">Web</p>
+          <h2 id="web-channel-heading">Web voice integration</h2>
+          <p>
+            Add a real-time voice agent to your web application with the official <code className="technical-value">@ucve/voice-sdk</code> package.
+          </p>
+        </div>
+        {agents.length === 0 ? (
+          <p className="inline-notice inline-notice--info">No agents yet. Create and publish an agent, then return here for its integration snippet.</p>
+        ) : (
+          <div className="channel-agent-picker">
+            <FormField label="Select agent" name="agent-selector">
+              <select onChange={(e) => setSelectedAgentId(e.target.value)} value={selectedAgentId}>
+                {agents.map((agent) => (
+                  <option key={agent.agent_id} value={agent.agent_id}>
+                    {agent.name} · {agent.is_published ? "Published" : "Draft"}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            {selectedAgent ? (
+              <div className="channel-agent-picker__meta">
+                <StatusBadge tone={selectedAgent.is_published ? "success" : "warning"}>{selectedAgent.is_published ? "Published" : "Draft"}</StatusBadge>
+                <span className="technical-value">{selectedAgent.agent_id}</span>
+              </div>
+            ) : null}
+          </div>
         )}
+        {selectedAgent && !selectedAgent.is_published ? (
+          <p className="inline-notice inline-notice--warning">{selectedAgent.name} is a draft. Sessions start only for published agents, so publish it before going live.</p>
+        ) : null}
       </section>
 
-      <section style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        <h3>Step 1: Install SDK</h3>
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-          <pre
-            style={{
-              background: "#f4f4f5",
-              padding: "0.75rem",
-              borderRadius: "4px",
-              fontFamily: "monospace",
-              margin: 0,
-            }}
-          >
-            {npmSnippet}
-          </pre>
-          <button
-            type="button"
-            onClick={() => handleCopy(npmSnippet, setCopiedNpm)}
-          >
-            {copiedNpm ? "Copied!" : "Copy Command"}
+      <section aria-labelledby="web-step-install" className="form-panel">
+        <div className="channel-step__heading">
+          <span aria-hidden="true" className="channel-step__number">1</span>
+          <h3 id="web-step-install">Install the SDK</h3>
+        </div>
+        <div className="code-block">
+          <pre>{npmSnippet}</pre>
+          <button className="button button--secondary" onClick={() => void handleCopy(npmSnippet, "npm")} type="button">
+            {copied === "npm" ? "Copied" : "Copy command"}
           </button>
         </div>
       </section>
 
-      <section style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        <h3>Step 2: Connect via Client SDK</h3>
-        <p style={{ fontSize: "0.9rem", color: "#555" }}>
-          For security, frontend clients never use raw API keys. Your server mints a single-use token
-          with <code>/v1/session/mint</code>, which the browser passes to <code>UCVEVoiceClient</code>.
+      <section aria-labelledby="web-step-connect" className="form-panel">
+        <div className="channel-step__heading">
+          <span aria-hidden="true" className="channel-step__number">2</span>
+          <h3 id="web-step-connect">Connect with the client SDK</h3>
+        </div>
+        <p className="muted-copy">
+          Browsers never hold raw API keys. Your server mints a single-use token with <code className="technical-value">/v1/session/mint</code>, and the browser passes it to <code className="technical-value">UCVEVoiceClient</code>.
         </p>
-        <div style={{ position: "relative" }}>
-          <pre
-            data-testid="embed-code-snippet"
-            style={{
-              background: "#18181b",
-              color: "#fafafa",
-              padding: "1rem",
-              borderRadius: "6px",
-              overflowX: "auto",
-              fontFamily: "monospace",
-              fontSize: "0.85rem",
-            }}
-          >
-            {scriptSnippet}
-          </pre>
-          <button
-            type="button"
-            onClick={() => handleCopy(scriptSnippet, setCopiedScript)}
-            style={{ marginTop: "0.5rem" }}
-          >
-            {copiedScript ? "Copied!" : "Copy Code"}
+        <div className="code-block code-block--dark">
+          <pre data-testid="embed-code-snippet">{scriptSnippet}</pre>
+          <button className="button button--secondary" onClick={() => void handleCopy(scriptSnippet, "script")} type="button">
+            {copied === "script" ? "Copied" : "Copy code"}
           </button>
         </div>
       </section>

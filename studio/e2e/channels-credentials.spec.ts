@@ -24,19 +24,19 @@ test("navigates web and telephony channels with honest readiness and policy cont
   await page.getByRole("button", { name: /Alpha workspace/ }).click();
 
   await page.getByRole("link", { name: "Connect" }).click();
-  await expect(page.getByRole("heading", { name: "Web Voice Integration" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Web voice integration" })).toBeVisible();
   await expect(page.getByText("npm install @ucve/voice-sdk")).toBeVisible();
 
   // Navigate to Telephony sub-tab
   await page.getByRole("link", { name: "Telephony" }).click();
-  await expect(page.getByRole("heading", { name: "Telephony Voice Channel" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Telephony voice channel" })).toBeVisible();
   await expect(page.getByText("Not configured")).toBeVisible();
   await expect(page.getByText(/Carrier purchase and provisioning is not automated/i)).toBeVisible();
 
   // Edit policy
   const outboundCheckbox = page.getByLabel("Allow outbound calls");
   await outboundCheckbox.check();
-  await page.getByRole("button", { name: "Save Policy" }).click();
+  await page.getByRole("button", { name: "Save policy" }).click();
   await expect(page.getByText("Telephony policy saved successfully.")).toBeVisible();
   if (process.env.CAPTURE_PHASE13E === "1") {
     await page.screenshot({ path: "test-results/phase13e-telephony.png", fullPage: true });

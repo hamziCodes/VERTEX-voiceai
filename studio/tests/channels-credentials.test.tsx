@@ -2,8 +2,26 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const { pathname, requireWorkspace, loadAgents, getTelephonySettings } = vi.hoisted(() => ({
+  pathname: { current: "/channels/web" },
+  requireWorkspace: vi.fn(),
+  loadAgents: vi.fn(),
+  getTelephonySettings: vi.fn(),
+}));
+vi.mock("next/navigation", () => ({ usePathname: () => pathname.current }));
+vi.mock("@/auth/workspace", async () => {
+  const permissions = await import("@/auth/workspace-permissions");
+  return { hasWorkspaceCapability: permissions.hasWorkspaceCapability, requireWorkspace };
+});
+vi.mock("@/features/agents/data", () => ({ loadAgents }));
+vi.mock("@/features/channels/data", () => ({ getTelephonySettings }));
+vi.mock("@/features/channels/actions", () => ({ saveTelephonyPolicyAction: vi.fn() }));
+
+import TelephonyChannelPage from "@/app/(studio)/channels/telephony/page";
+import WebChannelPage from "@/app/(studio)/channels/web/page";
 
 import { WebChannelView } from "@/features/channels/web-channel-view";
 import { TelephonyChannelView } from "@/features/channels/telephony-channel-view";
@@ -139,6 +157,65 @@ describe("TelephonyChannelView", () => {
     const saveBtn = screen.getByRole("button", { name: /save policy/i });
     fireEvent.click(saveBtn);
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ outbound_enabled: true })));
+  });
+});
+
+describe("channel surfaces", () => {
+  const workspace = (capabilities: string[]) => ({ session: { accessToken: "offline" }, membership: { tenant_id: "33333333-3333-4333-8333-333333333333", capabilities } });
+
+  it("uses the shared header and channel tabs on the web page", async () => {
+    pathname.current = "/channels/web";
+    requireWorkspace.mockResolvedValue(workspace(["agent:read", "telephony:read"]));
+    loadAgents.mockResolvedValue([{ agent_id: sampleAgents[0].agent_id, name: "Support Agent", is_published: true }]);
+
+    const { container } = render(await WebChannelPage());
+
+    expect(screen.getByRole("heading", { level: 1, name: "Channels" })).toBeVisible();
+    const tabs = screen.getByRole("navigation", { name: "Channels" });
+    expect(within(tabs).getByRole("link", { name: "Web" })).toHaveAttribute("aria-current", "page");
+    expect(within(tabs).getByRole("link", { name: "Telephony" })).toHaveAttribute("href", "/channels/telephony");
+    expect(container.querySelectorAll("[style]")).toHaveLength(0);
+  });
+
+  it("uses the shared header and channel tabs on the telephony page", async () => {
+    pathname.current = "/channels/telephony";
+    requireWorkspace.mockResolvedValue(workspace(["telephony:read"]));
+    getTelephonySettings.mockResolvedValue(sampleTelephony);
+
+    const { container } = render(await TelephonyChannelPage());
+
+    expect(requireWorkspace).toHaveBeenCalledWith("telephony:read");
+    expect(screen.getByRole("heading", { level: 1, name: "Channels" })).toBeVisible();
+    expect(within(screen.getByRole("navigation", { name: "Channels" })).getByRole("link", { name: "Telephony" })).toHaveAttribute("aria-current", "page");
+    expect(container.querySelectorAll("[style]")).toHaveLength(0);
+    expect(screen.getByText("Your role can review telephony readiness and policy but cannot change them.")).toBeVisible();
+  });
+
+  it("warns that a draft agent cannot start sessions and handles a workspace with no agents", () => {
+    const { container } = render(<WebChannelView agents={sampleAgents} defaultAgentId="22222222-2222-4222-8222-222222222222" />);
+    expect(container.querySelectorAll("[style]")).toHaveLength(0);
+    expect(screen.getByRole("heading", { name: "Web voice integration" })).toBeVisible();
+    expect(screen.getByText("Sales Agent is a draft. Sessions start only for published agents, so publish it before going live.")).toBeVisible();
+
+    cleanup();
+    render(<WebChannelView agents={[]} />);
+    expect(screen.getByText("No agents yet. Create and publish an agent, then return here for its integration snippet.")).toBeVisible();
+  });
+
+  it("shows readiness as labelled badges and reports save outcomes with live roles", async () => {
+    const onSave = vi.fn().mockResolvedValueOnce({ success: true }).mockResolvedValueOnce({ success: false, error: "Destinations must be E.164 numbers." });
+    const { container } = render(<TelephonyChannelView settings={sampleTelephony} canEdit onSave={onSave} />);
+
+    expect(container.querySelectorAll("[style]")).toHaveLength(0);
+    expect(screen.getByRole("heading", { name: "Telephony voice channel" })).toBeVisible();
+    const readiness = screen.getByRole("region", { name: "Trunk readiness" });
+    for (const text of ["Not configured", "Unconfigured", "Disabled", "unknown"]) {
+      expect(within(readiness).getByText(text)).toBeVisible();
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Save policy" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Telephony policy saved successfully.");
+    fireEvent.click(screen.getByRole("button", { name: "Save policy" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Destinations must be E.164 numbers.");
   });
 });
 
