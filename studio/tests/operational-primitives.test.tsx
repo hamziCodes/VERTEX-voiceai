@@ -32,6 +32,7 @@ import UsageLoading from "@/app/(studio)/settings/usage/loading";
 import { ConfirmDialog } from "@/components/studio/confirm-dialog";
 import { RouteTabs } from "@/components/studio/route-tabs";
 import { OperationsNavigation } from "@/features/operations/operations-navigation";
+import { WorkspaceNavigation } from "@/features/workspaces/workspace-navigation";
 import { formatDate, formatDateTime, formatNumber } from "@/lib/format";
 
 afterEach(() => {
@@ -63,6 +64,28 @@ describe("route tabs", () => {
     expect(within(nav).getByRole("link", { name: "Usage" })).toHaveAttribute("aria-current", "page");
     expect(within(nav).getByRole("link", { name: "Conversations" })).toBeInTheDocument();
     expect(within(nav).queryByRole("link", { name: "Audit" })).not.toBeInTheDocument();
+  });
+});
+
+describe("sidebar current section on operational routes", () => {
+  const capabilities = ["conversation:read", "usage:read", "audit:read", "member:read", "provider_credential:read"];
+
+  it.each(["/conversations", "/settings/usage", "/settings/audit"])("keeps Operate current on %s", (route) => {
+    pathname.current = route;
+    render(<WorkspaceNavigation capabilities={capabilities} role="tenant_admin" />);
+
+    const nav = screen.getByRole("navigation", { name: "Workspace" });
+    expect(within(nav).getByRole("link", { name: /^Operate ?Conversations$/ })).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("link", { name: "Settings" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks only Providers current on provider credentials", () => {
+    pathname.current = "/settings/providers";
+    render(<WorkspaceNavigation capabilities={capabilities} role="tenant_admin" />);
+
+    const nav = screen.getByRole("navigation", { name: "Workspace" });
+    expect(within(nav).getByRole("link", { name: "Providers" })).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("link", { name: /^Operate ?Conversations$/ })).not.toHaveAttribute("aria-current");
   });
 });
 

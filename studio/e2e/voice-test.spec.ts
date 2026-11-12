@@ -121,6 +121,9 @@ test("runs an SDK-backed offline voice test and releases browser media", async (
   await expect(page.getByRole("heading", { name: "Browser voice test" })).toBeVisible();
 
   await expect(page.getByText("Mock mode")).toBeVisible();
+  if (process.env.CAPTURE_PHASE13I === "1") {
+    await page.screenshot({ path: path.resolve(process.cwd(), "../hamza_local/phase13i-qa/phase13i-qa-voice-sandbox-desktop-20261112.png"), caret: "initial" });
+  }
   await installOfflineWorker(page);
   await page.getByRole("button", { name: "Start voice test" }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __voiceTestState: { mediaRequests: number } }).__voiceTestState.mediaRequests)).toBe(1);
@@ -137,6 +140,9 @@ test("runs an SDK-backed offline voice test and releases browser media", async (
     contextsClosed: number;
     sentEvents: Array<{ event_type?: string; payload?: Record<string, unknown> }>;
   } }).__voiceTestState);
+  if (process.env.CAPTURE_PHASE13I === "1") {
+    await page.screenshot({ path: path.resolve(process.cwd(), "../hamza_local/phase13i-qa/phase13i-qa-voice-sandbox-after-turn-desktop-20261112.png"), caret: "initial", fullPage: true });
+  }
   expect(cleanupState.socketsClosed).toBe(1);
   expect(cleanupState.tracksStopped).toBe(1);
   expect(cleanupState.contextsClosed).toBe(1);

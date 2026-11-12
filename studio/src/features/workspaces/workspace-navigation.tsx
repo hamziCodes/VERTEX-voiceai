@@ -56,7 +56,7 @@ const GROUPS: ReadonlyArray<NavigationGroup> = [
   {
     label: "Operate",
     items: [
-      { label: "Conversations", shortLabel: "O", screenReaderPrefix: "Operate", href: "/conversations", permission: "conversation:read", active: startsWith("/conversations") },
+      { label: "Conversations", shortLabel: "O", screenReaderPrefix: "Operate", href: "/conversations", permission: "conversation:read", active: (path) => startsWith("/conversations")(path) || startsWith("/settings/usage")(path) || startsWith("/settings/audit")(path) },
     ],
   },
   {

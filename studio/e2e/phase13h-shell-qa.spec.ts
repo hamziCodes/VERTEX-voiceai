@@ -6,17 +6,34 @@ import { sealData } from "iron-session";
 const cookiePassword = `test-${"x".repeat(32)}`;
 const fixtureBaseUrl = `http://127.0.0.1:${process.env.WAVIA_E2E_FIXTURE_PORT ?? "3211"}`;
 const captureDirectory = path.resolve(process.cwd(), "../hamza_local/phase13h-qa");
+const phase13iCaptureDirectory = path.resolve(process.cwd(), "../hamza_local/phase13i-qa");
 // Screenshots keep the caret: hiding it injects styles before hydration and React reports a mismatch.
 const capture = process.env.CAPTURE_PHASE13H === "1";
 
-const ROUTES: ReadonlyArray<{ path: string; heading: RegExp; name: string }> = [
+const ROUTES: ReadonlyArray<{ path: string; heading: RegExp; name: string; phase?: "13i" }> = [
   { path: "/dashboard", heading: /./, name: "dashboard" },
   { path: "/onboarding", heading: /./, name: "onboarding" },
   { path: "/agents/new", heading: /./, name: "agent-create" },
   { path: "/test", heading: /^Test an agent$/, name: "test-selector" },
   { path: "/settings", heading: /^Settings$/, name: "settings" },
   { path: "/settings/members", heading: /^Members$/, name: "members" },
+  // Phase 13I operational surfaces
+  { path: "/knowledge", heading: /^Knowledge$/, name: "knowledge", phase: "13i" },
+  { path: "/channels/web", heading: /^Channels$/, name: "channels-web", phase: "13i" },
+  { path: "/channels/telephony", heading: /^Channels$/, name: "channels-telephony", phase: "13i" },
+  { path: "/developers/api-keys", heading: /^API keys$/, name: "api-keys", phase: "13i" },
+  { path: "/settings/providers", heading: /^AI provider credentials$/, name: "providers", phase: "13i" },
+  { path: "/conversations", heading: /^Conversation history$/, name: "conversations", phase: "13i" },
+  { path: "/conversations/91111111-1111-4111-8111-111111111111", heading: /^Conversation detail$/, name: "conversation-detail", phase: "13i" },
+  { path: "/settings/usage", heading: /^Usage and limits$/, name: "usage", phase: "13i" },
+  { path: "/settings/audit", heading: /^Audit history$/, name: "audit", phase: "13i" },
 ];
+
+function capturePath(route: (typeof ROUTES)[number], viewport: "desktop" | "mobile-390"): string {
+  return route.phase === "13i"
+    ? path.join(phase13iCaptureDirectory, `phase13i-qa-${route.name}-${viewport}-20261112.png`)
+    : path.join(captureDirectory, `phase13h-qa-${route.name}-${viewport}-20261112.png`);
+}
 
 async function authenticate(context: BrowserContext) {
   const tokenResponse = await fetch(`${fixtureBaseUrl}/token?sub=user-two`, { headers: { connection: "close" } });
@@ -65,7 +82,7 @@ test("customer foundation routes render without overflow or console errors at de
     await expect(page.getByRole("heading", { level: 1, name: route.heading })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Workspace" })).toBeVisible();
     await noHorizontalOverflow(page);
-    if (capture) await page.screenshot({ path: path.join(captureDirectory, `phase13h-qa-${route.name}-desktop-20261112.png`), caret: "initial" });
+    if (capture) await page.screenshot({ path: capturePath(route, "desktop"), caret: "initial" });
   }
   expect(errors).toEqual([]);
 });
@@ -85,9 +102,12 @@ test("customer foundation routes stay usable at 390px with a dismissible navigat
     await noHorizontalOverflow(page);
     // The closed drawer is hidden from assistive technology and does not cover content.
     await expect(page.getByRole("navigation", { name: "Workspace" })).toBeHidden();
-    if (capture) await page.screenshot({ path: path.join(captureDirectory, `phase13h-qa-${route.name}-mobile-390-20261112.png`), caret: "initial" });
+    if (capture) await page.screenshot({ path: capturePath(route, "mobile-390"), caret: "initial" });
   }
 
+  // The loop ends on an Operate page; check the drawer from the members page it belongs to.
+  await page.goto("/settings/members");
+  await expect(page.getByRole("heading", { level: 1, name: "Members" })).toBeVisible();
   const trigger = page.getByRole("button", { name: "Open navigation" });
   await trigger.click();
   const navigation = page.getByRole("navigation", { name: "Workspace" });
