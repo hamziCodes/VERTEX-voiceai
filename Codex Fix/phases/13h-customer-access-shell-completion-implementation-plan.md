@@ -14,7 +14,8 @@
 
 - Tasks 1-6 are complete and committed as `83e6b73`, `176dd8e`, `361f54b`, `bb8668c`, `6965b3d` and `635fa15`.
 - Task 6 checkpoint verification passed: 119 Studio tests, typecheck, lint, production build and one focused offline Chromium voice journey.
-- Tasks 7-8 have not started. Phase 13H is not complete until both tasks and the full close gate pass.
+- Task 7 is complete (2026-11-12): `/settings`, `/settings/members`, member actions, offline member journey and the invitation-acceptance fixes. Evidence: `Codex Fix/evidence/phase-13h/`.
+- Task 8 has not started. Phase 13H is not complete until the full close gate passes.
 - The canonical continuation and decision handover is `Codex Fix/WAVIA_FIX_SOURCE_OF_TRUTH.md`.
 
 ## Global Constraints

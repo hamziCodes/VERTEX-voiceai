@@ -1,4 +1,4 @@
-import { createSign, generateKeyPairSync } from "node:crypto";
+import { createSign, generateKeyPairSync, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 
 const host = "127.0.0.1";
@@ -33,6 +33,20 @@ const roleCapabilities = {
     "audit:read", "compliance:write", "conversation:read", "entitlement:read", "erasure:execute", "legal_hold:manage",
   ],
 };
+const DEFAULT_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const subjectUsers = {
+  "user-editor": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "user-viewer": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "user-developer": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  "user-compliance": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  // Only joins a workspace by accepting an invitation in the member journey.
+  "user-new": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+};
+const launchRoles = new Set(Object.keys(roleCapabilities));
+const membershipCreatedAt = "2026-01-01T00:00:00Z";
+const workspaceNames = new Map([[workspaceA, "Alpha workspace"], [workspaceB, "Beta workspace"]]);
+// Labelled offline fixture value only; never a real invitation.
+const expiredInvitationToken = "offline_expired_invitation_token_0001";
 const initialOnboarding = {
   business_name: "Hamzi Stores",
   use_case: "customer_support",
@@ -68,8 +82,39 @@ let usage;
 let auditEvents;
 let nextApiKey;
 let nextProviderCredential;
+let members;
+let invitations;
+let nextInvitation;
 
 function resetState() {
+  members = new Map([
+    [workspaceA, new Map([
+      [DEFAULT_USER_ID, "tenant_admin"],
+      [subjectUsers["user-editor"], "tenant_editor"],
+      [subjectUsers["user-viewer"], "tenant_viewer"],
+      [subjectUsers["user-developer"], "tenant_developer"],
+      [subjectUsers["user-compliance"], "compliance_admin"],
+    ])],
+    [workspaceB, new Map([
+      [DEFAULT_USER_ID, "tenant_viewer"],
+      [subjectUsers["user-editor"], "tenant_viewer"],
+      [subjectUsers["user-viewer"], "tenant_viewer"],
+      [subjectUsers["user-developer"], "tenant_viewer"],
+      [subjectUsers["user-compliance"], "tenant_viewer"],
+    ])],
+  ]);
+  invitations = new Map([[expiredInvitationToken, {
+    invitation_id: "f0000000-1111-4111-8111-111111111111",
+    tenant_id: workspaceA,
+    email: "user-new@example.test",
+    role: "tenant_viewer",
+    invited_by: DEFAULT_USER_ID,
+    expires_at: "2026-01-02T00:00:00Z",
+    accepted_at: null,
+    accepted_by: null,
+    created_at: "2026-01-01T00:00:00Z",
+  }]]);
+  nextInvitation = 1;
   onboarding = new Map([[workspaceA, structuredClone(initialOnboarding)], [workspaceB, structuredClone(initialOnboarding)]]);
   const viewerAgent = { ...structuredClone(templateConfig), name: "Viewer-safe assistant", agent_id: "44444444-4444-4444-8444-444444444444", draft_revision: 1, version: 1, published_at: null, is_published: false };
   agents = new Map([[workspaceA, []], [workspaceB, [viewerAgent]]]);
@@ -240,6 +285,14 @@ function subjectFromRequest(request) {
   }
 }
 
+function userIdForSubject(subject) {
+  return subjectUsers[subject] ?? DEFAULT_USER_ID;
+}
+
+function membershipDto(tenantId, userId, role) {
+  return { user_id: userId, tenant_id: tenantId, tenant_name: workspaceNames.get(tenantId), role, created_at: membershipCreatedAt };
+}
+
 function tenantFromRequest(request) {
   return request.headers["x-tenant-id"];
 }
@@ -335,28 +388,97 @@ async function handle(request, response) {
   if (url.pathname === "/v1/me") {
     const subject = subjectFromRequest(request);
     if (!subject) return json(response, 401, { detail: "Authentication required." });
-    const createdAt = "2026-01-01T00:00:00Z";
-    const requestedRole = {
-      "user-editor": "tenant_editor",
-      "user-developer": "tenant_developer",
-      "user-viewer": "tenant_viewer",
-      "user-compliance": "compliance_admin",
-    }[subject] ?? "tenant_admin";
-    const memberships = subject === "user-none" ? [] : [
-      { user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", tenant_id: workspaceA, tenant_name: "Alpha workspace", role: requestedRole, capabilities: roleCapabilities[requestedRole], created_at: createdAt },
-      { user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", tenant_id: workspaceB, tenant_name: "Beta workspace", role: "tenant_viewer", capabilities: roleCapabilities.tenant_viewer, created_at: createdAt },
-    ];
+    const userId = userIdForSubject(subject);
+    const memberships = subject === "user-none" ? [] : [workspaceA, workspaceB].flatMap((tenantId) => {
+      const role = members.get(tenantId).get(userId);
+      return role ? [{ ...membershipDto(tenantId, userId, role), capabilities: roleCapabilities[role] }] : [];
+    });
     return json(response, 200, {
-      user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      user_id: userId,
       email: `${subject}@example.test`,
       is_active: true,
       is_platform_admin: false,
       memberships,
     });
   }
+  if (url.pathname === "/v1/invitations/accept" && request.method === "POST") {
+    const subject = subjectFromRequest(request);
+    if (!subject) return json(response, 401, { detail: "Authentication required." });
+    const input = await bodyFromRequest(request);
+    const invitation = invitations.get(String(input.token ?? ""));
+    if (!invitation) return json(response, 404, { detail: "Invitation was not found." });
+    if (invitation.accepted_at) return json(response, 409, { detail: "Invitation was already accepted." });
+    if (Date.parse(invitation.expires_at) <= Date.now()) return json(response, 410, { detail: "Invitation has expired." });
+    if (invitation.email !== `${subject}@example.test`) {
+      return json(response, 403, { detail: "Authenticated identity does not match invitation email." });
+    }
+    const userId = userIdForSubject(subject);
+    members.get(invitation.tenant_id).set(userId, invitation.role);
+    invitation.accepted_at = new Date().toISOString();
+    invitation.accepted_by = userId;
+    // FastAPI returns the WorkspaceMembership model here, without capabilities.
+    return json(response, 200, membershipDto(invitation.tenant_id, userId, invitation.role));
+  }
   const tenant = tenantFromRequest(request);
   if (!subjectFromRequest(request)) return json(response, 401, { detail: "Authentication required." });
   if (!tenant || !agents.has(tenant)) return json(response, 403, { detail: "Workspace required." });
+
+  // ── Members and invitations (mirrors control_plane/routes/identity.py) ────
+  const organizationMatch = url.pathname.match(/^\/v1\/organizations\/([^/]+)\/(members|invitations)(?:\/([^/]+))?$/i);
+  if (organizationMatch) {
+    const [, pathTenant, collection, memberId] = organizationMatch;
+    if (pathTenant !== tenant) return json(response, 403, { detail: "Tenant access denied." });
+    const actorId = userIdForSubject(subjectFromRequest(request));
+    const actorRole = members.get(tenant).get(actorId);
+    const required = request.method === "GET" ? "member:read" : "member:write";
+    if (!actorRole || !roleCapabilities[actorRole].includes(required)) {
+      return json(response, 403, { detail: "Permission denied." });
+    }
+    const tenantMembers = members.get(tenant);
+    if (collection === "members" && !memberId && request.method === "GET") {
+      const listed = [...tenantMembers.entries()]
+        .map(([userId, role]) => membershipDto(tenant, userId, role))
+        .sort((left, right) => left.role.localeCompare(right.role) || left.user_id.localeCompare(right.user_id));
+      return json(response, 200, listed);
+    }
+    if (collection === "invitations" && !memberId && request.method === "POST") {
+      if (actorRole !== "tenant_admin") return json(response, 403, { detail: "Only tenant administrators may invite members." });
+      const input = await bodyFromRequest(request);
+      const role = input.role ?? "tenant_viewer";
+      const email = String(input.email ?? "").trim().toLowerCase();
+      if (!launchRoles.has(role) || email.length < 3) return json(response, 422, { detail: "Invalid invitation." });
+      const invitationToken = `offline_invitation_${String(nextInvitation).padStart(4, "0")}_${randomBytes(12).toString("base64url")}`;
+      const invitation = {
+        invitation_id: fixtureId("f", nextInvitation++),
+        tenant_id: tenant,
+        email,
+        role,
+        invited_by: actorId,
+        expires_at: new Date(Date.now() + 72 * 3_600_000).toISOString(),
+        accepted_at: null,
+        accepted_by: null,
+        created_at: new Date().toISOString(),
+      };
+      invitations.set(invitationToken, invitation);
+      return json(response, 201, { ...invitation, token: invitationToken });
+    }
+    if (collection === "members" && memberId && (request.method === "PATCH" || request.method === "DELETE")) {
+      const currentRole = tenantMembers.get(memberId);
+      if (!currentRole) return json(response, 404, { detail: "Membership was not found." });
+      const nextRole = request.method === "PATCH" ? (await bodyFromRequest(request)).role : null;
+      if (request.method === "PATCH" && !launchRoles.has(nextRole)) return json(response, 422, { detail: "Invalid role." });
+      const adminCount = [...tenantMembers.values()].filter((role) => role === "tenant_admin").length;
+      if (currentRole === "tenant_admin" && nextRole !== "tenant_admin" && adminCount === 1) {
+        return json(response, 409, { detail: "A workspace must retain one tenant administrator." });
+      }
+      if (request.method === "DELETE") {
+        tenantMembers.delete(memberId);
+        response.writeHead(204); return response.end();
+      }
+      tenantMembers.set(memberId, nextRole);
+      return json(response, 200, membershipDto(tenant, memberId, nextRole));
+    }
+  }
 
   if (url.pathname === "/v1/conversations" && request.method === "GET") {
     const items = (conversations.get(tenant) ?? []).map((item) => ({

@@ -1,18 +1,47 @@
 import { z } from "zod";
 
+/** The five launch customer roles; FastAPI rejects anything else. */
+export const studioRoleSchema = z.enum([
+  "tenant_admin",
+  "tenant_editor",
+  "tenant_developer",
+  "tenant_viewer",
+  "compliance_admin",
+]);
+export type StudioRole = z.infer<typeof studioRoleSchema>;
+
 export const workspaceSummarySchema = z.object({
   user_id: z.string().uuid(),
   tenant_id: z.string().uuid(),
   tenant_name: z.string().trim().min(1),
-  role: z.enum([
-    "tenant_admin",
-    "tenant_editor",
-    "tenant_developer",
-    "tenant_viewer",
-    "compliance_admin",
-  ]),
+  role: studioRoleSchema,
   capabilities: z.array(z.string()),
   created_at: z.iso.datetime(),
+});
+
+/** FastAPI `WorkspaceMembership`: member listings, role changes and invitation acceptance carry no capabilities. */
+export const workspaceMemberSchema = z.object({
+  user_id: z.string().uuid(),
+  tenant_id: z.string().uuid(),
+  tenant_name: z.string().trim().min(1),
+  role: studioRoleSchema,
+  created_at: z.iso.datetime({ offset: true }),
+});
+export type WorkspaceMemberDto = z.infer<typeof workspaceMemberSchema>;
+export const workspaceMemberListSchema = z.array(workspaceMemberSchema);
+
+/** Invitation creation response. `token` is server-only until the one-time reveal link is built. */
+export const createdInvitationSchema = z.object({
+  invitation_id: z.string().uuid(),
+  tenant_id: z.string().uuid(),
+  email: z.string().min(3).max(320),
+  role: studioRoleSchema,
+  invited_by: z.string().uuid(),
+  expires_at: z.iso.datetime({ offset: true }),
+  accepted_at: z.iso.datetime({ offset: true }).nullable(),
+  accepted_by: z.string().uuid().nullable(),
+  created_at: z.iso.datetime({ offset: true }),
+  token: z.string().min(20).max(1024).regex(/^[A-Za-z0-9_-]+$/),
 });
 
 export const currentIdentitySchema = z.object({

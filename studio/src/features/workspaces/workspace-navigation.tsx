@@ -69,7 +69,7 @@ const GROUPS: ReadonlyArray<NavigationGroup> = [
   {
     label: "Workspace",
     items: [
-      { label: "Settings", shortLabel: "W", href: "/settings", permission: "member:write", active: startsWith("/settings") },
+      { label: "Settings", shortLabel: "W", href: "/settings", permission: "member:read", active: (path) => path === "/settings" || startsWith("/settings/members")(path) },
     ],
   },
 ];

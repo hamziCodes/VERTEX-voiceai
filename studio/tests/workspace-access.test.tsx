@@ -72,7 +72,7 @@ describe("workspace authorization", () => {
     expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
 
     rerender(
-      <WorkspaceNavigation capabilities={["agent:read", "telephony:read", "member:write"]} role="tenant_admin" />,
+      <WorkspaceNavigation capabilities={["agent:read", "telephony:read", "member:read", "member:write"]} role="tenant_admin" />,
     );
     expect(screen.getByRole("link", { name: "Connect" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();

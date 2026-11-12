@@ -15,6 +15,9 @@ interface WorkspacesPageProps {
 const ERROR_MESSAGES: Record<string, string> = {
   forbidden: "You do not have permission to open that area.",
   "invalid-invitation": "That invitation is invalid or has expired.",
+  "invitation-expired": "This invitation has expired. Ask a workspace administrator to send a new one.",
+  "invitation-mismatch": "This invitation was sent to a different email address. Sign in with the invited address.",
+  "invitation-used": "This invitation has already been used. If that was not you, tell your workspace administrator.",
   "invalid-workspace": "That workspace is not available to your account.",
 };
 

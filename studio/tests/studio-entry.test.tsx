@@ -119,6 +119,9 @@ describe("workspace selection", () => {
   it.each([
     ["forbidden", "You do not have permission to open that area."],
     ["invalid-invitation", "That invitation is invalid or has expired."],
+    ["invitation-expired", "This invitation has expired. Ask a workspace administrator to send a new one."],
+    ["invitation-used", "This invitation has already been used."],
+    ["invitation-mismatch", "This invitation was sent to a different email address."],
   ])("maps the %s error to safe feedback", async (error, message) => {
     requireSession.mockResolvedValue({ displayName: "Hamzi" });
     listCurrentWorkspaces.mockResolvedValue({ memberships: [] });

@@ -8,8 +8,17 @@ import { workspaceCookieSecret } from "@/auth/config";
 import { INVITATION_COOKIE_NAME, invitationCookieOptions, sealInvitationToken, unsealInvitationToken } from "@/auth/invitation";
 import { requireSession } from "@/auth/session";
 import { listCurrentWorkspaces, setSelectedWorkspace } from "@/auth/workspace";
-import { controlPlaneRequest } from "@/data/control-plane";
-import { workspaceSummarySchema } from "@/data/schema";
+import { ControlPlaneError, controlPlaneRequest } from "@/data/control-plane";
+import { workspaceMemberSchema, type WorkspaceMemberDto } from "@/data/schema";
+
+// Mirrors control_plane/routes/identity.py `_membership_error` for invitation acceptance.
+const INVITATION_FAILURES: Readonly<Record<number, string>> = {
+  403: "invitation-mismatch",
+  404: "invalid-invitation",
+  409: "invitation-used",
+  410: "invitation-expired",
+  422: "invalid-invitation",
+};
 
 function formValue(formData: FormData, name: string): string {
   const value = formData.get(name);
@@ -45,14 +54,23 @@ export async function acceptPendingInvitationAction(): Promise<never> {
     redirect("/workspaces?error=invalid-invitation");
   }
   const session = await requireSession();
-  const membership = await controlPlaneRequest("/v1/invitations/accept", {
-    method: "POST",
-    json: { token },
-    schema: workspaceSummarySchema,
-    session,
-    selectedTenantId: null,
-    scope: "identity",
-  });
+  let membership: WorkspaceMemberDto;
+  try {
+    membership = await controlPlaneRequest("/v1/invitations/accept", {
+      method: "POST",
+      json: { token },
+      schema: workspaceMemberSchema,
+      session,
+      selectedTenantId: null,
+      scope: "identity",
+    });
+  } catch (error) {
+    const outcome = error instanceof ControlPlaneError ? INVITATION_FAILURES[error.status] : undefined;
+    if (!outcome) throw error;
+    // Terminal outcomes: the token can never succeed, so stop holding it.
+    store.delete(INVITATION_COOKIE_NAME);
+    redirect(`/workspaces?error=${outcome}`);
+  }
   store.delete(INVITATION_COOKIE_NAME);
   await setSelectedWorkspace(membership.tenant_id);
   redirect("/dashboard");
