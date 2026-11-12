@@ -10,6 +10,10 @@ export const studioRoleSchema = z.enum([
 ]);
 export type StudioRole = z.infer<typeof studioRoleSchema>;
 
+/** The two Wavia platform staff roles (Phase 13J). They never grant tenant access. */
+export const platformRoleSchema = z.enum(["platform_admin", "platform_support"]);
+export type PlatformRole = z.infer<typeof platformRoleSchema>;
+
 export const workspaceSummarySchema = z.object({
   user_id: z.string().uuid(),
   tenant_id: z.string().uuid(),
@@ -49,6 +53,9 @@ export const currentIdentitySchema = z.object({
   email: z.string().email().nullable(),
   is_active: z.boolean(),
   is_platform_admin: z.boolean(),
+  // Absent or null means no platform access (fail closed).
+  platform_role: platformRoleSchema.nullable().default(null),
+  platform_capabilities: z.array(z.string()).default([]),
   memberships: z.array(workspaceSummarySchema),
 });
 
@@ -394,6 +401,70 @@ export const auditResponseSchema = z.object({
   count: z.number().int().nonnegative(),
   events: z.array(auditEventSchema),
 });
+
+// ── Phase 13J internal platform API (`/v1/platform/*`) ─────────────────────
+
+export const platformIdentitySchema = z.object({
+  user_id: z.string().uuid(),
+  email: z.string().nullable(),
+  role: platformRoleSchema,
+  capabilities: z.array(z.string()),
+});
+export type PlatformIdentityDto = z.infer<typeof platformIdentitySchema>;
+
+export const tenantDirectoryEntrySchema = z.object({
+  tenant_id: z.string().uuid(),
+  name: z.string(),
+  created_at: z.iso.datetime({ offset: true }),
+  member_count: z.number().int().nonnegative(),
+  agent_count: z.number().int().nonnegative().nullable(),
+});
+export type TenantDirectoryEntryDto = z.infer<typeof tenantDirectoryEntrySchema>;
+
+export const tenantDirectoryPageSchema = z.object({
+  items: z.array(tenantDirectoryEntrySchema),
+  total: z.number().int().nonnegative(),
+  limit: z.number().int().min(1).max(50),
+  offset: z.number().int().nonnegative(),
+});
+export type TenantDirectoryPageDto = z.infer<typeof tenantDirectoryPageSchema>;
+
+export const tenantSummarySchema = z.object({
+  tenant_id: z.string().uuid(),
+  name: z.string(),
+  created_at: z.iso.datetime({ offset: true }),
+  members_by_role: z.partialRecord(studioRoleSchema, z.number().int().nonnegative()),
+  agent_count: z.number().int().nonnegative().nullable(),
+  entitlements: entitlementsSchema.nullable(),
+  onboarding_completed_steps: z.array(z.string()),
+});
+export type TenantSummaryDto = z.infer<typeof tenantSummarySchema>;
+
+export const platformStaffMemberSchema = z.object({
+  user_id: z.string().uuid(),
+  email: z.string().nullable(),
+  role: platformRoleSchema,
+  granted_by: z.string().uuid().nullable(),
+  granted_at: z.iso.datetime({ offset: true }),
+  reason: z.string(),
+});
+export type PlatformStaffMemberDto = z.infer<typeof platformStaffMemberSchema>;
+export const platformStaffListSchema = z.array(platformStaffMemberSchema);
+
+export const platformAuditEventSchema = z.object({
+  event_id: z.string().uuid(),
+  actor_user_id: z.string().uuid().nullable(),
+  // New backend actions stay readable; Studio labels the ones it knows.
+  action: z.string().regex(/^[a-z_]+\.[a-z_]+$/),
+  target_user_id: z.string().uuid().nullable(),
+  target_tenant_id: z.string().uuid().nullable(),
+  previous_role: platformRoleSchema.nullable(),
+  new_role: platformRoleSchema.nullable(),
+  reason: z.string().nullable(),
+  created_at: z.iso.datetime({ offset: true }),
+});
+export type PlatformAuditEventDto = z.infer<typeof platformAuditEventSchema>;
+export const platformAuditListSchema = z.array(platformAuditEventSchema);
 
 export function parseControlPlaneDto<T>(
   schema: z.ZodType<T>,

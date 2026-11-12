@@ -41,7 +41,23 @@ const subjectUsers = {
   "user-compliance": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
   // Only joins a workspace by accepting an invitation in the member journey.
   "user-new": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  // Phase 13J Wavia staff: no customer workspace membership at all.
+  "user-platform-admin": "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1",
+  "user-platform-support": "b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2",
 };
+// Mirrors control_plane/auth/platform_rbac.py; no wildcard.
+const platformCapabilities = {
+  platform_admin: ["platform_audit:read", "platform_staff:read", "platform_staff:write", "platform_tenant:read"],
+  platform_support: ["platform_tenant:read"],
+};
+const platformRoles = new Set(Object.keys(platformCapabilities));
+const PLATFORM_SUBJECTS = new Set(["user-platform-admin", "user-platform-support"]);
+// Directory-only tenants so the bounded directory has a second page (25 per page).
+const directoryOnlyTenants = Array.from({ length: 26 }, (_, index) => ({
+  tenant_id: `c0000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  name: `Fixture tenant ${String(index + 1).padStart(2, "0")}`,
+  created_at: "2026-02-01T00:00:00Z",
+}));
 const launchRoles = new Set(Object.keys(roleCapabilities));
 const membershipCreatedAt = "2026-01-01T00:00:00Z";
 const workspaceNames = new Map([[workspaceA, "Alpha workspace"], [workspaceB, "Beta workspace"]]);
@@ -85,8 +101,17 @@ let nextProviderCredential;
 let members;
 let invitations;
 let nextInvitation;
+let platformStaff;
+let platformAudit;
+let nextPlatformEvent;
 
 function resetState() {
+  platformStaff = new Map([
+    [subjectUsers["user-platform-admin"], { role: "platform_admin", granted_by: null, granted_at: "2026-01-01T00:00:00Z", reason: "Initial operator bootstrap" }],
+    [subjectUsers["user-platform-support"], { role: "platform_support", granted_by: subjectUsers["user-platform-admin"], granted_at: "2026-01-02T00:00:00Z", reason: "Support rota for launch" }],
+  ]);
+  platformAudit = [];
+  nextPlatformEvent = 1;
   members = new Map([
     [workspaceA, new Map([
       [DEFAULT_USER_ID, "tenant_admin"],
@@ -353,6 +378,146 @@ function newSource(baseId, displayName, sourceType, mediaType, byteCount) {
   };
 }
 
+// ── Platform staff API (mirrors control_plane/routes/platform.py) ──────────
+function entitlementsDto() {
+  return { max_agents: 3, max_concurrent_sessions: 2, max_knowledge_bytes: 10485760, api_keys_allowed: 2, telephony_enabled: false, advanced_providers_enabled: false, byok_enabled: false, allowed_retention_days: [7, 30] };
+}
+
+function emailForUser(userId) {
+  const subject = Object.entries(subjectUsers).find(([, id]) => id === userId)?.[0] ?? (userId === DEFAULT_USER_ID ? "user-two" : null);
+  return subject ? `${subject}@example.test` : null;
+}
+
+function userForEmail(email) {
+  if (email === "user-two@example.test") return DEFAULT_USER_ID;
+  const subject = email.endsWith("@example.test") ? email.slice(0, -"@example.test".length) : null;
+  return subject ? subjectUsers[subject] ?? null : null;
+}
+
+function platformDirectory() {
+  const workspaces = [...workspaceNames].map(([tenant_id, name]) => ({ tenant_id, name, created_at: membershipCreatedAt }));
+  return [...workspaces, ...directoryOnlyTenants].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.tenant_id.localeCompare(b.tenant_id));
+}
+
+function directoryEntry(tenant) {
+  const tenantMembers = members.get(tenant.tenant_id);
+  return { ...tenant, member_count: tenantMembers ? tenantMembers.size : 0, agent_count: agents.get(tenant.tenant_id)?.length ?? 0 };
+}
+
+function staffDto(userId) {
+  const assignment = platformStaff.get(userId);
+  return { user_id: userId, email: emailForUser(userId), ...assignment };
+}
+
+function recordPlatformEvent(event) {
+  platformAudit.unshift({
+    event_id: `d0000000-0000-4000-8000-${String(nextPlatformEvent++).padStart(12, "0")}`,
+    actor_user_id: null, target_user_id: null, target_tenant_id: null,
+    previous_role: null, new_role: null, reason: null,
+    created_at: new Date().toISOString(),
+    ...event,
+  });
+}
+
+function validReason(value) {
+  const reason = String(value ?? "").split(/\s+/).filter(Boolean).join(" ");
+  return reason.length >= 8 && reason.length <= 500 ? reason : null;
+}
+
+async function handlePlatform(request, response, url) {
+  const subject = subjectFromRequest(request);
+  if (!subject) return json(response, 401, { detail: "Authentication required." });
+  if (request.headers["x-tenant-id"] !== undefined || request.headers["x-actor-role"] !== undefined) {
+    return json(response, 400, { detail: "Platform routes do not accept tenant or role context." });
+  }
+  const actorId = userIdForSubject(subject);
+  const role = platformStaff.get(actorId)?.role;
+  if (!role) return json(response, 403, { detail: "Platform staff role is required." });
+  const can = (permission) => platformCapabilities[role].includes(permission);
+  const deny = () => json(response, 403, { detail: "Permission denied." });
+  const path = url.pathname.slice("/v1/platform".length);
+
+  if (path === "/me" && request.method === "GET") {
+    return json(response, 200, { user_id: actorId, email: `${subject}@example.test`, role, capabilities: platformCapabilities[role] });
+  }
+  if (path === "/tenants" && request.method === "GET") {
+    if (!can("platform_tenant:read")) return deny();
+    const limit = Number(url.searchParams.get("limit") ?? 25);
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const q = (url.searchParams.get("q") ?? "").trim();
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50 || !Number.isInteger(offset) || offset < 0 || offset > 10000 || q.length > 255) {
+      return json(response, 422, { detail: "Invalid directory window." });
+    }
+    const needle = q.toLowerCase();
+    const matches = platformDirectory().filter((tenant) => !needle || tenant.tenant_id === needle || tenant.name.toLowerCase().includes(needle));
+    return json(response, 200, { items: matches.slice(offset, offset + limit).map(directoryEntry), total: matches.length, limit, offset });
+  }
+  const tenantMatch = path.match(/^\/tenants\/([^/]+)$/);
+  if (tenantMatch && request.method === "GET") {
+    if (!can("platform_tenant:read")) return deny();
+    const tenant = platformDirectory().find((item) => item.tenant_id === tenantMatch[1]);
+    if (!tenant) return json(response, 404, { detail: "Workspace was not found." });
+    const counts = {};
+    for (const memberRole of members.get(tenant.tenant_id)?.values() ?? []) counts[memberRole] = (counts[memberRole] ?? 0) + 1;
+    recordPlatformEvent({ action: "platform_tenant.viewed", actor_user_id: actorId, target_tenant_id: tenant.tenant_id });
+    const workspace = workspaceNames.has(tenant.tenant_id);
+    return json(response, 200, {
+      tenant_id: tenant.tenant_id,
+      name: tenant.name,
+      created_at: tenant.created_at,
+      members_by_role: Object.fromEntries(Object.entries(counts).sort()),
+      agent_count: agents.get(tenant.tenant_id)?.length ?? 0,
+      entitlements: workspace ? entitlementsDto() : null,
+      onboarding_completed_steps: onboarding.get(tenant.tenant_id)?.completed_steps ?? [],
+    });
+  }
+  if (path === "/staff" && request.method === "GET") {
+    if (!can("platform_staff:read")) return deny();
+    const staff = [...platformStaff.keys()].map(staffDto).sort((a, b) => a.role.localeCompare(b.role) || String(a.email).localeCompare(String(b.email)));
+    return json(response, 200, staff);
+  }
+  if (path === "/staff" && request.method === "PUT") {
+    if (!can("platform_staff:write")) return deny();
+    const input = await bodyFromRequest(request);
+    const reason = validReason(input.reason);
+    const email = String(input.email ?? "").trim().toLowerCase();
+    if (!reason || !platformRoles.has(input.role) || email.length < 3) return json(response, 422, { detail: "Invalid staff grant." });
+    const targetId = userForEmail(email);
+    if (!targetId) return json(response, 404, { detail: "No active Wavia user has that email." });
+    const previous = platformStaff.get(targetId)?.role ?? null;
+    if (previous !== input.role) {
+      const admins = [...platformStaff.values()].filter((item) => item.role === "platform_admin").length;
+      if (previous === "platform_admin" && admins <= 1) return json(response, 409, { detail: "Wavia must retain one platform administrator." });
+      platformStaff.set(targetId, { role: input.role, granted_by: actorId, granted_at: new Date().toISOString(), reason });
+      recordPlatformEvent({
+        action: previous ? "platform_staff.role_changed" : "platform_staff.granted",
+        actor_user_id: actorId, target_user_id: targetId, previous_role: previous, new_role: input.role, reason,
+      });
+    }
+    return json(response, 200, staffDto(targetId));
+  }
+  const revokeMatch = path.match(/^\/staff\/([^/]+)\/revoke$/);
+  if (revokeMatch && request.method === "POST") {
+    if (!can("platform_staff:write")) return deny();
+    const input = await bodyFromRequest(request);
+    const reason = validReason(input.reason);
+    if (!reason) return json(response, 422, { detail: "Invalid revocation." });
+    const target = platformStaff.get(revokeMatch[1]);
+    if (!target) return json(response, 404, { detail: "Platform staff assignment was not found." });
+    const admins = [...platformStaff.values()].filter((item) => item.role === "platform_admin").length;
+    if (target.role === "platform_admin" && admins <= 1) return json(response, 409, { detail: "Wavia must retain one platform administrator." });
+    platformStaff.delete(revokeMatch[1]);
+    recordPlatformEvent({ action: "platform_staff.revoked", actor_user_id: actorId, target_user_id: revokeMatch[1], previous_role: target.role, reason });
+    response.writeHead(204, { "cache-control": "no-store" });
+    return response.end();
+  }
+  if (path === "/audit" && request.method === "GET") {
+    if (!can("platform_audit:read")) return deny();
+    return json(response, 200, platformAudit.slice(0, 50));
+  }
+  return json(response, 404, { detail: "Not found." });
+}
+
 async function handle(request, response) {
   const url = new URL(request.url ?? "/", issuer);
   if (url.pathname === "/health") return json(response, 200, { ok: true });
@@ -393,12 +558,15 @@ async function handle(request, response) {
       const role = members.get(tenantId).get(userId);
       return role ? [{ ...membershipDto(tenantId, userId, role), capabilities: roleCapabilities[role] }] : [];
     });
+    const platformRole = platformStaff.get(userId)?.role ?? null;
     return json(response, 200, {
       user_id: userId,
       email: `${subject}@example.test`,
       is_active: true,
-      is_platform_admin: false,
-      memberships,
+      is_platform_admin: platformRole === "platform_admin",
+      platform_role: platformRole,
+      platform_capabilities: platformRole ? platformCapabilities[platformRole] : [],
+      memberships: PLATFORM_SUBJECTS.has(subject) ? [] : memberships,
     });
   }
   if (url.pathname === "/v1/invitations/accept" && request.method === "POST") {
@@ -419,6 +587,7 @@ async function handle(request, response) {
     // FastAPI returns the WorkspaceMembership model here, without capabilities.
     return json(response, 200, membershipDto(invitation.tenant_id, userId, invitation.role));
   }
+  if (url.pathname.startsWith("/v1/platform/")) return handlePlatform(request, response, url);
   const tenant = tenantFromRequest(request);
   if (!subjectFromRequest(request)) return json(response, 401, { detail: "Authentication required." });
   if (!tenant || !agents.has(tenant)) return json(response, 403, { detail: "Workspace required." });
@@ -526,7 +695,7 @@ async function handle(request, response) {
     return json(response, 200, { profile: updated, requirement_codes: [] });
   }
   if (url.pathname === "/v1/entitlements" && request.method === "GET") {
-    return json(response, 200, { max_agents: 3, max_concurrent_sessions: 2, max_knowledge_bytes: 10485760, api_keys_allowed: 2, telephony_enabled: false, advanced_providers_enabled: false, byok_enabled: false, allowed_retention_days: [7, 30] });
+    return json(response, 200, entitlementsDto());
   }
   if (url.pathname === "/v1/agents/templates" && request.method === "GET") {
     return json(response, 200, { templates: [{ template_id: "retail_customer_service", config: templateConfig }] });

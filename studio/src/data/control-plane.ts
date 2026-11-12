@@ -71,8 +71,13 @@ export interface ControlPlaneRequestOptions<T> {
   body?: BodyInit;
   json?: unknown;
   requestId?: string;
-  scope?: "identity" | "tenant";
+  /** `tenant` (default) sends the selected workspace; `identity` and `platform` never do. */
+  scope?: "identity" | "platform" | "tenant";
   timeoutMs?: number;
+}
+
+function isTenantScoped(options: ControlPlaneRequestOptions<unknown>): boolean {
+  return (options.scope ?? "tenant") === "tenant";
 }
 
 function safeHeaders(options: ControlPlaneRequestOptions<unknown>): Headers {
@@ -86,7 +91,7 @@ function safeHeaders(options: ControlPlaneRequestOptions<unknown>): Headers {
   }
 
   headers.set("authorization", `Bearer ${options.session?.accessToken ?? ""}`);
-  if (options.scope !== "identity") {
+  if (isTenantScoped(options)) {
     headers.set("x-tenant-id", options.selectedTenantId ?? "");
   }
   headers.set("x-request-id", options.requestId ?? randomUUID());
@@ -103,7 +108,7 @@ function requireRequestContext<T>(options: ControlPlaneRequestOptions<T>): void 
       401,
     );
   }
-  if (options.scope !== "identity" && !options.selectedTenantId) {
+  if (isTenantScoped(options) && !options.selectedTenantId) {
     throw new ControlPlaneError(
       { code: "workspace_required", message: "Select a workspace to continue." },
       400,
