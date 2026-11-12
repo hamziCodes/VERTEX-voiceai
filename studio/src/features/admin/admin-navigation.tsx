@@ -10,6 +10,7 @@ const ITEMS: ReadonlyArray<AdminItem> = [
   { label: "Overview", shortLabel: "O", href: "/admin", active: (path) => path === "/admin" },
   { label: "Tenants", shortLabel: "T", href: "/admin/tenants", permission: "platform_tenant:read", active: startsWith("/admin/tenants") },
   { label: "Support sessions", shortLabel: "R", href: "/admin/support-sessions", permission: "platform_support_session:read", active: startsWith("/admin/support-sessions") },
+  { label: "Operations", shortLabel: "H", href: "/admin/operations", permission: "platform_operations:read", active: startsWith("/admin/operations") },
   { label: "Staff", shortLabel: "S", href: "/admin/staff", permission: "platform_staff:read", active: startsWith("/admin/staff") },
   { label: "Audit", shortLabel: "A", href: "/admin/audit", permission: "platform_audit:read", active: startsWith("/admin/audit") },
 ];

@@ -70,7 +70,7 @@ test("platform support searches tenants read-only and cannot open staff or audit
   await page.goto("/admin/tenants?q=zeta");
   await expect(page.getByRole("heading", { name: "No matching tenants" })).toBeVisible();
 
-  for (const path of ["/admin/staff", "/admin/audit"]) {
+  for (const path of ["/admin/staff", "/admin/audit", "/admin/operations"]) {
     await page.goto(path);
     await expect(page).toHaveURL(/\/admin\?error=forbidden$/);
     await expect(page.getByRole("alert").filter({ hasText: "Your platform role cannot open that area." })).toBeVisible();
@@ -226,4 +226,18 @@ test("platform support runs a read-only, audited, expiring support session", asy
   await expect(audit).toContainText("Scope: readiness");
   await expect(audit).toContainText("Support session ended");
   await adminContext.close();
+});
+
+test("platform admin reads an honest operations snapshot", async ({ context, page }) => {
+  const consoleErrors = collectConsoleErrors(page);
+  await authenticate(context, "user-platform-admin");
+  await page.goto("/admin");
+  await page.getByRole("navigation", { name: "Wavia admin" }).getByRole("link", { name: "Operations" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Operations" })).toBeVisible();
+  const signals = page.getByRole("list", { name: "Platform signals" });
+  await expect(signals.getByRole("listitem")).toHaveCount(9);
+  await expect(signals.getByRole("listitem", { name: "Provider health" })).toContainText("Not measured");
+  await expect(signals.getByRole("listitem", { name: "Live provider traffic" })).toContainText("Disabled");
+  await expect(page.getByRole("status")).toContainText("No signal needs attention");
+  expect(consoleErrors).toEqual([]);
 });

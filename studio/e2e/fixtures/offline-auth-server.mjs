@@ -636,6 +636,26 @@ async function handlePlatform(request, response, url) {
       });
     }
   }
+  if (path === "/operations" && request.method === "GET") {
+    if (!can("platform_operations:read")) return deny();
+    const active = [...supportSessions.values()].filter((item) => supportDto(item).state === "active").length;
+    const signal = (key, label, status, detail, metrics = {}) => ({ key, label, status, detail, metrics });
+    return json(response, 200, {
+      checked_at: new Date().toISOString(),
+      environment: "test",
+      signals: [
+        signal("control_plane", "Control plane", "healthy", "The control plane is serving requests."),
+        signal("database", "Database", "not_configured", "No PostgreSQL database is configured; in-memory repositories are in use."),
+        signal("identity", "Identity verification", "healthy", "OIDC identity verification is configured."),
+        signal("post_call_queue", "Post-call jobs", "healthy", "No post-call jobs are in the dead-letter state.", { queued: 0, running: 0, retry_wait: 0, succeeded: 0, dead_letter: 0 }),
+        signal("live_providers", "Live provider traffic", "disabled", "Live provider traffic is disabled in this environment."),
+        signal("provider_health", "Provider health", "not_measured", "No live provider health probe runs from the control plane."),
+        signal("telephony", "Live telephony", "disabled", "Live telephony is disabled in this environment. Outbound runtime is not configured."),
+        signal("carrier_health", "Carrier health", "not_measured", "No carrier health probe runs from the control plane."),
+        signal("support_sessions", "Support sessions", "healthy", "Active read-only support sessions.", { active }),
+      ],
+    });
+  }
   if (path === "/audit" && request.method === "GET") {
     if (!can("platform_audit:read")) return deny();
     return json(response, 200, platformAudit.slice(0, 50));

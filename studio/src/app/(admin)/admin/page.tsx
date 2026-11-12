@@ -8,6 +8,7 @@ import { PLATFORM_ROLE_DETAILS } from "@/features/admin/types";
 const DESTINATIONS: ReadonlyArray<{ href: string; title: string; description: string; capability: PlatformCapability }> = [
   { href: "/admin/tenants", title: "Tenants", description: "Search the tenant directory and open safe tenant summaries.", capability: "platform_tenant:read" },
   { href: "/admin/support-sessions", title: "Support sessions", description: "Open, review and end read-only, expiring support sessions.", capability: "platform_support_session:read" },
+  { href: "/admin/operations", title: "Operations", description: "Check database, identity, post-call queue and live-traffic gates.", capability: "platform_operations:read" },
   { href: "/admin/staff", title: "Staff", description: "Grant, change and revoke Wavia platform roles with a recorded reason.", capability: "platform_staff:read" },
   { href: "/admin/audit", title: "Audit", description: "Review platform staff changes and tenant summary views.", capability: "platform_audit:read" },
 ];
