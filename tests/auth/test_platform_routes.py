@@ -113,13 +113,21 @@ def test_platform_me_reports_role_and_capabilities(platform_api) -> None:
         "role": "platform_admin",
         "capabilities": [
             "platform_audit:read",
+            "platform_operations:read",
             "platform_staff:read",
             "platform_staff:write",
+            "platform_support_session:manage",
+            "platform_support_session:read",
+            "platform_support_session:write",
             "platform_tenant:read",
         ],
     }
     assert support["role"] == "platform_support"
-    assert support["capabilities"] == ["platform_tenant:read"]
+    assert support["capabilities"] == [
+        "platform_support_session:read",
+        "platform_support_session:write",
+        "platform_tenant:read",
+    ]
 
 
 def test_identity_reports_durable_platform_role(platform_api) -> None:
@@ -131,7 +139,11 @@ def test_identity_reports_durable_platform_role(platform_api) -> None:
     assert admin["is_platform_admin"] is True
     assert support["platform_role"] == "platform_support"
     assert support["is_platform_admin"] is False
-    assert support["platform_capabilities"] == ["platform_tenant:read"]
+    assert support["platform_capabilities"] == [
+        "platform_support_session:read",
+        "platform_support_session:write",
+        "platform_tenant:read",
+    ]
     assert customer["platform_role"] is None
     assert customer["platform_capabilities"] == []
     assert customer["is_platform_admin"] is False

@@ -18,6 +18,8 @@ from control_plane.studio.models import (
     PlatformRole,
     PlatformStaffMember,
     StudioRole,
+    SupportScope,
+    SupportSession,
     TenantDirectoryEntry,
     TenantDirectoryPage,
     TenantEntitlements,
@@ -36,12 +38,17 @@ from control_plane.studio.repository import (
     LastPlatformAdminError,
     MembershipNotFoundError,
     StaffNotFoundError,
+    SupportSessionClosedError,
+    SupportSessionConflictError,
+    SupportSessionNotFoundError,
     WorkspaceNotFoundError,
     parse_tenant_query,
     validate_audit_limit,
     validate_directory_window,
     validate_platform_reason,
     validate_platform_role,
+    validate_support_list,
+    validate_support_request,
 )
 from core.db.async_pg import AsyncDatabase, get_default_database
 
@@ -637,14 +644,16 @@ class PostgresStudioRepository:
         previous_role: PlatformRole | None = None,
         new_role: PlatformRole | None = None,
         reason: str | None = None,
+        support_session_id: UUID | None = None,
+        scope: SupportScope | None = None,
     ) -> None:
         await connection.execute(
             """
             INSERT INTO platform_audit_events (
                 actor_user_id, action, target_user_id, target_tenant_id,
-                previous_role, new_role, reason
+                previous_role, new_role, reason, support_session_id, scope
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 actor_user_id,
@@ -654,6 +663,8 @@ class PostgresStudioRepository:
                 previous_role,
                 new_role,
                 reason,
+                support_session_id,
+                scope,
             ),
         )
 
@@ -955,7 +966,8 @@ class PostgresStudioRepository:
             cursor = await connection.execute(
                 """
                 SELECT event_id, actor_user_id, action, target_user_id,
-                    target_tenant_id, previous_role, new_role, reason, created_at
+                    target_tenant_id, previous_role, new_role, reason, created_at,
+                    support_session_id, scope
                 FROM platform_audit_events
                 ORDER BY created_at DESC, event_id DESC
                 LIMIT %s
@@ -974,6 +986,224 @@ class PostgresStudioRepository:
                 new_role=row[6],
                 reason=row[7],
                 created_at=row[8],
+                support_session_id=row[9],
+                scope=row[10],
             )
             for row in rows
         )
+
+    # Phase 13K support sessions ----------------------------------------------
+    #
+    # Session state is computed from the database clock (NOW() at transaction
+    # start), so expiry never depends on the application server's clock.
+
+    _SUPPORT_SELECT = """
+        SELECT s.session_id, s.actor_user_id, u.email, s.tenant_id, t.name,
+            s.reason, s.reference, s.scopes, s.created_at, s.expires_at,
+            s.ended_at, s.ended_by, s.end_reason,
+            CASE
+                WHEN s.ended_at IS NOT NULL THEN 'ended'
+                WHEN NOW() >= s.expires_at THEN 'expired'
+                ELSE 'active'
+            END
+        FROM platform_support_sessions s
+        JOIN users u ON u.id = s.actor_user_id
+        JOIN tenants t ON t.id = s.tenant_id
+    """
+
+    @staticmethod
+    def _support_from_row(row: Any) -> SupportSession:
+        return SupportSession(
+            session_id=row[0],
+            actor_user_id=row[1],
+            actor_email=row[2],
+            tenant_id=row[3],
+            tenant_name=row[4],
+            reason=row[5],
+            reference=row[6],
+            scopes=tuple(row[7]),
+            created_at=row[8],
+            expires_at=row[9],
+            ended_at=row[10],
+            ended_by=row[11],
+            end_reason=row[12],
+            state=row[13],
+        )
+
+    @staticmethod
+    async def _has_active_platform_role(connection: Any, user_id: UUID) -> bool:
+        cursor = await connection.execute(
+            """
+            SELECT 1 FROM platform_memberships p
+            JOIN users u ON u.id = p.user_id
+            WHERE p.user_id = %s AND p.revoked_at IS NULL AND u.is_active
+            """,
+            (user_id,),
+        )
+        return await cursor.fetchone() is not None
+
+    async def _select_support(
+        self, connection: Any, session_id: UUID, *, lock: bool = False
+    ) -> SupportSession:
+        cursor = await connection.execute(
+            self._SUPPORT_SELECT
+            + " WHERE s.session_id = %s"
+            + (" FOR UPDATE OF s" if lock else ""),
+            (session_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise SupportSessionNotFoundError("Support session was not found.")
+        return self._support_from_row(row)
+
+    async def start_support_session(
+        self,
+        *,
+        actor_user_id: UUID,
+        tenant_id: UUID,
+        reason: str,
+        reference: str | None,
+        scopes: tuple[SupportScope, ...],
+        duration_minutes: int,
+    ) -> SupportSession:
+        normalized_reason, normalized_reference, ordered = validate_support_request(
+            reason, reference, scopes, duration_minutes
+        )
+        async with self.database.platform_transaction() as connection:
+            if not await self._has_active_platform_role(connection, actor_user_id):
+                raise PermissionError("Platform staff role is required.")
+            cursor = await connection.execute(
+                "SELECT 1 FROM tenants WHERE id = %s", (tenant_id,)
+            )
+            if await cursor.fetchone() is None:
+                raise WorkspaceNotFoundError("Workspace was not found.")
+            # Serialize concurrent starts for the same staff member and tenant.
+            await connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"support:{actor_user_id}:{tenant_id}",),
+            )
+            cursor = await connection.execute(
+                """
+                SELECT 1 FROM platform_support_sessions
+                WHERE actor_user_id = %s AND tenant_id = %s
+                    AND ended_at IS NULL AND expires_at > NOW()
+                """,
+                (actor_user_id, tenant_id),
+            )
+            if await cursor.fetchone() is not None:
+                raise SupportSessionConflictError(
+                    "You already have an active support session for this tenant."
+                )
+            cursor = await connection.execute(
+                """
+                INSERT INTO platform_support_sessions
+                    (actor_user_id, tenant_id, reason, reference, scopes, expires_at)
+                VALUES (%s, %s, %s, %s, %s, NOW() + make_interval(mins => %s))
+                RETURNING session_id
+                """,
+                (
+                    actor_user_id,
+                    tenant_id,
+                    normalized_reason,
+                    normalized_reference,
+                    list(ordered),
+                    duration_minutes,
+                ),
+            )
+            created = await cursor.fetchone()
+            if created is None:  # pragma: no cover - database contract failure
+                raise RuntimeError("Support session insert returned no row.")
+            await self._record_platform_event(
+                connection,
+                "platform_support.session_started",
+                actor_user_id=actor_user_id,
+                target_tenant_id=tenant_id,
+                reason=normalized_reason,
+                support_session_id=created[0],
+            )
+            return await self._select_support(connection, created[0])
+
+    async def get_support_session(self, session_id: UUID) -> SupportSession:
+        async with self.database.platform_transaction() as connection:
+            return await self._select_support(connection, session_id)
+
+    async def list_support_sessions(
+        self, *, state: str, limit: int
+    ) -> tuple[SupportSession, ...]:
+        limit = validate_support_list(limit)
+        if state not in ("active", "recent"):
+            raise ValueError("state must be active or recent")
+        where = (
+            " WHERE s.ended_at IS NULL AND s.expires_at > NOW()"
+            if state == "active"
+            else ""
+        )
+        async with self.database.platform_transaction() as connection:
+            cursor = await connection.execute(
+                self._SUPPORT_SELECT
+                + where
+                + " ORDER BY s.created_at DESC, s.session_id DESC LIMIT %s",
+                (limit,),
+            )
+            rows = await cursor.fetchall()
+        return tuple(self._support_from_row(row) for row in rows)
+
+    async def end_support_session(
+        self,
+        *,
+        actor_user_id: UUID,
+        session_id: UUID,
+        reason: str | None,
+        may_end_any: bool,
+    ) -> SupportSession:
+        normalized_reason = (
+            validate_platform_reason(reason) if reason and reason.strip() else None
+        )
+        async with self.database.platform_transaction() as connection:
+            session = await self._select_support(connection, session_id, lock=True)
+            if not await self._has_active_platform_role(connection, actor_user_id):
+                raise PermissionError("Platform staff role is required.")
+            if session.actor_user_id != actor_user_id and not may_end_any:
+                raise PermissionError("Only the session owner may end this session.")
+            if session.state != "active":
+                raise SupportSessionClosedError("Support session is already closed.")
+            await connection.execute(
+                """
+                UPDATE platform_support_sessions
+                SET ended_at = NOW(), ended_by = %s, end_reason = %s
+                WHERE session_id = %s
+                """,
+                (actor_user_id, normalized_reason, session_id),
+            )
+            await self._record_platform_event(
+                connection,
+                "platform_support.session_ended",
+                actor_user_id=actor_user_id,
+                target_tenant_id=session.tenant_id,
+                reason=normalized_reason,
+                support_session_id=session_id,
+            )
+            return await self._select_support(connection, session_id)
+
+    async def authorize_support_read(
+        self, *, actor_user_id: UUID, session_id: UUID, scope: SupportScope
+    ) -> SupportSession:
+        async with self.database.platform_transaction() as connection:
+            session = await self._select_support(connection, session_id)
+            if session.actor_user_id != actor_user_id or not (
+                await self._has_active_platform_role(connection, actor_user_id)
+            ):
+                raise PermissionError("Only the session owner may read through it.")
+            if session.state != "active":
+                raise SupportSessionClosedError("Support session is closed.")
+            if scope not in session.scopes:
+                raise PermissionError("This support session does not grant that scope.")
+            await self._record_platform_event(
+                connection,
+                "platform_support.data_viewed",
+                actor_user_id=actor_user_id,
+                target_tenant_id=session.tenant_id,
+                support_session_id=session_id,
+                scope=scope,
+            )
+            return session

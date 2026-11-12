@@ -63,10 +63,18 @@ def test_platform_roles_hold_exactly_the_launch_permissions() -> None:
             "platform_staff:read",
             "platform_staff:write",
             "platform_audit:read",
+            "platform_support_session:read",
+            "platform_support_session:write",
+            "platform_support_session:manage",
+            "platform_operations:read",
         }
     )
     assert platform_permissions_for_role("platform_support") == frozenset(
-        {"platform_tenant:read"}
+        {
+            "platform_tenant:read",
+            "platform_support_session:read",
+            "platform_support_session:write",
+        }
     )
     assert platform_permissions_for_role("tenant_admin") == frozenset()
     assert platform_permissions_for_role("unknown") == frozenset()

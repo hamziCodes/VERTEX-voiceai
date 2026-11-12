@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import UUID, uuid4
 
 from pydantic import TypeAdapter
 
 from control_plane.studio.models import (
+    SUPPORT_SCOPES,
     IdentityContext,
     OnboardingProfile,
     PlatformAuditAction,
@@ -19,6 +20,8 @@ from control_plane.studio.models import (
     PlatformRole,
     PlatformStaffMember,
     StudioRole,
+    SupportScope,
+    SupportSession,
     TenantDirectoryEntry,
     TenantDirectoryPage,
     TenantEntitlements,
@@ -36,6 +39,9 @@ DIRECTORY_MAX_QUERY = 255
 PLATFORM_AUDIT_MAX_LIMIT = 100
 REASON_MIN_LENGTH = 8
 REASON_MAX_LENGTH = 500
+SUPPORT_DURATIONS_MINUTES = (15, 30, 60)
+SUPPORT_REFERENCE_MAX_LENGTH = 64
+SUPPORT_LIST_MAX_LIMIT = 100
 _TOKEN_HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -81,6 +87,48 @@ class LastPlatformAdminError(StudioRepositoryError):
 
 class StaffNotFoundError(StudioRepositoryError):
     """The user or active platform staff assignment does not exist."""
+
+
+class SupportSessionNotFoundError(StudioRepositoryError):
+    """The support session does not exist."""
+
+
+class SupportSessionClosedError(StudioRepositoryError):
+    """The support session has expired or was ended."""
+
+
+class SupportSessionConflictError(StudioRepositoryError):
+    """The staff member already has an active session for this tenant."""
+
+
+def validate_support_request(
+    reason: str,
+    reference: str | None,
+    scopes: tuple[str, ...] | list[str],
+    duration_minutes: int,
+) -> tuple[str, str | None, tuple[SupportScope, ...]]:
+    """Validate a support-session request; scopes come back de-duplicated, ordered."""
+
+    normalized_reason = validate_platform_reason(reason)
+    normalized_reference = (reference or "").strip() or None
+    if (
+        normalized_reference is not None
+        and len(normalized_reference) > SUPPORT_REFERENCE_MAX_LENGTH
+    ):
+        raise ValueError("reference must be at most 64 characters")
+    requested = set(scopes)
+    if not requested or not requested <= set(SUPPORT_SCOPES):
+        raise ValueError("choose at least one supported read scope")
+    if duration_minutes not in SUPPORT_DURATIONS_MINUTES:
+        raise ValueError("duration must be 15, 30 or 60 minutes")
+    ordered = tuple(scope for scope in SUPPORT_SCOPES if scope in requested)
+    return normalized_reason, normalized_reference, ordered
+
+
+def validate_support_list(limit: int) -> int:
+    if not 1 <= limit <= SUPPORT_LIST_MAX_LIMIT:
+        raise ValueError(f"limit must be between 1 and {SUPPORT_LIST_MAX_LIMIT}")
+    return limit
 
 
 def validate_platform_reason(reason: str) -> str:
@@ -206,11 +254,56 @@ class StudioRepository(Protocol):
         self, *, limit: int
     ) -> tuple[PlatformAuditEvent, ...]: ...
 
+    async def start_support_session(
+        self,
+        *,
+        actor_user_id: UUID,
+        tenant_id: UUID,
+        reason: str,
+        reference: str | None,
+        scopes: tuple[SupportScope, ...],
+        duration_minutes: int,
+    ) -> SupportSession: ...
+
+    async def get_support_session(self, session_id: UUID) -> SupportSession: ...
+
+    async def list_support_sessions(
+        self, *, state: str, limit: int
+    ) -> tuple[SupportSession, ...]: ...
+
+    async def end_support_session(
+        self,
+        *,
+        actor_user_id: UUID,
+        session_id: UUID,
+        reason: str | None,
+        may_end_any: bool,
+    ) -> SupportSession: ...
+
+    async def authorize_support_read(
+        self, *, actor_user_id: UUID, session_id: UUID, scope: SupportScope
+    ) -> SupportSession: ...
+
 
 @dataclass(slots=True)
 class _InvitationState:
     invitation: WorkspaceInvitation
     token_hash: str = field(repr=False)
+
+
+@dataclass(slots=True)
+class _SupportRecord:
+    session_id: UUID
+    actor_user_id: UUID
+    tenant_id: UUID
+    reason: str
+    reference: str | None
+    scopes: tuple[SupportScope, ...]
+    created_at: datetime
+    expires_at: datetime
+    ended_at: datetime | None = None
+    ended_by: UUID | None = None
+    end_reason: str | None = None
 
 
 @dataclass(slots=True)
@@ -237,6 +330,7 @@ class InMemoryStudioRepository:
         self._tenant_created: dict[UUID, datetime] = {}
         self._platform: dict[UUID, _PlatformAssignment] = {}
         self._platform_audit: list[PlatformAuditEvent] = []
+        self._support: dict[UUID, _SupportRecord] = {}
 
     @staticmethod
     def _now() -> datetime:
@@ -515,6 +609,8 @@ class InMemoryStudioRepository:
         previous_role: PlatformRole | None = None,
         new_role: PlatformRole | None = None,
         reason: str | None = None,
+        support_session_id: UUID | None = None,
+        scope: SupportScope | None = None,
     ) -> None:
         self._platform_audit.append(
             PlatformAuditEvent(
@@ -526,6 +622,8 @@ class InMemoryStudioRepository:
                 previous_role=previous_role,
                 new_role=new_role,
                 reason=reason,
+                support_session_id=support_session_id,
+                scope=scope,
                 created_at=self._now(),
             )
         )
@@ -725,3 +823,172 @@ class InMemoryStudioRepository:
         limit = validate_audit_limit(limit)
         async with self._lock:
             return tuple(reversed(self._platform_audit))[:limit]
+
+    # Phase 13K support sessions ----------------------------------------------
+
+    def _support_session(self, record: _SupportRecord, now: datetime) -> SupportSession:
+        if record.ended_at is not None:
+            state = "ended"
+        elif now >= record.expires_at:
+            state = "expired"
+        else:
+            state = "active"
+        actor = self._users.get(record.actor_user_id)
+        return SupportSession(
+            session_id=record.session_id,
+            actor_user_id=record.actor_user_id,
+            actor_email=actor.email if actor else None,
+            tenant_id=record.tenant_id,
+            tenant_name=self._tenants.get(record.tenant_id, "Unknown tenant"),
+            reason=record.reason,
+            reference=record.reference,
+            scopes=record.scopes,
+            created_at=record.created_at,
+            expires_at=record.expires_at,
+            ended_at=record.ended_at,
+            ended_by=record.ended_by,
+            end_reason=record.end_reason,
+            state=state,  # type: ignore[arg-type]
+        )
+
+    async def start_support_session(
+        self,
+        *,
+        actor_user_id: UUID,
+        tenant_id: UUID,
+        reason: str,
+        reference: str | None,
+        scopes: tuple[SupportScope, ...],
+        duration_minutes: int,
+    ) -> SupportSession:
+        normalized_reason, normalized_reference, ordered = validate_support_request(
+            reason, reference, scopes, duration_minutes
+        )
+        async with self._lock:
+            if self._active_platform_role(actor_user_id) is None:
+                raise PermissionError("Platform staff role is required.")
+            if tenant_id not in self._tenants:
+                raise WorkspaceNotFoundError("Workspace was not found.")
+            now = self._now()
+            for record in self._support.values():
+                if (
+                    record.actor_user_id == actor_user_id
+                    and record.tenant_id == tenant_id
+                    and record.ended_at is None
+                    and now < record.expires_at
+                ):
+                    raise SupportSessionConflictError(
+                        "You already have an active support session for this tenant."
+                    )
+            record = _SupportRecord(
+                session_id=uuid4(),
+                actor_user_id=actor_user_id,
+                tenant_id=tenant_id,
+                reason=normalized_reason,
+                reference=normalized_reference,
+                scopes=ordered,
+                created_at=now,
+                expires_at=now + timedelta(minutes=duration_minutes),
+            )
+            self._support[record.session_id] = record
+            self._audit(
+                "platform_support.session_started",
+                actor_user_id=actor_user_id,
+                target_tenant_id=tenant_id,
+                reason=normalized_reason,
+                support_session_id=record.session_id,
+            )
+            return self._support_session(record, now)
+
+    async def get_support_session(
+        self, session_id: UUID, *, now: datetime | None = None
+    ) -> SupportSession:
+        async with self._lock:
+            record = self._support.get(session_id)
+            if record is None:
+                raise SupportSessionNotFoundError("Support session was not found.")
+            return self._support_session(record, now or self._now())
+
+    async def list_support_sessions(
+        self, *, state: str, limit: int, now: datetime | None = None
+    ) -> tuple[SupportSession, ...]:
+        limit = validate_support_list(limit)
+        if state not in ("active", "recent"):
+            raise ValueError("state must be active or recent")
+        async with self._lock:
+            current = now or self._now()
+            # Newest first; insertion order breaks ties from a coarse clock.
+            ordered = [
+                (record.created_at, index, self._support_session(record, current))
+                for index, record in enumerate(self._support.values())
+            ]
+        ordered.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        sessions = [item[2] for item in ordered]
+        if state == "active":
+            sessions = [item for item in sessions if item.state == "active"]
+        return tuple(sessions[:limit])
+
+    async def end_support_session(
+        self,
+        *,
+        actor_user_id: UUID,
+        session_id: UUID,
+        reason: str | None,
+        may_end_any: bool,
+    ) -> SupportSession:
+        normalized_reason = (
+            validate_platform_reason(reason) if reason and reason.strip() else None
+        )
+        async with self._lock:
+            record = self._support.get(session_id)
+            if record is None:
+                raise SupportSessionNotFoundError("Support session was not found.")
+            if self._active_platform_role(actor_user_id) is None:
+                raise PermissionError("Platform staff role is required.")
+            if record.actor_user_id != actor_user_id and not may_end_any:
+                raise PermissionError("Only the session owner may end this session.")
+            now = self._now()
+            if record.ended_at is not None or now >= record.expires_at:
+                raise SupportSessionClosedError("Support session is already closed.")
+            record.ended_at = now
+            record.ended_by = actor_user_id
+            record.end_reason = normalized_reason
+            self._audit(
+                "platform_support.session_ended",
+                actor_user_id=actor_user_id,
+                target_tenant_id=record.tenant_id,
+                reason=normalized_reason,
+                support_session_id=session_id,
+            )
+            return self._support_session(record, now)
+
+    async def authorize_support_read(
+        self,
+        *,
+        actor_user_id: UUID,
+        session_id: UUID,
+        scope: SupportScope,
+        now: datetime | None = None,
+    ) -> SupportSession:
+        async with self._lock:
+            record = self._support.get(session_id)
+            if record is None:
+                raise SupportSessionNotFoundError("Support session was not found.")
+            if (
+                record.actor_user_id != actor_user_id
+                or self._active_platform_role(actor_user_id) is None
+            ):
+                raise PermissionError("Only the session owner may read through it.")
+            current = now or self._now()
+            if record.ended_at is not None or current >= record.expires_at:
+                raise SupportSessionClosedError("Support session is closed.")
+            if scope not in record.scopes:
+                raise PermissionError("This support session does not grant that scope.")
+            self._audit(
+                "platform_support.data_viewed",
+                actor_user_id=actor_user_id,
+                target_tenant_id=record.tenant_id,
+                support_session_id=session_id,
+                scope=scope,
+            )
+            return self._support_session(record, current)

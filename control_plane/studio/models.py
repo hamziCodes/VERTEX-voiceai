@@ -139,7 +139,14 @@ PlatformAuditAction = Literal[
     "platform_staff.role_changed",
     "platform_staff.revoked",
     "platform_tenant.viewed",
+    "platform_support.session_started",
+    "platform_support.session_ended",
+    "platform_support.data_viewed",
 ]
+
+SupportScope = Literal["configuration", "readiness"]
+SUPPORT_SCOPES: tuple[SupportScope, ...] = ("configuration", "readiness")
+SupportSessionState = Literal["active", "expired", "ended"]
 
 
 class PlatformStaffMember(StudioModel):
@@ -162,6 +169,8 @@ class PlatformAuditEvent(StudioModel):
     previous_role: PlatformRole | None = None
     new_role: PlatformRole | None = None
     reason: str | None = None
+    support_session_id: UUID | None = None
+    scope: SupportScope | None = None
     created_at: datetime
 
 
@@ -190,3 +199,22 @@ class TenantSummary(StudioModel):
     agent_count: int | None = Field(default=None, ge=0)
     entitlements: TenantEntitlements | None = None
     onboarding_completed_steps: tuple[str, ...] = ()
+
+
+class SupportSession(StudioModel):
+    """A read-only, expiring support grant. ``state`` is evaluated at read time."""
+
+    session_id: UUID
+    actor_user_id: UUID
+    actor_email: str | None = None
+    tenant_id: UUID
+    tenant_name: str
+    reason: str
+    reference: str | None = None
+    scopes: tuple[SupportScope, ...]
+    created_at: datetime
+    expires_at: datetime
+    ended_at: datetime | None = None
+    ended_by: UUID | None = None
+    end_reason: str | None = None
+    state: SupportSessionState
