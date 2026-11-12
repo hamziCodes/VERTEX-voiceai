@@ -14,9 +14,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from control_plane.auth.platform import (
     PlatformContext,
-    studio_repository,
     require_platform_permission,
     resolve_platform_context,
+    studio_repository,
 )
 from control_plane.studio.models import PlatformRole
 from control_plane.studio.repository import (
