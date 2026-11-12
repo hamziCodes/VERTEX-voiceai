@@ -1,7 +1,7 @@
 # Project Profile
 
 **Toolkit version in use:** `1.0.0`
-**Profile last reviewed:** `2026-11-12` by `Claude, Phase 13J platform security close gate`
+**Profile last reviewed:** `2026-11-12` by `Claude, Phase 13K completion QA close gate`
 
 ## 1. What this project is
 
@@ -111,6 +111,7 @@ The Phase 13G pilot covered `SCR-01` Agent Directory and `SCR-03` Persona Editor
 | `/settings`, `/settings/members` | Yes | Yes | n/a | Yes | Phase 13H Task 7; only existing `--studio-*` tokens. Members are shown by account ID because the control-plane list exposes no name or email. |
 | Operational routes (knowledge, voice test, channels, API keys, providers, conversations, usage, audit) | Yes | Yes | n/a | Yes | Phase 13I. No inline styles or colour literals remain in `studio/src`; colours are defined only in the `:root` token block. |
 | Internal area (`/admin`, tenants, tenant summary, staff, platform audit) | Yes | Yes | n/a | Yes | Phase 13J. Separate "Wavia admin" navigation through the shared `SidebarShell`; customers receive not-found. |
+| Support sessions and operations (`/admin/support-sessions`, `/admin/operations`) | Yes | Yes | n/a | Yes | Phase 13K. Persistent read-only banner on warning surface; text status badges. Axe WCAG 2.1 AA (serious/critical) clean on every customer and internal route; no overflow at 320px; reduced motion stops transitions and animations. |
 
 ## 9. Project-specific decisions
 
