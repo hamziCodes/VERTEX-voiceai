@@ -42,4 +42,41 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
   "platform_staff.role_changed": "Staff role changed",
   "platform_staff.revoked": "Staff role revoked",
   "platform_tenant.viewed": "Tenant summary viewed",
+  "platform_support.session_started": "Support session started",
+  "platform_support.session_ended": "Support session ended",
+  "platform_support.data_viewed": "Support data viewed",
 };
+
+export type SupportScope = "configuration" | "readiness";
+
+export const SUPPORT_SCOPES = ["configuration", "readiness"] as const satisfies readonly SupportScope[];
+
+export const SUPPORT_SCOPE_DETAILS: Readonly<Record<SupportScope, { label: string; description: string }>> = {
+  configuration: {
+    label: "Configuration",
+    description: "Agent names, versions, languages and counts of providers, tools and knowledge; knowledge-base status. No prompts or credentials.",
+  },
+  readiness: {
+    label: "Readiness",
+    description: "Setup progress, entitlements and telephony readiness flags.",
+  },
+};
+
+export const SUPPORT_DURATIONS = [15, 30, 60] as const;
+
+export interface StartSupportSessionInput {
+  tenantId: string;
+  reason: string;
+  reference: string;
+  scopes: SupportScope[];
+  durationMinutes: number;
+}
+
+export interface EndSupportSessionInput {
+  sessionId: string;
+  reason: string;
+}
+
+export type SupportActionResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; code: "invalid_request" | "forbidden" | "not_found" | "conflict" | "closed" | "unavailable"; message: string };

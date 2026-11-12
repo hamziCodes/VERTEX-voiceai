@@ -81,6 +81,10 @@ describe("platform data boundary", () => {
       "platform_staff:read",
       "platform_staff:write",
       "platform_audit:read",
+      "platform_support_session:read",
+      "platform_support_session:write",
+      "platform_support_session:manage",
+      "platform_operations:read",
     ]);
     expect(hasPlatformCapability(["platform_tenant:read"], "platform_tenant:read")).toBe(true);
     expect(hasPlatformCapability([], "platform_tenant:read")).toBe(false);

@@ -158,3 +158,72 @@ test("platform admin pages through the bounded tenant directory", async ({ conte
   await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
   expect(consoleErrors.filter((message) => !message.includes("404"))).toEqual([]);
 });
+
+test("platform support runs a read-only, audited, expiring support session", async ({ browser, context, page }) => {
+  const consoleErrors = collectConsoleErrors(page);
+  await authenticate(context, "user-platform-support");
+  await page.goto("/admin/tenants?q=beta");
+  await page.getByRole("table", { name: "Tenant directory" }).getByRole("link", { name: "Beta workspace" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Beta workspace" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Start support session" }).click();
+  const dialog = page.getByRole("dialog", { name: "Start a support session" });
+  await expect(dialog.getByLabel("Reason")).toBeFocused();
+  await dialog.getByLabel("Reason").fill("Customer ticket about agent setup");
+  await dialog.getByRole("checkbox", { name: /Readiness/ }).check();
+  await dialog.getByLabel("Ticket reference (optional)").fill("TICKET-1042");
+  await dialog.getByLabel("Duration").selectOption("15");
+  await dialog.getByRole("button", { name: "Start session" }).click();
+
+  await expect(page).toHaveURL(/\/admin\/support-sessions\/[0-9a-f-]+$/);
+  const banner = page.getByRole("region", { name: "Support session" });
+  await expect(banner).toContainText("Read-only");
+  await expect(banner).toContainText("Beta workspace");
+  await expect(page.getByRole("table", { name: "Agents" })).toContainText("Viewer-safe assistant");
+  await expect(page.getByRole("heading", { name: "Readiness" })).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("Help customers clearly.");
+
+  // A second session for the same tenant is refused while the first is active.
+  await page.goto("/admin/tenants/22222222-2222-4222-8222-222222222222");
+  await page.getByRole("button", { name: "Start support session" }).click();
+  const again = page.getByRole("dialog", { name: "Start a support session" });
+  await again.getByLabel("Reason").fill("Second attempt for the same ticket");
+  await again.getByRole("button", { name: "Start session" }).click();
+  await expect(again.getByRole("alert")).toContainText("already have an active support session");
+  await again.getByRole("button", { name: "Cancel" }).click();
+
+  await page.goto("/admin/support-sessions");
+  const active = page.getByRole("table", { name: "Active support sessions" });
+  await expect(active.getByRole("row")).toHaveCount(2);
+  await active.getByRole("button", { name: "End support session for Beta workspace" }).click();
+  const end = page.getByRole("dialog", { name: "End support session" });
+  await end.getByRole("button", { name: "End session" }).click();
+  await expect(page.getByRole("heading", { name: "No active support sessions" })).toBeVisible();
+  await expect(page.getByRole("table", { name: "Recent support sessions" })).toContainText("Ended");
+
+  // Expiry: start a new one, then let the fixture close its window.
+  await page.goto("/admin/tenants/11111111-1111-4111-8111-111111111111");
+  await page.getByRole("button", { name: "Start support session" }).click();
+  const expiring = page.getByRole("dialog", { name: "Start a support session" });
+  await expiring.getByLabel("Reason").fill("Checking setup progress for ticket");
+  await expiring.getByRole("button", { name: "Start session" }).click();
+  await expect(page.getByRole("region", { name: "Support session" })).toBeVisible();
+  await fetch(`${fixtureBaseUrl}/expire-support-sessions`, { method: "POST", headers: { connection: "close" } });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Support session expired" })).toBeVisible();
+  await expect(page.getByRole("table", { name: "Agents" })).toHaveCount(0);
+  expect(consoleErrors).toEqual([]);
+
+  // The administrator sees every start, view and end in the platform audit.
+  const adminContext = await browser.newContext();
+  await authenticate(adminContext, "user-platform-admin");
+  const adminPage = await adminContext.newPage();
+  await adminPage.goto("/admin/audit");
+  const audit = adminPage.getByRole("table", { name: "Platform audit events" });
+  await expect(audit).toContainText("Support session started");
+  await expect(audit).toContainText("Support data viewed");
+  await expect(audit).toContainText("Scope: configuration");
+  await expect(audit).toContainText("Scope: readiness");
+  await expect(audit).toContainText("Support session ended");
+  await adminContext.close();
+});

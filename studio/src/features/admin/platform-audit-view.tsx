@@ -67,8 +67,9 @@ export function PlatformAuditView({ events, limit }: { events: PlatformAuditEven
                 <td data-label="Details">
                   <span className="admin-audit__details">
                     {change ? <span>{change}</span> : null}
+                    {event.scope ? <span>Scope: {event.scope}</span> : null}
                     {event.reason ? <span className="muted-copy">{event.reason}</span> : null}
-                    {!change && !event.reason ? <span className="muted-copy">—</span> : null}
+                    {!change && !event.reason && !event.scope ? <span className="muted-copy">—</span> : null}
                   </span>
                 </td>
               </tr>

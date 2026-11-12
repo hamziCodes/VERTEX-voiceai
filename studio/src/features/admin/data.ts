@@ -3,8 +3,13 @@ import "server-only";
 import { controlPlaneRequest } from "@/data/control-plane";
 import type { StudioServerSession } from "@/data/dto";
 import {
+  operationsSnapshotSchema,
   platformAuditListSchema,
   platformStaffListSchema,
+  supportConfigurationSchema,
+  supportReadinessSchema,
+  supportSessionListSchema,
+  supportSessionSchema,
   tenantDirectoryPageSchema,
   tenantSummarySchema,
 } from "@/data/schema";
@@ -45,4 +50,43 @@ export function loadPlatformAudit(session: StudioServerSession) {
     session,
     ...platform,
   });
+}
+
+export const SUPPORT_LIST_SIZE = 50;
+
+export function loadSupportSessions(session: StudioServerSession, state: "active" | "recent") {
+  return controlPlaneRequest(`/v1/platform/support-sessions?state=${state}&limit=${SUPPORT_LIST_SIZE}`, {
+    schema: supportSessionListSchema,
+    session,
+    ...platform,
+  });
+}
+
+export function loadSupportSession(session: StudioServerSession, sessionId: string) {
+  return controlPlaneRequest(`/v1/platform/support-sessions/${encodeURIComponent(sessionId)}`, {
+    schema: supportSessionSchema,
+    session,
+    ...platform,
+  });
+}
+
+/** Every call is a support read: FastAPI checks owner, expiry and scope and writes an audit event. */
+export function loadSupportConfiguration(session: StudioServerSession, sessionId: string) {
+  return controlPlaneRequest(`/v1/platform/support-sessions/${encodeURIComponent(sessionId)}/configuration`, {
+    schema: supportConfigurationSchema,
+    session,
+    ...platform,
+  });
+}
+
+export function loadSupportReadiness(session: StudioServerSession, sessionId: string) {
+  return controlPlaneRequest(`/v1/platform/support-sessions/${encodeURIComponent(sessionId)}/readiness`, {
+    schema: supportReadinessSchema,
+    session,
+    ...platform,
+  });
+}
+
+export function loadOperationsSnapshot(session: StudioServerSession) {
+  return controlPlaneRequest("/v1/platform/operations", { schema: operationsSnapshotSchema, session, ...platform });
 }

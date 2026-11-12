@@ -47,9 +47,13 @@ const subjectUsers = {
 };
 // Mirrors control_plane/auth/platform_rbac.py; no wildcard.
 const platformCapabilities = {
-  platform_admin: ["platform_audit:read", "platform_staff:read", "platform_staff:write", "platform_tenant:read"],
-  platform_support: ["platform_tenant:read"],
+  platform_admin: [
+    "platform_audit:read", "platform_operations:read", "platform_staff:read", "platform_staff:write",
+    "platform_support_session:manage", "platform_support_session:read", "platform_support_session:write", "platform_tenant:read",
+  ],
+  platform_support: ["platform_support_session:read", "platform_support_session:write", "platform_tenant:read"],
 };
+const supportScopes = ["configuration", "readiness"];
 const platformRoles = new Set(Object.keys(platformCapabilities));
 const PLATFORM_SUBJECTS = new Set(["user-platform-admin", "user-platform-support"]);
 // Directory-only tenants so the bounded directory has a second page (25 per page).
@@ -104,6 +108,8 @@ let nextInvitation;
 let platformStaff;
 let platformAudit;
 let nextPlatformEvent;
+let supportSessions;
+let nextSupportSession;
 
 function resetState() {
   platformStaff = new Map([
@@ -112,6 +118,8 @@ function resetState() {
   ]);
   platformAudit = [];
   nextPlatformEvent = 1;
+  supportSessions = new Map();
+  nextSupportSession = 1;
   members = new Map([
     [workspaceA, new Map([
       [DEFAULT_USER_ID, "tenant_admin"],
@@ -415,8 +423,34 @@ function recordPlatformEvent(event) {
     actor_user_id: null, target_user_id: null, target_tenant_id: null,
     previous_role: null, new_role: null, reason: null,
     created_at: new Date().toISOString(),
+    support_session_id: null, scope: null,
     ...event,
   });
+}
+
+function supportDto(item) {
+  const state = item.ended_at ? "ended" : Date.parse(item.expires_at) <= Date.now() ? "expired" : "active";
+  return { ...item, actor_email: emailForUser(item.actor_user_id), state };
+}
+
+function supportAgentDto(agent) {
+  const providers = agent.providers ?? {};
+  return {
+    agent_id: agent.agent_id,
+    name: agent.name,
+    description: agent.description ?? "",
+    languages: agent.languages ?? [],
+    version: agent.version ?? 1,
+    draft_revision: agent.draft_revision ?? 1,
+    is_published: Boolean(agent.is_published),
+    published_at: agent.published_at ?? null,
+    provider_route_counts: Object.fromEntries(["stt", "llm", "tts", "s2s"].map((stage) => [stage, (providers[stage] ?? []).length])),
+    knowledge_base_count: (agent.knowledge_bases ?? []).length,
+    tool_count: (agent.tools ?? []).length,
+    mcp_server_count: (agent.mcp_servers ?? []).length,
+    telephony_configured: Boolean(agent.telephony),
+    compliance_tier: agent.compliance?.tier ?? "standard",
+  };
 }
 
 function validReason(value) {
@@ -511,6 +545,97 @@ async function handlePlatform(request, response, url) {
     response.writeHead(204, { "cache-control": "no-store" });
     return response.end();
   }
+  const startMatch = path.match(/^\/tenants\/([^/]+)\/support-sessions$/);
+  if (startMatch && request.method === "POST") {
+    if (!can("platform_support_session:write")) return deny();
+    const input = await bodyFromRequest(request);
+    const reason = validReason(input.reason);
+    const scopes = Array.isArray(input.scopes) ? supportScopes.filter((scope) => input.scopes.includes(scope)) : [];
+    const invalidScope = !Array.isArray(input.scopes) || input.scopes.some((scope) => !supportScopes.includes(scope));
+    const reference = input.reference == null ? null : String(input.reference).trim() || null;
+    if (!reason || invalidScope || scopes.length === 0 || ![15, 30, 60].includes(input.duration_minutes) || (reference && reference.length > 64)) {
+      return json(response, 422, { detail: "Invalid support session." });
+    }
+    const tenant = platformDirectory().find((item) => item.tenant_id === startMatch[1]);
+    if (!tenant) return json(response, 404, { detail: "Workspace was not found." });
+    const open = [...supportSessions.values()].some((item) => item.actor_user_id === actorId && item.tenant_id === tenant.tenant_id && supportDto(item).state === "active");
+    if (open) return json(response, 409, { detail: "You already have an active support session for this tenant." });
+    const created = new Date();
+    const item = {
+      session_id: `e0000000-0000-4000-8000-${String(nextSupportSession++).padStart(12, "0")}`,
+      actor_user_id: actorId,
+      tenant_id: tenant.tenant_id,
+      tenant_name: tenant.name,
+      reason,
+      reference,
+      scopes,
+      created_at: created.toISOString(),
+      expires_at: new Date(created.getTime() + input.duration_minutes * 60_000).toISOString(),
+      ended_at: null,
+      ended_by: null,
+      end_reason: null,
+    };
+    supportSessions.set(item.session_id, item);
+    recordPlatformEvent({ action: "platform_support.session_started", actor_user_id: actorId, target_tenant_id: tenant.tenant_id, reason, support_session_id: item.session_id });
+    return json(response, 201, supportDto(item));
+  }
+  if (path === "/support-sessions" && request.method === "GET") {
+    if (!can("platform_support_session:read")) return deny();
+    const state = url.searchParams.get("state") ?? "recent";
+    if (!["active", "recent"].includes(state)) return json(response, 422, { detail: "Invalid state." });
+    const items = [...supportSessions.values()].map(supportDto).reverse();
+    return json(response, 200, state === "active" ? items.filter((item) => item.state === "active") : items);
+  }
+  const supportMatch = path.match(/^\/support-sessions\/([^/]+)(?:\/(end|configuration|readiness))?$/);
+  if (supportMatch) {
+    const [, sessionId, action] = supportMatch;
+    const item = supportSessions.get(sessionId);
+    if (!action && request.method === "GET") {
+      if (!can("platform_support_session:read")) return deny();
+      return item ? json(response, 200, supportDto(item)) : json(response, 404, { detail: "Support session was not found." });
+    }
+    if (action === "end" && request.method === "POST") {
+      if (!can("platform_support_session:write")) return deny();
+      if (!item) return json(response, 404, { detail: "Support session was not found." });
+      const input = await bodyFromRequest(request);
+      const endReason = input.reason == null ? null : validReason(input.reason);
+      if (input.reason != null && !endReason) return json(response, 422, { detail: "Invalid reason." });
+      if (item.actor_user_id !== actorId && !can("platform_support_session:manage")) return deny();
+      if (supportDto(item).state !== "active") return json(response, 410, { detail: "Support session is already closed." });
+      Object.assign(item, { ended_at: new Date().toISOString(), ended_by: actorId, end_reason: endReason });
+      recordPlatformEvent({ action: "platform_support.session_ended", actor_user_id: actorId, target_tenant_id: item.tenant_id, reason: endReason, support_session_id: sessionId });
+      return json(response, 200, supportDto(item));
+    }
+    if ((action === "configuration" || action === "readiness") && request.method === "GET") {
+      if (!can("platform_support_session:read")) return deny();
+      if (!item) return json(response, 404, { detail: "Support session was not found." });
+      if (item.actor_user_id !== actorId) return deny();
+      if (supportDto(item).state !== "active") return json(response, 410, { detail: "Support session is closed." });
+      if (!item.scopes.includes(action)) return deny();
+      recordPlatformEvent({ action: "platform_support.data_viewed", actor_user_id: actorId, target_tenant_id: item.tenant_id, support_session_id: sessionId, scope: action });
+      if (action === "configuration") {
+        return json(response, 200, {
+          session: supportDto(item),
+          agents: (agents.get(item.tenant_id) ?? []).map(supportAgentDto),
+          knowledge_bases: (knowledgeBases.get(item.tenant_id) ?? []).map((base) => ({
+            knowledge_base_id: base.knowledge_base_id,
+            name: base.name,
+            status: base.status,
+            source_count: base.source_count ?? 0,
+            ready_source_count: base.ready_source_count ?? 0,
+            updated_at: base.updated_at ?? null,
+          })),
+        });
+      }
+      const profile = onboarding.get(item.tenant_id);
+      return json(response, 200, {
+        session: supportDto(item),
+        onboarding: profile ? { completed_steps: profile.completed_steps, use_case: profile.use_case, languages: profile.languages, timezone: profile.timezone } : null,
+        entitlements: workspaceNames.has(item.tenant_id) ? entitlementsDto() : null,
+        telephony: { trunk_configured: false, telephony_entitled: false, carrier_health: "not_measured" },
+      });
+    }
+  }
   if (path === "/audit" && request.method === "GET") {
     if (!can("platform_audit:read")) return deny();
     return json(response, 200, platformAudit.slice(0, 50));
@@ -523,6 +648,11 @@ async function handle(request, response) {
   if (url.pathname === "/health") return json(response, 200, { ok: true });
   if (url.pathname === "/reset" && request.method === "POST") {
     resetState();
+    return json(response, 200, { ok: true });
+  }
+  // Test hook: close every active support session's window (mirrors database-clock expiry).
+  if (url.pathname === "/expire-support-sessions" && request.method === "POST") {
+    for (const item of supportSessions.values()) item.expires_at = new Date(Date.now() - 1000).toISOString();
     return json(response, 200, { ok: true });
   }
   if (url.pathname === "/advance-knowledge" && request.method === "POST") {

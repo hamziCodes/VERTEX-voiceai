@@ -462,9 +462,102 @@ export const platformAuditEventSchema = z.object({
   new_role: platformRoleSchema.nullable(),
   reason: z.string().nullable(),
   created_at: z.iso.datetime({ offset: true }),
+  support_session_id: z.string().uuid().nullable().default(null),
+  scope: z.string().nullable().default(null),
 });
 export type PlatformAuditEventDto = z.infer<typeof platformAuditEventSchema>;
 export const platformAuditListSchema = z.array(platformAuditEventSchema);
+
+// ── Phase 13K read-only support sessions and operations health ─────────────
+
+export const supportScopeSchema = z.enum(["configuration", "readiness"]);
+export type SupportScope = z.infer<typeof supportScopeSchema>;
+
+export const supportSessionSchema = z.object({
+  session_id: z.string().uuid(),
+  actor_user_id: z.string().uuid(),
+  actor_email: z.string().nullable(),
+  tenant_id: z.string().uuid(),
+  tenant_name: z.string(),
+  reason: z.string(),
+  reference: z.string().nullable(),
+  scopes: z.array(supportScopeSchema).min(1),
+  created_at: z.iso.datetime({ offset: true }),
+  expires_at: z.iso.datetime({ offset: true }),
+  ended_at: z.iso.datetime({ offset: true }).nullable(),
+  ended_by: z.string().uuid().nullable(),
+  end_reason: z.string().nullable(),
+  state: z.enum(["active", "expired", "ended"]),
+});
+export type SupportSessionDto = z.infer<typeof supportSessionSchema>;
+export const supportSessionListSchema = z.array(supportSessionSchema);
+
+export const supportAgentSchema = z.object({
+  agent_id: z.string().uuid(),
+  name: z.string(),
+  description: z.string(),
+  languages: z.array(z.string()),
+  version: z.number().int(),
+  draft_revision: z.number().int(),
+  is_published: z.boolean(),
+  published_at: z.string().nullable(),
+  provider_route_counts: z.record(z.string(), z.number().int().nonnegative()),
+  knowledge_base_count: z.number().int().nonnegative(),
+  tool_count: z.number().int().nonnegative(),
+  mcp_server_count: z.number().int().nonnegative(),
+  telephony_configured: z.boolean(),
+  compliance_tier: z.string(),
+});
+export type SupportAgentDto = z.infer<typeof supportAgentSchema>;
+
+export const supportKnowledgeBaseSchema = z.object({
+  knowledge_base_id: z.string().uuid(),
+  name: z.string(),
+  status: z.string(),
+  source_count: z.number().int().nonnegative(),
+  ready_source_count: z.number().int().nonnegative(),
+  updated_at: z.string().nullable(),
+});
+
+export const supportConfigurationSchema = z.object({
+  session: supportSessionSchema,
+  agents: z.array(supportAgentSchema),
+  knowledge_bases: z.array(supportKnowledgeBaseSchema),
+});
+export type SupportConfigurationDto = z.infer<typeof supportConfigurationSchema>;
+
+export const supportReadinessSchema = z.object({
+  session: supportSessionSchema,
+  onboarding: z.object({
+    completed_steps: z.array(z.string()),
+    use_case: z.string(),
+    languages: z.array(z.string()),
+    timezone: z.string(),
+  }).nullable(),
+  entitlements: entitlementsSchema.nullable(),
+  telephony: z.object({
+    trunk_configured: z.boolean(),
+    telephony_entitled: z.boolean(),
+    carrier_health: z.string(),
+  }),
+});
+export type SupportReadinessDto = z.infer<typeof supportReadinessSchema>;
+
+export const operationsSignalSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  status: z.enum(["healthy", "attention", "not_configured", "disabled", "not_measured"]),
+  detail: z.string(),
+  metrics: z.record(z.string(), z.number()),
+});
+export type OperationsSignalDto = z.infer<typeof operationsSignalSchema>;
+
+export const operationsSnapshotSchema = z.object({
+  checked_at: z.iso.datetime({ offset: true }),
+  environment: z.string(),
+  signals: z.array(operationsSignalSchema),
+});
+export type OperationsSnapshotDto = z.infer<typeof operationsSnapshotSchema>;
 
 export function parseControlPlaneDto<T>(
   schema: z.ZodType<T>,

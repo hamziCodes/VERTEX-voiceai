@@ -4,6 +4,10 @@ export const PLATFORM_CAPABILITIES = [
   "platform_staff:read",
   "platform_staff:write",
   "platform_audit:read",
+  "platform_support_session:read",
+  "platform_support_session:write",
+  "platform_support_session:manage",
+  "platform_operations:read",
 ] as const;
 
 export type PlatformCapability = (typeof PLATFORM_CAPABILITIES)[number];

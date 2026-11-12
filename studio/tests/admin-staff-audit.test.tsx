@@ -193,6 +193,8 @@ describe("platform audit", () => {
     new_role: null,
     reason: null,
     created_at: "2026-11-04T09:00:00Z",
+    support_session_id: null,
+    scope: null,
     ...overrides,
   });
 
