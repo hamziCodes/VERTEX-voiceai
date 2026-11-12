@@ -197,14 +197,15 @@ def test_oidc_developer_can_read_and_test_but_cannot_edit_agents(studio_client) 
     assert write.status_code == 403
 
 
-def test_durable_platform_admin_requires_explicit_tenant(studio_client) -> None:
+def test_legacy_platform_flag_grants_no_tenant_access(studio_client) -> None:
+    """Phase 13J: users.is_platform_admin is no longer a cross-tenant wildcard."""
     client, app = studio_client
     selected_tenant = uuid4()
     _install_identity(
         app,
         tenant_id=None,
         platform_admin=True,
-        claim_overrides={"roles": ["tenant_viewer"]},
+        claim_overrides={"roles": ["platform_admin"]},
     )
 
     missing = client.get(
@@ -214,7 +215,52 @@ def test_durable_platform_admin_requires_explicit_tenant(studio_client) -> None:
     explicit = client.get("/v1/agents", headers=_headers(selected_tenant))
 
     assert missing.status_code == 400
-    assert explicit.status_code == 200
+    assert explicit.status_code == 403
+
+
+def test_legacy_platform_flag_keeps_only_membership_permissions(studio_client) -> None:
+    client, app = studio_client
+    tenant_id = uuid4()
+    _install_identity(
+        app, tenant_id=tenant_id, role="tenant_viewer", platform_admin=True
+    )
+
+    read = client.get("/v1/agents", headers=_headers(tenant_id))
+    write = client.post(
+        "/v1/agents", headers=_headers(tenant_id), json={"name": "Must not exist"}
+    )
+    elsewhere = client.get("/v1/agents", headers=_headers(uuid4()))
+
+    assert read.status_code == 200
+    assert write.status_code == 403
+    assert elsewhere.status_code == 403
+
+
+def test_api_key_record_with_platform_role_fails_closed(studio_client) -> None:
+    client, app = studio_client
+    tenant_id = str(uuid4())
+
+    class _PlatformRoleKeys:
+        def verify_api_key(self, token: str) -> dict[str, object]:
+            return {
+                "subject_id": "legacy-key",
+                "tenant_id": tenant_id,
+                "role": "platform_admin",
+                "scopes": ["*"],
+                "key_id": str(uuid4()),
+            }
+
+    original = app.state.api_keys
+    app.state.api_keys = _PlatformRoleKeys()
+    try:
+        response = client.get(
+            "/v1/agents",
+            headers={"Authorization": "Bearer ucve_live_legacy-platform-key"},
+        )
+    finally:
+        app.state.api_keys = original
+
+    assert response.status_code == 401
 
 
 def test_api_key_authentication_remains_compatible(studio_client) -> None:

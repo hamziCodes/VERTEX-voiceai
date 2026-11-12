@@ -104,8 +104,10 @@ def test_rbac_matrix_enforcement(auth_module) -> None:
     assert RBACManager.check_permission("tenant_viewer", "agent", "write") is False
     # Editor can write agents
     assert RBACManager.check_permission("tenant_editor", "agent", "write") is True
-    # Admin can perform any action
-    assert RBACManager.check_permission("platform_admin", "agent", "write") is True
+    # Tenant admin can write agents
+    assert RBACManager.check_permission("tenant_admin", "agent", "write") is True
+    # Phase 13J: platform staff roles hold no tenant permission (no wildcard)
+    assert RBACManager.check_permission("platform_admin", "agent", "write") is False
 
 
 def test_rate_limiter_exceeded_429(auth_module) -> None:

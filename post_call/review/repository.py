@@ -58,11 +58,9 @@ class InMemoryReviewRepository:
         auth: AuthContext,
         note: str,
     ) -> ReviewRequest:
-        if not auth.is_platform_admin and auth.tenant_id != str(tenant_id):
+        if auth.tenant_id != str(tenant_id):
             raise ReviewAuthorizationError("Review tenant does not match actor.")
-        if not auth.is_platform_admin and not (
-            "*" in auth.scopes or "extraction:write" in auth.scopes
-        ):
+        if not ("*" in auth.scopes or "extraction:write" in auth.scopes):
             raise ReviewAuthorizationError("Actor cannot decide extraction review.")
         review = self._reviews.get(review_id)
         if review is None or review.tenant_id != tenant_id:
@@ -92,11 +90,9 @@ class InMemoryReviewRepository:
 
 
 def _authorize_decision(tenant_id: UUID, auth: AuthContext) -> None:
-    if not auth.is_platform_admin and auth.tenant_id != str(tenant_id):
+    if auth.tenant_id != str(tenant_id):
         raise ReviewAuthorizationError("Review tenant does not match actor.")
-    if not auth.is_platform_admin and not (
-        "*" in auth.scopes or "extraction:write" in auth.scopes
-    ):
+    if not ("*" in auth.scopes or "extraction:write" in auth.scopes):
         raise ReviewAuthorizationError("Actor cannot decide extraction review.")
 
 

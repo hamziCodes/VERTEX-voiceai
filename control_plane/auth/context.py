@@ -27,4 +27,9 @@ class AuthContext:
 
     @property
     def is_platform_admin(self) -> bool:
+        """Compatibility only: tenant contexts never carry platform roles.
+
+        Phase 13J moved platform staff authorization to a separate
+        ``PlatformContext``; nothing may use this to bypass tenant checks.
+        """
         return "platform_admin" in self.roles

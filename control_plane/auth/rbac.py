@@ -1,13 +1,16 @@
-"""UCVE Role-Based Access Control (RBAC) Permission Matrix."""
+"""UCVE tenant Role-Based Access Control (RBAC) permission matrix.
+
+Only tenant roles live here. Platform staff roles have their own explicit
+matrix in ``control_plane.auth.platform_rbac`` and never grant tenant access.
+"""
 
 from __future__ import annotations
 
 
 class RBACManager:
-    """Permission matrix for platform, tenant, and compliance roles."""
+    """Permission matrix for tenant and compliance roles; no wildcard grants."""
 
     _matrix: dict[str, set[str]] = {
-        "platform_admin": {"*"},
         "tenant_admin": {
             "agent:read",
             "agent:write",
@@ -99,11 +102,5 @@ class RBACManager:
 
     @classmethod
     def check_permission(cls, role: str, resource: str, action: str) -> bool:
-        """Return True if role possesses permission for action on resource."""
-        perm = f"{resource}:{action}"
-        role_perms = cls.permissions_for_role(role)
-
-        if "*" in role_perms or perm in role_perms or f"{resource}:*" in role_perms:
-            return True
-
-        return False
+        """Return True only if the role explicitly holds ``resource:action``."""
+        return f"{resource}:{action}" in cls.permissions_for_role(role)

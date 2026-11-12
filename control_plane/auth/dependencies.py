@@ -32,10 +32,13 @@ async def resolve_auth_context(
         if token.startswith("ucve_live_"):
             verified = request.app.state.api_keys.verify_api_key(token)
             record = await verified if isawaitable(verified) else verified
+            key_role = str(record["role"]).lower()
+            if key_role not in RBACManager.roles():
+                raise PermissionError("API-key role is not a tenant role.")
             context = AuthContext(
                 subject_id=str(record["subject_id"]),
                 tenant_id=str(record["tenant_id"]),
-                roles=(str(record["role"]).lower(),),
+                roles=(key_role,),
                 scopes=frozenset(str(scope) for scope in record.get("scopes", ())),
                 auth_method="api_key",
                 key_id=str(record["key_id"]),
@@ -62,15 +65,15 @@ async def resolve_auth_context(
                 ),
                 None,
             )
-            if user.is_platform_admin:
-                roles = ("platform_admin",)
-            elif membership is not None:
-                roles = (membership.role,)
-            else:
+            # Phase 13J: tenant access comes only from a durable membership.
+            # Platform staff roles (and the legacy users.is_platform_admin
+            # flag) never satisfy a tenant requirement.
+            if membership is None:
                 raise HTTPException(
                     status_code=403,
                     detail="Workspace membership is required.",
                 )
+            roles = (membership.role,)
             context = AuthContext(
                 subject_id=str(user.user_id),
                 tenant_id=x_tenant_id,
@@ -128,5 +131,5 @@ def require_permission(permission: str) -> Callable[..., Awaitable[AuthContext]]
 
 
 def enforce_tenant_access(context: AuthContext, requested_tenant: str) -> None:
-    if requested_tenant != context.tenant_id and not context.is_platform_admin:
+    if requested_tenant != context.tenant_id:
         raise HTTPException(status_code=403, detail="Cross-tenant access forbidden.")

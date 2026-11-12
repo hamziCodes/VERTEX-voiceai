@@ -66,11 +66,9 @@ def build_delivery_payload(result: PostCallIntelligenceResult) -> dict[str, Any]
 
 
 def _authorize(tenant_id: UUID, auth: AuthContext) -> None:
-    if not auth.is_platform_admin and auth.tenant_id != str(tenant_id):
+    if auth.tenant_id != str(tenant_id):
         raise WebhookAuthorizationError("Webhook tenant does not match actor.")
-    if not auth.is_platform_admin and not (
-        "*" in auth.scopes or "webhook:write" in auth.scopes
-    ):
+    if not ("*" in auth.scopes or "webhook:write" in auth.scopes):
         raise WebhookAuthorizationError("Actor cannot manage webhook targets.")
 
 
