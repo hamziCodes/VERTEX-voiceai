@@ -129,3 +129,64 @@ class TenantEntitlements(StudioModel):
         if any(value < 1 or value > 3650 for value in normalized):
             raise ValueError("retention days must be between 1 and 3650")
         return normalized
+
+
+PlatformRole = Literal["platform_admin", "platform_support"]
+
+PlatformAuditAction = Literal[
+    "platform_staff.migrated",
+    "platform_staff.granted",
+    "platform_staff.role_changed",
+    "platform_staff.revoked",
+    "platform_tenant.viewed",
+]
+
+
+class PlatformStaffMember(StudioModel):
+    """An active Wavia staff assignment. Safe for internal responses."""
+
+    user_id: UUID
+    email: str | None = None
+    role: PlatformRole
+    granted_by: UUID | None = None
+    granted_at: datetime
+    reason: str
+
+
+class PlatformAuditEvent(StudioModel):
+    event_id: UUID
+    actor_user_id: UUID | None = None
+    action: PlatformAuditAction
+    target_user_id: UUID | None = None
+    target_tenant_id: UUID | None = None
+    previous_role: PlatformRole | None = None
+    new_role: PlatformRole | None = None
+    reason: str | None = None
+    created_at: datetime
+
+
+class TenantDirectoryEntry(StudioModel):
+    tenant_id: UUID
+    name: str
+    created_at: datetime
+    member_count: int = Field(ge=0)
+    agent_count: int | None = Field(default=None, ge=0)
+
+
+class TenantDirectoryPage(StudioModel):
+    items: tuple[TenantDirectoryEntry, ...]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1, le=50)
+    offset: int = Field(ge=0, le=10_000)
+
+
+class TenantSummary(StudioModel):
+    """Safe tenant metadata for staff: counts and configuration, no customer data."""
+
+    tenant_id: UUID
+    name: str
+    created_at: datetime
+    members_by_role: dict[StudioRole, int]
+    agent_count: int | None = Field(default=None, ge=0)
+    entitlements: TenantEntitlements | None = None
+    onboarding_completed_steps: tuple[str, ...] = ()

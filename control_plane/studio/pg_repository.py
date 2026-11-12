@@ -13,8 +13,15 @@ from pydantic import TypeAdapter
 from control_plane.studio.models import (
     IdentityContext,
     OnboardingProfile,
+    PlatformAuditAction,
+    PlatformAuditEvent,
+    PlatformRole,
+    PlatformStaffMember,
     StudioRole,
+    TenantDirectoryEntry,
+    TenantDirectoryPage,
     TenantEntitlements,
+    TenantSummary,
     UserIdentity,
     WorkspaceInvitation,
     WorkspaceMembership,
@@ -26,8 +33,15 @@ from control_plane.studio.repository import (
     InvitationExpiredError,
     InvitationNotFoundError,
     LastAdminError,
+    LastPlatformAdminError,
     MembershipNotFoundError,
+    StaffNotFoundError,
     WorkspaceNotFoundError,
+    parse_tenant_query,
+    validate_audit_limit,
+    validate_directory_window,
+    validate_platform_reason,
+    validate_platform_role,
 )
 from core.db.async_pg import AsyncDatabase, get_default_database
 
@@ -587,3 +601,379 @@ class PostgresStudioRepository:
         if row is None:
             raise WorkspaceNotFoundError("Workspace was not found.")
         return self._entitlements_from_row(row)
+
+    # Phase 13J platform staff -------------------------------------------------
+    #
+    # Platform tables are not granted to ucve_app; every method below runs in
+    # platform_transaction. Staff mutations lock the active administrator set
+    # in a fixed order first, so concurrent revocations serialize and the
+    # last-administrator check cannot be raced.
+
+    _STAFF_SELECT = """
+        SELECT p.user_id, u.email, p.role, p.granted_by, p.granted_at, p.reason
+        FROM platform_memberships p
+        JOIN users u ON u.id = p.user_id
+    """
+
+    @staticmethod
+    def _staff_from_row(row: Any) -> PlatformStaffMember:
+        return PlatformStaffMember(
+            user_id=row[0],
+            email=row[1],
+            role=row[2],
+            granted_by=row[3],
+            granted_at=row[4],
+            reason=row[5],
+        )
+
+    @staticmethod
+    async def _record_platform_event(
+        connection: Any,
+        action: PlatformAuditAction,
+        *,
+        actor_user_id: UUID | None,
+        target_user_id: UUID | None = None,
+        target_tenant_id: UUID | None = None,
+        previous_role: PlatformRole | None = None,
+        new_role: PlatformRole | None = None,
+        reason: str | None = None,
+    ) -> None:
+        await connection.execute(
+            """
+            INSERT INTO platform_audit_events (
+                actor_user_id, action, target_user_id, target_tenant_id,
+                previous_role, new_role, reason
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                actor_user_id,
+                action,
+                target_user_id,
+                target_tenant_id,
+                previous_role,
+                new_role,
+                reason,
+            ),
+        )
+
+    @staticmethod
+    async def _lock_active_admins(connection: Any) -> set[UUID]:
+        cursor = await connection.execute(
+            """
+            SELECT user_id FROM platform_memberships
+            WHERE role = 'platform_admin' AND revoked_at IS NULL
+            ORDER BY user_id
+            FOR UPDATE
+            """
+        )
+        return {row[0] for row in await cursor.fetchall()}
+
+    async def get_platform_role(self, user_id: UUID) -> PlatformRole | None:
+        async with self.database.platform_transaction() as connection:
+            cursor = await connection.execute(
+                """
+                SELECT p.role FROM platform_memberships p
+                JOIN users u ON u.id = p.user_id
+                WHERE p.user_id = %s AND p.revoked_at IS NULL AND u.is_active
+                """,
+                (user_id,),
+            )
+            row = await cursor.fetchone()
+        return None if row is None else validate_platform_role(row[0])
+
+    async def list_platform_staff(self) -> tuple[PlatformStaffMember, ...]:
+        async with self.database.platform_transaction() as connection:
+            cursor = await connection.execute(
+                self._STAFF_SELECT
+                + """
+                WHERE p.revoked_at IS NULL
+                ORDER BY p.role, u.email NULLS LAST, p.user_id
+                """
+            )
+            rows = await cursor.fetchall()
+        return tuple(self._staff_from_row(row) for row in rows)
+
+    async def grant_platform_role(
+        self,
+        *,
+        actor_user_id: UUID,
+        email: str,
+        role: PlatformRole,
+        reason: str,
+    ) -> PlatformStaffMember:
+        validated_role = validate_platform_role(role)
+        normalized_reason = validate_platform_reason(reason)
+        normalized_email = self._normalize_email(email)
+        async with self.database.platform_transaction() as connection:
+            admins = await self._lock_active_admins(connection)
+            if actor_user_id not in admins:
+                raise PermissionError("Only platform administrators may manage staff.")
+            cursor = await connection.execute(
+                "SELECT id, is_active FROM users WHERE LOWER(email) = %s",
+                (normalized_email,),
+            )
+            user = await cursor.fetchone()
+            if user is None or not user[1]:
+                raise StaffNotFoundError("No active Wavia user has that email.")
+            target_id: UUID = user[0]
+            cursor = await connection.execute(
+                """
+                SELECT role, revoked_at FROM platform_memberships
+                WHERE user_id = %s
+                FOR UPDATE
+                """,
+                (target_id,),
+            )
+            existing = await cursor.fetchone()
+            previous: PlatformRole | None = (
+                validate_platform_role(existing[0])
+                if existing is not None and existing[1] is None
+                else None
+            )
+            if previous != validated_role:
+                if (
+                    previous == "platform_admin"
+                    and validated_role != "platform_admin"
+                    and len(admins) <= 1
+                ):
+                    raise LastPlatformAdminError(
+                        "Wavia must retain one platform administrator."
+                    )
+                await connection.execute(
+                    """
+                    INSERT INTO platform_memberships
+                        (user_id, role, granted_by, granted_at, reason)
+                    VALUES (%s, %s, %s, NOW(), %s)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        role = EXCLUDED.role,
+                        granted_by = EXCLUDED.granted_by,
+                        granted_at = EXCLUDED.granted_at,
+                        reason = EXCLUDED.reason,
+                        revoked_at = NULL,
+                        revoked_by = NULL,
+                        revoke_reason = NULL
+                    """,
+                    (target_id, validated_role, actor_user_id, normalized_reason),
+                )
+                await self._record_platform_event(
+                    connection,
+                    "platform_staff.role_changed"
+                    if previous
+                    else "platform_staff.granted",
+                    actor_user_id=actor_user_id,
+                    target_user_id=target_id,
+                    previous_role=previous,
+                    new_role=validated_role,
+                    reason=normalized_reason,
+                )
+            cursor = await connection.execute(
+                self._STAFF_SELECT + " WHERE p.user_id = %s",
+                (target_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:  # pragma: no cover - database contract failure
+            raise RuntimeError("Platform grant returned no staff row.")
+        return self._staff_from_row(row)
+
+    async def revoke_platform_role(
+        self, *, actor_user_id: UUID, user_id: UUID, reason: str
+    ) -> None:
+        normalized_reason = validate_platform_reason(reason)
+        async with self.database.platform_transaction() as connection:
+            admins = await self._lock_active_admins(connection)
+            if actor_user_id not in admins:
+                raise PermissionError("Only platform administrators may manage staff.")
+            cursor = await connection.execute(
+                """
+                SELECT role FROM platform_memberships
+                WHERE user_id = %s AND revoked_at IS NULL
+                FOR UPDATE
+                """,
+                (user_id,),
+            )
+            current = await cursor.fetchone()
+            if current is None:
+                raise StaffNotFoundError("Platform staff assignment was not found.")
+            previous = validate_platform_role(current[0])
+            if previous == "platform_admin" and len(admins) <= 1:
+                raise LastPlatformAdminError(
+                    "Wavia must retain one platform administrator."
+                )
+            await connection.execute(
+                """
+                UPDATE platform_memberships
+                SET revoked_at = NOW(), revoked_by = %s, revoke_reason = %s
+                WHERE user_id = %s
+                """,
+                (actor_user_id, normalized_reason, user_id),
+            )
+            await self._record_platform_event(
+                connection,
+                "platform_staff.revoked",
+                actor_user_id=actor_user_id,
+                target_user_id=user_id,
+                previous_role=previous,
+                reason=normalized_reason,
+            )
+
+    async def list_tenant_directory(
+        self, *, query: str | None, limit: int, offset: int
+    ) -> TenantDirectoryPage:
+        search, limit, offset = validate_directory_window(query, limit, offset)
+        where = ""
+        params: tuple[Any, ...] = ()
+        if search is not None:
+            escaped = (
+                search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            )
+            where = "WHERE t.name ILIKE %s ESCAPE '\\'"
+            params = (f"%{escaped}%",)
+            exact = parse_tenant_query(search)
+            if exact is not None:
+                where += " OR t.id = %s"
+                params = (*params, exact)
+        async with self.database.platform_transaction() as connection:
+            cursor = await connection.execute(
+                f"SELECT COUNT(*) FROM tenants t {where}", params
+            )
+            total_row = await cursor.fetchone()
+            cursor = await connection.execute(
+                f"""
+                SELECT t.id, t.name, t.created_at,
+                    (SELECT COUNT(*) FROM memberships m WHERE m.tenant_id = t.id),
+                    (SELECT COUNT(*) FROM agents a WHERE a.tenant_id = t.id)
+                FROM tenants t
+                {where}
+                ORDER BY LOWER(t.name), t.id
+                LIMIT %s OFFSET %s
+                """,
+                (*params, limit, offset),
+            )
+            rows = await cursor.fetchall()
+        return TenantDirectoryPage(
+            items=tuple(
+                TenantDirectoryEntry(
+                    tenant_id=row[0],
+                    name=row[1],
+                    created_at=row[2],
+                    member_count=int(row[3]),
+                    agent_count=int(row[4]),
+                )
+                for row in rows
+            ),
+            total=int(total_row[0]) if total_row else 0,
+            limit=limit,
+            offset=offset,
+        )
+
+    async def view_tenant_summary(
+        self, tenant_id: UUID, *, actor_user_id: UUID
+    ) -> TenantSummary:
+        async with self.database.platform_transaction() as connection:
+            cursor = await connection.execute(
+                """
+                SELECT p.role FROM platform_memberships p
+                JOIN users u ON u.id = p.user_id
+                WHERE p.user_id = %s AND p.revoked_at IS NULL AND u.is_active
+                """,
+                (actor_user_id,),
+            )
+            if await cursor.fetchone() is None:
+                raise PermissionError("Platform staff role is required.")
+            cursor = await connection.execute(
+                "SELECT id, name, created_at FROM tenants WHERE id = %s",
+                (tenant_id,),
+            )
+            tenant = await cursor.fetchone()
+            if tenant is None:
+                raise WorkspaceNotFoundError("Workspace was not found.")
+            cursor = await connection.execute(
+                """
+                SELECT role, COUNT(*) FROM memberships
+                WHERE tenant_id = %s
+                GROUP BY role
+                ORDER BY role
+                """,
+                (tenant_id,),
+            )
+            counts = {
+                _ROLE_ADAPTER.validate_python(row[0]): int(row[1])
+                for row in await cursor.fetchall()
+            }
+            cursor = await connection.execute(
+                "SELECT COUNT(*) FROM agents WHERE tenant_id = %s", (tenant_id,)
+            )
+            agents_row = await cursor.fetchone()
+            cursor = await connection.execute(
+                """
+                SELECT tenant_id, max_agents, max_concurrent_sessions,
+                    max_knowledge_bytes, api_keys_allowed, telephony_enabled,
+                    advanced_providers_enabled, byok_enabled,
+                    allowed_retention_days, updated_at
+                FROM tenant_entitlements
+                WHERE tenant_id = %s
+                """,
+                (tenant_id,),
+            )
+            entitlements_row = await cursor.fetchone()
+            cursor = await connection.execute(
+                """
+                SELECT completed_steps FROM tenant_onboarding_profiles
+                WHERE tenant_id = %s
+                """,
+                (tenant_id,),
+            )
+            onboarding_row = await cursor.fetchone()
+            await self._record_platform_event(
+                connection,
+                "platform_tenant.viewed",
+                actor_user_id=actor_user_id,
+                target_tenant_id=tenant_id,
+            )
+        return TenantSummary(
+            tenant_id=tenant[0],
+            name=tenant[1],
+            created_at=tenant[2],
+            members_by_role=counts,
+            agent_count=int(agents_row[0]) if agents_row else 0,
+            entitlements=(
+                self._entitlements_from_row(entitlements_row)
+                if entitlements_row is not None
+                else None
+            ),
+            onboarding_completed_steps=(
+                tuple(onboarding_row[0]) if onboarding_row is not None else ()
+            ),
+        )
+
+    async def list_platform_audit(
+        self, *, limit: int
+    ) -> tuple[PlatformAuditEvent, ...]:
+        limit = validate_audit_limit(limit)
+        async with self.database.platform_transaction() as connection:
+            cursor = await connection.execute(
+                """
+                SELECT event_id, actor_user_id, action, target_user_id,
+                    target_tenant_id, previous_role, new_role, reason, created_at
+                FROM platform_audit_events
+                ORDER BY created_at DESC, event_id DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows = await cursor.fetchall()
+        return tuple(
+            PlatformAuditEvent(
+                event_id=row[0],
+                actor_user_id=row[1],
+                action=row[2],
+                target_user_id=row[3],
+                target_tenant_id=row[4],
+                previous_role=row[5],
+                new_role=row[6],
+                reason=row[7],
+                created_at=row[8],
+            )
+            for row in rows
+        )

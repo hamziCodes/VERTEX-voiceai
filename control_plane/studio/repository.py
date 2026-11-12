@@ -14,14 +14,28 @@ from pydantic import TypeAdapter
 from control_plane.studio.models import (
     IdentityContext,
     OnboardingProfile,
+    PlatformAuditAction,
+    PlatformAuditEvent,
+    PlatformRole,
+    PlatformStaffMember,
     StudioRole,
+    TenantDirectoryEntry,
+    TenantDirectoryPage,
     TenantEntitlements,
+    TenantSummary,
     UserIdentity,
     WorkspaceInvitation,
     WorkspaceMembership,
 )
 
 _ROLE_ADAPTER: TypeAdapter[StudioRole] = TypeAdapter(StudioRole)
+_PLATFORM_ROLE_ADAPTER: TypeAdapter[PlatformRole] = TypeAdapter(PlatformRole)
+DIRECTORY_MAX_LIMIT = 50
+DIRECTORY_MAX_OFFSET = 10_000
+DIRECTORY_MAX_QUERY = 255
+PLATFORM_AUDIT_MAX_LIMIT = 100
+REASON_MIN_LENGTH = 8
+REASON_MAX_LENGTH = 500
 _TOKEN_HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -59,6 +73,60 @@ class InvitationEmailMismatchError(StudioRepositoryError):
 
 class LastAdminError(StudioRepositoryError):
     """An operation would leave a workspace without a tenant administrator."""
+
+
+class LastPlatformAdminError(StudioRepositoryError):
+    """An operation would leave Wavia without an active platform administrator."""
+
+
+class StaffNotFoundError(StudioRepositoryError):
+    """The user or active platform staff assignment does not exist."""
+
+
+def validate_platform_reason(reason: str) -> str:
+    """Return a whitespace-normalized reason or raise ValueError."""
+
+    normalized = " ".join(reason.split())
+    if not REASON_MIN_LENGTH <= len(normalized) <= REASON_MAX_LENGTH:
+        raise ValueError(
+            f"reason must contain {REASON_MIN_LENGTH} to {REASON_MAX_LENGTH} characters"
+        )
+    return normalized
+
+
+def validate_platform_role(role: str) -> PlatformRole:
+    try:
+        return _PLATFORM_ROLE_ADAPTER.validate_python(role)
+    except ValueError as exc:  # pydantic ValidationError subclasses ValueError
+        raise ValueError("unknown platform role") from exc
+
+
+def validate_directory_window(
+    query: str | None, limit: int, offset: int
+) -> tuple[str | None, int, int]:
+    if not 1 <= limit <= DIRECTORY_MAX_LIMIT:
+        raise ValueError(f"limit must be between 1 and {DIRECTORY_MAX_LIMIT}")
+    if not 0 <= offset <= DIRECTORY_MAX_OFFSET:
+        raise ValueError(f"offset must be between 0 and {DIRECTORY_MAX_OFFSET}")
+    normalized = (query or "").strip()
+    if len(normalized) > DIRECTORY_MAX_QUERY:
+        raise ValueError("search must be at most 255 characters")
+    return (normalized or None), limit, offset
+
+
+def validate_audit_limit(limit: int) -> int:
+    if not 1 <= limit <= PLATFORM_AUDIT_MAX_LIMIT:
+        raise ValueError(f"limit must be between 1 and {PLATFORM_AUDIT_MAX_LIMIT}")
+    return limit
+
+
+def parse_tenant_query(query: str) -> UUID | None:
+    """Return a UUID when the search is an exact tenant identifier."""
+
+    try:
+        return UUID(query)
+    except ValueError:
+        return None
 
 
 class StudioRepository(Protocol):
@@ -109,11 +177,49 @@ class StudioRepository(Protocol):
         self, entitlements: TenantEntitlements
     ) -> TenantEntitlements: ...
 
+    async def get_platform_role(self, user_id: UUID) -> PlatformRole | None: ...
+
+    async def list_platform_staff(self) -> tuple[PlatformStaffMember, ...]: ...
+
+    async def grant_platform_role(
+        self,
+        *,
+        actor_user_id: UUID,
+        email: str,
+        role: PlatformRole,
+        reason: str,
+    ) -> PlatformStaffMember: ...
+
+    async def revoke_platform_role(
+        self, *, actor_user_id: UUID, user_id: UUID, reason: str
+    ) -> None: ...
+
+    async def list_tenant_directory(
+        self, *, query: str | None, limit: int, offset: int
+    ) -> TenantDirectoryPage: ...
+
+    async def view_tenant_summary(
+        self, tenant_id: UUID, *, actor_user_id: UUID
+    ) -> TenantSummary: ...
+
+    async def list_platform_audit(
+        self, *, limit: int
+    ) -> tuple[PlatformAuditEvent, ...]: ...
+
 
 @dataclass(slots=True)
 class _InvitationState:
     invitation: WorkspaceInvitation
     token_hash: str = field(repr=False)
+
+
+@dataclass(slots=True)
+class _PlatformAssignment:
+    role: PlatformRole
+    granted_by: UUID | None
+    granted_at: datetime
+    reason: str
+    revoked_at: datetime | None = None
 
 
 class InMemoryStudioRepository:
@@ -128,6 +234,9 @@ class InMemoryStudioRepository:
         self._invitations: dict[str, _InvitationState] = {}
         self._onboarding: dict[UUID, OnboardingProfile] = {}
         self._entitlements: dict[UUID, TenantEntitlements] = {}
+        self._tenant_created: dict[UUID, datetime] = {}
+        self._platform: dict[UUID, _PlatformAssignment] = {}
+        self._platform_audit: list[PlatformAuditEvent] = []
 
     @staticmethod
     def _now() -> datetime:
@@ -232,6 +341,7 @@ class InMemoryStudioRepository:
                 created_at=now,
             )
             self._tenants[tenant_id] = normalized_name
+            self._tenant_created[tenant_id] = now
             self._memberships[(tenant_id, owner_user_id)] = membership
             self._onboarding[tenant_id] = OnboardingProfile(tenant_id=tenant_id)
             self._entitlements[tenant_id] = TenantEntitlements(tenant_id=tenant_id)
@@ -380,3 +490,238 @@ class InMemoryStudioRepository:
             saved = entitlements.model_copy(update={"updated_at": self._now()})
             self._entitlements[entitlements.tenant_id] = saved
             return saved
+
+    # Phase 13J platform staff -------------------------------------------------
+
+    def _active_platform_role(self, user_id: UUID) -> PlatformRole | None:
+        assignment = self._platform.get(user_id)
+        if assignment is None or assignment.revoked_at is not None:
+            return None
+        return assignment.role
+
+    def _active_admin_count(self) -> int:
+        return sum(
+            assignment.revoked_at is None and assignment.role == "platform_admin"
+            for assignment in self._platform.values()
+        )
+
+    def _audit(
+        self,
+        action: PlatformAuditAction,
+        *,
+        actor_user_id: UUID | None,
+        target_user_id: UUID | None = None,
+        target_tenant_id: UUID | None = None,
+        previous_role: PlatformRole | None = None,
+        new_role: PlatformRole | None = None,
+        reason: str | None = None,
+    ) -> None:
+        self._platform_audit.append(
+            PlatformAuditEvent(
+                event_id=uuid4(),
+                actor_user_id=actor_user_id,
+                action=action,
+                target_user_id=target_user_id,
+                target_tenant_id=target_tenant_id,
+                previous_role=previous_role,
+                new_role=new_role,
+                reason=reason,
+                created_at=self._now(),
+            )
+        )
+
+    def _require_platform_admin(self, actor_user_id: UUID) -> None:
+        if self._active_platform_role(actor_user_id) != "platform_admin":
+            raise PermissionError("Only platform administrators may manage staff.")
+
+    def _staff_member(self, user_id: UUID) -> PlatformStaffMember:
+        assignment = self._platform[user_id]
+        user = self._users.get(user_id)
+        return PlatformStaffMember(
+            user_id=user_id,
+            email=user.email if user is not None else None,
+            role=assignment.role,
+            granted_by=assignment.granted_by,
+            granted_at=assignment.granted_at,
+            reason=assignment.reason,
+        )
+
+    async def bootstrap_platform_admin(self, user_id: UUID, *, reason: str) -> None:
+        """In-memory only: seed the first administrator (operators use SQL)."""
+
+        normalized = validate_platform_reason(reason)
+        async with self._lock:
+            if user_id not in self._users:
+                raise StaffNotFoundError("User was not found.")
+            self._platform[user_id] = _PlatformAssignment(
+                role="platform_admin",
+                granted_by=None,
+                granted_at=self._now(),
+                reason=normalized,
+            )
+
+    async def get_platform_role(self, user_id: UUID) -> PlatformRole | None:
+        async with self._lock:
+            return self._active_platform_role(user_id)
+
+    async def list_platform_staff(self) -> tuple[PlatformStaffMember, ...]:
+        async with self._lock:
+            members = [
+                self._staff_member(user_id)
+                for user_id, assignment in self._platform.items()
+                if assignment.revoked_at is None
+            ]
+        return tuple(
+            sorted(
+                members,
+                key=lambda item: (item.role, item.email or "", str(item.user_id)),
+            )
+        )
+
+    async def grant_platform_role(
+        self,
+        *,
+        actor_user_id: UUID,
+        email: str,
+        role: PlatformRole,
+        reason: str,
+    ) -> PlatformStaffMember:
+        validated_role = validate_platform_role(role)
+        normalized_reason = validate_platform_reason(reason)
+        normalized_email = self._normalize_email(email)
+        async with self._lock:
+            self._require_platform_admin(actor_user_id)
+            target = next(
+                (
+                    user
+                    for user in self._users.values()
+                    if user.email == normalized_email
+                ),
+                None,
+            )
+            if target is None or not target.is_active:
+                raise StaffNotFoundError("No active Wavia user has that email.")
+            previous = self._active_platform_role(target.user_id)
+            if previous == validated_role:
+                return self._staff_member(target.user_id)
+            if (
+                previous == "platform_admin"
+                and validated_role != "platform_admin"
+                and self._active_admin_count() <= 1
+            ):
+                raise LastPlatformAdminError(
+                    "Wavia must retain one platform administrator."
+                )
+            self._platform[target.user_id] = _PlatformAssignment(
+                role=validated_role,
+                granted_by=actor_user_id,
+                granted_at=self._now(),
+                reason=normalized_reason,
+            )
+            self._audit(
+                "platform_staff.role_changed" if previous else "platform_staff.granted",
+                actor_user_id=actor_user_id,
+                target_user_id=target.user_id,
+                previous_role=previous,
+                new_role=validated_role,
+                reason=normalized_reason,
+            )
+            return self._staff_member(target.user_id)
+
+    async def revoke_platform_role(
+        self, *, actor_user_id: UUID, user_id: UUID, reason: str
+    ) -> None:
+        normalized_reason = validate_platform_reason(reason)
+        async with self._lock:
+            self._require_platform_admin(actor_user_id)
+            previous = self._active_platform_role(user_id)
+            if previous is None:
+                raise StaffNotFoundError("Platform staff assignment was not found.")
+            if previous == "platform_admin" and self._active_admin_count() <= 1:
+                raise LastPlatformAdminError(
+                    "Wavia must retain one platform administrator."
+                )
+            self._platform[user_id].revoked_at = self._now()
+            self._audit(
+                "platform_staff.revoked",
+                actor_user_id=actor_user_id,
+                target_user_id=user_id,
+                previous_role=previous,
+                reason=normalized_reason,
+            )
+
+    def _directory_entry(self, tenant_id: UUID) -> TenantDirectoryEntry:
+        return TenantDirectoryEntry(
+            tenant_id=tenant_id,
+            name=self._tenants[tenant_id],
+            created_at=self._tenant_created[tenant_id],
+            member_count=sum(
+                member_tenant == tenant_id for member_tenant, _ in self._memberships
+            ),
+            # Agents are not tracked by this repository: report unknown, not zero.
+            agent_count=None,
+        )
+
+    async def list_tenant_directory(
+        self, *, query: str | None, limit: int, offset: int
+    ) -> TenantDirectoryPage:
+        search, limit, offset = validate_directory_window(query, limit, offset)
+        async with self._lock:
+            tenant_ids = list(self._tenants)
+            if search is not None:
+                exact = parse_tenant_query(search)
+                needle = search.casefold()
+                tenant_ids = [
+                    tenant_id
+                    for tenant_id in tenant_ids
+                    if tenant_id == exact
+                    or needle in self._tenants[tenant_id].casefold()
+                ]
+            tenant_ids.sort(
+                key=lambda item: (self._tenants[item].casefold(), str(item))
+            )
+            window = tenant_ids[offset : offset + limit]
+            return TenantDirectoryPage(
+                items=tuple(self._directory_entry(item) for item in window),
+                total=len(tenant_ids),
+                limit=limit,
+                offset=offset,
+            )
+
+    async def view_tenant_summary(
+        self, tenant_id: UUID, *, actor_user_id: UUID
+    ) -> TenantSummary:
+        async with self._lock:
+            if self._active_platform_role(actor_user_id) is None:
+                raise PermissionError("Platform staff role is required.")
+            if tenant_id not in self._tenants:
+                raise WorkspaceNotFoundError("Workspace was not found.")
+            counts: dict[StudioRole, int] = {}
+            for (member_tenant, _), membership in self._memberships.items():
+                if member_tenant == tenant_id:
+                    counts[membership.role] = counts.get(membership.role, 0) + 1
+            onboarding = self._onboarding.get(tenant_id)
+            summary = TenantSummary(
+                tenant_id=tenant_id,
+                name=self._tenants[tenant_id],
+                created_at=self._tenant_created[tenant_id],
+                members_by_role=dict(sorted(counts.items())),
+                agent_count=None,
+                entitlements=self._entitlements.get(tenant_id),
+                onboarding_completed_steps=(
+                    onboarding.completed_steps if onboarding else ()
+                ),
+            )
+            self._audit(
+                "platform_tenant.viewed",
+                actor_user_id=actor_user_id,
+                target_tenant_id=tenant_id,
+            )
+            return summary
+
+    async def list_platform_audit(
+        self, *, limit: int
+    ) -> tuple[PlatformAuditEvent, ...]:
+        limit = validate_audit_limit(limit)
+        async with self._lock:
+            return tuple(reversed(self._platform_audit))[:limit]
