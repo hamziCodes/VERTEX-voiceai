@@ -1,6 +1,73 @@
 # Phase 13H verification — customer access and shell completion
 
-**Status:** Task 7 verified locally (focused scope below). The Task 8 close gate has **not** run; Phase 13H is not complete.
+**Status:** Phase 13H close gate passed locally on 2026-11-12 (Task 8 below). Stopped for Hamzi's review; Phase 13I has not started.
+
+## Task 8 — Phase 13H close gate (2026-11-12)
+
+Machine: Windows 11, Python 3.12.16 (uv, frozen lockfile), Node `v24.13.0`, Playwright `1.64.1` Chromium, Docker Desktop 4.99 / Engine 29.9.3 (installed on `D:` for this gate). Flags for every run: `UCVE_ENV=test`, `RUN_LIVE_PROVIDERS=0`, `RUN_LIVE_TELEPHONY=0`; `RUN_LIVE_DB_TESTS`/`RUN_LIVE_REDIS_TESTS=0` except inside the disposable gate. No live provider, carrier, IdP, deployment, package publication or paid service was contacted.
+
+### Step 1 — Backend
+
+| Command (`python -m uv run --frozen --python 3.12 …`) | Result |
+| :--- | :--- |
+| `python -m pytest tests/studio/test_identity_api.py tests/studio/test_studio_repository.py tests/auth/test_studio_identity.py tests/auth/test_route_matrix.py tests/db/test_phase13h_customer_roles_migration.py tests/db/test_phase13h_live_customer_roles.py -q` | PASS — 39 passed, 1 skipped (the disposable-DB test; flag off). |
+| `python -m pytest tests/studio tests/auth/test_studio_identity.py tests/auth/test_route_matrix.py tests/db/test_phase13h_customer_roles_migration.py -q` (after the typing fix) | PASS — 57 passed. |
+| `python -m pytest -q` (full forced-offline suite) | PASS — 985 passed, 15 skipped, 6 existing warnings. |
+| `ruff check` on `control_plane/auth/rbac.py`, `control_plane/studio/models.py`, `control_plane/routes/identity.py`, `control_plane/studio/repository.py`, `control_plane/studio/pg_repository.py` and both 13H DB tests | PASS after wrapping long lines in the new DB test. |
+| `mypy` (repository configuration) on the five 13H runtime modules | First run: 1 error — `identity.py:59` returned `Any` from `_repository` (a Phase 13A line, `72974c7`). Fixed with `typing.cast`, no runtime change. Re-run: **no issues in 5 source files**. A `--strict --follow-imports=skip` run was also tried; it turns pydantic/FastAPI into `Any` and reports 25 framework-typing errors, so it is not used as evidence. |
+| `python -m py_compile` on the same files | PASS |
+
+### Step 2 — Disposable PostgreSQL (migration 031)
+
+New gated test `tests/db/test_phase13h_live_customer_roles.py` (skipped unless `RUN_LIVE_DB_TESTS=1`): migrations apply and a second run is a no-op; `031` is recorded with a checksum; `memberships_role_check` and `workspace_invitations_role_check` exist, are validated and list exactly the five launch roles; `tenant_owner`, `platform_admin` and `superadmin` are rejected on both tables (`CheckViolation`); a `tenant_developer` invitation is created and accepted through `PostgresStudioRepository`; last-admin demotion and removal raise `LastAdminError` and succeed once a second admin exists; re-running the 031 SQL over existing valid rows keeps both constraints validated; as `ucve_app` with another tenant's `app.tenant_id`, `memberships` and `workspace_invitations` rows of the first tenant are invisible (0) while the session's own tenant row is visible (1).
+
+Recipe (as Phase 13A): a generated one-time `PHASE09_DB_PASSWORD`, `docker compose -f infra/docker/docker-compose.phase09-test.yml up -d --wait postgres` (pgvector/pg16, tmpfs data, loopback port 55432), the tests, then `docker compose … down --volumes` in a `finally` block.
+
+| Run | Result |
+| :--- | :--- |
+| First attempt | Not a test result: Docker Desktop was not running after a pause, so both live tests timed out connecting. Restarted Docker Desktop. |
+| `pytest tests/db/test_phase13h_live_customer_roles.py tests/db/test_phase13_live_integration.py tests/db/test_phase13h_customer_roles_migration.py tests/db/test_phase13_studio_migration.py` | PASS — 6 passed in 2.85s. |
+| Same set with the Phase 13A live test first (order-independence after making the 031 check read `schema_migrations`) | PASS — 6 passed in 2.37s. |
+| Cleanup after each run: `docker compose … ps -a`, compose-labelled volumes, compose-labelled networks | All empty. |
+
+### Step 3 — Studio
+
+| Command (in `studio/`) | Result |
+| :--- | :--- |
+| `npm.cmd test -- --maxWorkers=1` | PASS — 14 files, 145 tests. |
+| `npm.cmd run typecheck` | PASS |
+| `npm.cmd run lint` | PASS — zero warnings. |
+| `CIRCLE_NODE_TOTAL=1 npm.cmd run build` | PASS — 22 static pages generated; route table includes `/settings`, `/settings/members` and `/test`. |
+| `npx.cmd playwright test` (full offline Chromium suite, before the shell QA spec existed) | PASS — 21 passed. |
+| `npx.cmd playwright test` (final, including the new shell QA spec) | PASS — **24 passed**. |
+
+### Step 4 — Integrity and safety scans (Phase 13H range `c98119d..HEAD` plus the working tree)
+
+| Scan | Result |
+| :--- | :--- |
+| `verify_plan_integrity.py` | PASS — `OK: 36 phases, tests, and trackers verified.` |
+| `git diff --check c98119d` | Clean. |
+| Protected paths | No `.github/`, `.env`, key-file or deploy change. `docs/DESIGN.md` and `docs/design/design-tokens.json` appear only through the handover commit `d18fc40` that added them; `git diff d18fc40` on both is empty. |
+| Secret signatures (provider key prefixes, private keys, AWS/GitHub/Slack tokens, JWT-shaped strings) in the 13H diff | None. |
+| Client bundle (`studio/.next/static`) for `WORKOS_COOKIE_PASSWORD`, `accessToken`, `refreshToken`, the test cookie password, the pending-invitation cookie name, fixture invitation tokens, `x-tenant-id`, `PLATFORM_*_API_KEY`, `token_hash`, private keys | None found. |
+| Hardcoded colours / gradients | No gradients anywhere in `studio/src`; no hex after the `:root` token block in `globals.css`. Hex values remain only in the Phase 13I operational files (`channels/*`, `api-key-manager.tsx`, `provider-credential-manager.tsx`, the channel views). 13H touched only one of them (`channels/telephony/page.tsx`, Task 2), changing a permission call, not a colour. |
+| Role/capability parity (script comparing `RBACManager`, the Studio `studioRoleSchema`, `WORKSPACE_CAPABILITIES`, migration 031 and the offline fixture) | PASS — 20 of 20 checks: five roles everywhere; fixture capability arrays equal FastAPI permissions for every role; Studio's capability list covers every role; unknown role → no permissions; editor reads but cannot write members; developer has no member access. |
+
+### Step 5 — Browser visual QA
+
+New committed spec `e2e/phase13h-shell-qa.spec.ts` asserts on every run and captures only with `CAPTURE_PHASE13H=1`:
+
+- 1280×800 viewport: `/workspaces`, `/dashboard`, `/onboarding`, `/agents/new`, `/test`, `/settings`, `/settings/members` render their headings and the sidebar with no horizontal overflow and no console or page errors.
+- 390×844: the same routes have no overflow, the closed drawer is hidden from assistive technology, the drawer opens with Settings marked current, Escape closes it and focus returns to the trigger.
+- Desktop collapse persists across reload (`data-collapsed`, `aria-expanded=false`, Settings still current); the only `localStorage` key is `wavia:studio:sidebar:v1`; Tab reaches a sidebar link with a non-`none` focus outline.
+
+Result: 3 passed. Two fixes came from running it: the test scoped its Settings locator to the sidebar (the members page also has a "← Settings" back link), and screenshots now use `caret: "initial"` because Playwright's default caret hiding injects styles before hydration and React then logs a hydration mismatch. That console error appears only while capturing, not in normal use.
+
+Captures inspected (gitignored, `hamza_local/phase13h-qa/`): `phase13h-qa-{workspaces,dashboard,onboarding,agent-create,test-selector,settings,members}-{desktop,mobile-390}-20261112.png`, `phase13h-qa-drawer-mobile-390-20261112.png`, `phase13h-qa-members-collapsed-desktop-20261112.png`, `phase13h-qa-keyboard-focus-desktop-20261112.png`, plus the Task 7 member captures and the earlier 13H Task 4–6 captures regenerated by their specs. Inspection led to one product fix: member-row buttons no longer wrap "Update role" onto two lines at 1280px. Three captures were first taken mid-transition (drawer slide, sidebar width, streaming reload) and were retaken after the transition settled. The black "N" badge in captures is Next.js's development indicator.
+
+### Not verified
+
+Safari, physical mobile devices, manual screen-reader use, Windows forced-colours mode, Lighthouse and Core Web Vitals on a deployed build, a dark theme (Studio has no theme mechanism), a shared or production database migration, live WorkOS sign-in, live providers and live Telnyx. The invitee journey sets the pending-invitation cookie directly because the offline fixture does not emulate WorkOS's hosted sign-in redirect.
 
 ## Task 7 — Workspace Settings and Members (2026-11-12)
 

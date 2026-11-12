@@ -2,7 +2,7 @@
 
 **Branch:** `wavia-fixv1`
 **Plan:** `Codex Fix/phases/13h-customer-access-shell-completion-implementation-plan.md`
-**Status:** Tasks 1–7 complete; Task 8 close gate not started. Phase 13H is **not** complete.
+**Status:** Phase 13H complete locally (Tasks 1–8, close gate passed 2026-11-12). Stopped for Hamzi's review; Phase 13I not started.
 
 ## Tasks 1–6 (recorded by Codex before handover)
 
@@ -45,6 +45,23 @@ Commits `83e6b73`, `176dd8e`, `361f54b`, `bb8668c`, `6965b3d`, `635fa15`. Their 
 
 Recorded in the Task 7 section of `VERIFICATION.md`.
 
+## Task 8 — Phase 13H close gate (Claude, 2026-11-12)
+
+- Installed Docker Desktop 4.99 on `D:` (program `D:\Docker\DockerDesktop`, data `D:\Docker\wsl`) at Hamzi's request, so the disposable PostgreSQL gate could run. The installer's temporary folder had to point at `D:` because `C:` has under 2 GB free.
+- Added `tests/db/test_phase13h_live_customer_roles.py`: the first disposable-DB proof for migration 031 (validated role constraints, non-launch roles rejected, developer invite/accept, last-admin protection, idempotent re-run, cross-tenant RLS).
+- Added `studio/e2e/phase13h-shell-qa.spec.ts`: a permanent regression check for the foundation routes at desktop and 390px, the mobile drawer, collapse persistence, keyboard focus and console errors.
+- Fixed one pre-existing typing issue in `control_plane/routes/identity.py` (`cast` in `_repository`; no runtime change) so the repository mypy configuration passes on all 13H modules.
+- Visual polish from capture review: member-row button labels stay on one line.
+- Updated `docs/design-system/project-profile.md` adoption status and recorded that the Ripple references govern future work but are not yet migrated.
+- Full commands and results: `VERIFICATION.md`.
+
+## Deferred to later phases (recorded, not started)
+
+- Phase 13I: convert the operational routes (knowledge, channels, API keys, providers, conversations, usage, audit), which still use inline styles and hardcoded colours.
+- Control-plane contract: a safe member display field (name/email) and a pending-invitations list, so Members can stop showing account IDs.
+- H14: decide whether the query-string invitation link needs a fragment-based hand-off for the chosen hosting setup.
+- A deliberate, approved Theme B → Ripple migration task, if Hamzi wants it.
+
 ## Next exact action
 
-Phase 13H Task 8 close gate. Do not start Phase 13I until Task 8 is committed and reviewed by Hamzi.
+STOP for Hamzi's review of Phase 13H. Do not start Phase 13I, platform management, deployment or live testing without the next instruction.

@@ -1,7 +1,7 @@
 # Project Profile
 
 **Toolkit version in use:** `1.0.0`
-**Profile last reviewed:** `2026-11-07` by `Codex, Phase 13G pilot verified locally`
+**Profile last reviewed:** `2026-11-12` by `Claude, Phase 13H customer foundation close gate`
 
 ## 1. What this project is
 
@@ -21,7 +21,9 @@
 | Conversation, audit and monitoring data | `console` inside the dashboard shell | `dense` | Wavia warm paper field | Technical values use Space Mono; tables become cards below 800px. |
 | Agent and onboarding editors | `form-flow` inside the dashboard shell | `comfortable` form regions | Wavia warm paper field | Single-column field reading order with sticky save/status controls where useful. |
 
-The Phase 13G pilot covers only `SCR-01` Agent Directory and `SCR-03` Persona Editor. It does not restyle the public Wavia website or roll the design across the other Studio screens.
+The Phase 13G pilot covered `SCR-01` Agent Directory and `SCR-03` Persona Editor. Phase 13H extended Theme B to the customer foundation routes: sign-in, workspace selection, dashboard, onboarding, agent creation, `/test`, `/settings` and `/settings/members`. Operational routes (knowledge, channels, API keys, providers, conversations, usage, audit) are still pre-pilot and convert in Phase 13I. The public Wavia website is out of scope.
+
+`docs/DESIGN.md` and `docs/design/design-tokens.json` (Wavia Ripple, supplied by Hamzi on 2026-11-10) govern future dashboard frontend work. Their §9 keeps this Theme B Studio untouched until a deliberately approved migration, and the suggested Theme B → Ripple mapping there is not yet approved. Phase 13H therefore stayed on Theme B.
 
 ## 3. Stack
 
@@ -75,7 +77,7 @@ The Phase 13G pilot covers only `SCR-01` Agent Directory and `SCR-03` Persona Ed
 | Field | Value |
 | :--- | :--- |
 | Conformance target | WCAG 2.2 AA |
-| Known gaps | Phase 13G adds a shared focus system plus loading/error/empty treatment for the two pilot screens only. Remaining screens require a separately approved rollout. |
+| Known gaps | The shared focus system and loading/error/empty treatment now cover the Phase 13G pilot screens and the Phase 13H foundation routes. The Phase 13I operational routes still use inline browser-default styling and hardcoded colours. |
 | Assistive tech tested | Automated Axe coverage exists; manual screen-reader testing has not yet been evidenced. |
 | Minimum touch target | 44x44px |
 
@@ -103,7 +105,11 @@ The Phase 13G pilot covers only `SCR-01` Agent Directory and `SCR-03` Persona Ed
 | Shared Studio shell | Yes | Yes | n/a, current Studio has no theme mechanism | Yes | Responsive collapse, active routes, role filtering and focus order verified in unit and Chromium tests. |
 | `SCR-01` Agent Directory | Yes | Yes | n/a | Yes | Ready, empty-by-data, empty-by-filter, loading and error treatments implemented; desktop/390px/320px checked. |
 | `SCR-03` Persona Editor | Yes | Yes | n/a | Yes | Route `/agents/[agentId]/build`; validation, autosave, readiness, view-only, loading and error treatments verified. |
-| Remaining Studio screens | No | No | n/a | No | Explicitly outside the pilot until Hamzi approves it. |
+| Entry and workspace selection (`/`, `/sign-in`, `/workspaces`) | Yes | Yes | n/a | Yes | Phase 13H Task 4; invitation, empty and error states, including the expired, used and wrong-email invitation messages added in Task 7. |
+| Dashboard, onboarding, agent creation | Yes | Yes | n/a | Yes | Phase 13H Task 5; desktop and 390px checked in the Task 8 shell QA journey. |
+| `/test` selector | Yes | Yes | n/a | Yes | Phase 13H Task 6. |
+| `/settings`, `/settings/members` | Yes | Yes | n/a | Yes | Phase 13H Task 7; only existing `--studio-*` tokens. Members are shown by account ID because the control-plane list exposes no name or email. |
+| Operational routes (knowledge, channels, API keys, providers, conversations, usage, audit) | No | No | n/a | No | Phase 13I scope. Inline styles and hardcoded hex values remain in `channels/*`, `api-key-manager.tsx`, `provider-credential-manager.tsx` and the channel views. |
 
 ## 9. Project-specific decisions
 

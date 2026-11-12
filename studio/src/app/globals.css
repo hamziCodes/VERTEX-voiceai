@@ -453,6 +453,7 @@ a { color: inherit; }
 .member-row__role { display: flex; flex: 1 1 300px; gap: 8px; min-width: 0; }
 .member-row__role select { flex: 1 1 auto; background: var(--studio-paper); border: 1px solid var(--studio-border); border-radius: var(--studio-radius-control); min-height: 44px; min-width: 0; padding: 8px 11px; }
 .member-row__role select:disabled { color: var(--studio-ink-muted); cursor: not-allowed; }
+.member-row__controls .button { white-space: nowrap; }
 .member-row__warning { flex-basis: 100%; font-size: 12px; margin: 4px 0 0; }
 .invite-form { display: grid; gap: 16px; }
 .role-choice-grid legend { font-size: 13px; font-weight: 700; margin-bottom: 4px; padding: 0; }

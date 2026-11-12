@@ -4,7 +4,7 @@
 
 **Canonical development branch:** `wavia-fixv1`
 
-**Current implementation checkpoint:** Phase 13H Tasks 1-6 complete; Tasks 7-8 not started
+**Current implementation checkpoint:** Phase 13H complete locally (Tasks 1-8, 2026-11-12); awaiting Hamzi review before Phase 13I. Sections 7 and 18 below describe the earlier Task 6 checkpoint; `Codex Fix/evidence/phase-13h/` and `EXECUTION_TRACKER.md` hold the current state.
 
 **Purpose:** Preserve the decisions, evidence, operating rules, completed work, known limits and exact continuation path for the Wavia production-remediation program.
 

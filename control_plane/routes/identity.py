@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -56,7 +56,7 @@ def _repository(request: Request) -> StudioRepository:
     repository = getattr(request.app.state, "studio_repository", None)
     if repository is None:
         raise HTTPException(status_code=503, detail="Studio repository unavailable.")
-    return repository
+    return cast(StudioRepository, repository)
 
 
 async def _user_for_identity(
