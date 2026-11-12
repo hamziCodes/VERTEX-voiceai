@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 
+import { ConfirmDialog } from "@/components/studio/confirm-dialog";
 import { FormField } from "@/components/studio/form-field";
 import { StatusBadge } from "@/components/studio/status-badge";
 
@@ -191,15 +192,19 @@ export function MemberManager({ members, currentUserId, workspaceName, canManage
       </div>
 
       {removing ? (
-        <RemoveMemberDialog
+        <ConfirmDialog
           busy={pendingMember === removing.user_id}
-          memberName={memberName(removing, currentUserId)}
+          confirmLabel="Remove member"
           onCancel={() => setRemoving(null)}
-          onConfirm={async () => {
-            if (await confirmRemove(removing)) setRemoving(null);
+          onConfirm={() => {
+            void confirmRemove(removing).then((removed) => { if (removed) setRemoving(null); });
           }}
-          workspaceName={workspaceName}
-        />
+          title="Remove member"
+        >
+          <p>
+            Remove <strong>{memberName(removing, currentUserId)}</strong>? They lose access to {workspaceName} immediately. To restore access later, send a new invitation.
+          </p>
+        </ConfirmDialog>
       ) : null}
     </div>
   );
@@ -294,45 +299,6 @@ function InvitationPanel({ onInvite }: { onInvite: MemberManagerProps["onInvite"
           {submitting ? "Creating invitation…" : "Create invitation"}
         </button>
       </form>
-    </div>
-  );
-}
-
-function RemoveMemberDialog({ busy, memberName, onCancel, onConfirm, workspaceName }: {
-  busy: boolean;
-  memberName: string;
-  onCancel(): void;
-  onConfirm(): Promise<void>;
-  workspaceName: string;
-}) {
-  const titleId = useId();
-  const cancelRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    cancelRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape" && !busy) onCancel(); };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("keydown", closeOnEscape);
-      previous?.focus?.();
-    };
-  }, [busy, onCancel]);
-
-  return (
-    <div className="studio-dialog-backdrop">
-      <div aria-labelledby={titleId} aria-modal="true" className="studio-dialog" role="dialog">
-        <h2 id={titleId}>Remove member</h2>
-        <p>
-          Remove <strong>{memberName}</strong>? They lose access to {workspaceName} immediately. To restore access later, send a new invitation.
-        </p>
-        <div className="member-panel__actions">
-          <button className="button button--secondary" disabled={busy} onClick={onCancel} ref={cancelRef} type="button">Cancel</button>
-          <button className="button button--danger" disabled={busy} onClick={() => void onConfirm()} type="button">
-            {busy ? "Removing…" : "Remove member"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

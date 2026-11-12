@@ -467,6 +467,16 @@ a { color: inherit; }
 .studio-dialog { background: var(--studio-surface); border: 1px solid var(--studio-border); border-radius: var(--studio-radius-panel); box-shadow: var(--studio-shadow); max-width: 460px; padding: 24px; width: 100%; }
 .studio-dialog h2 { font-family: var(--font-bricolage), sans-serif; font-size: 21px; margin: 0 0 8px; }
 .studio-dialog p { color: var(--studio-ink-muted); margin: 0; }
+.studio-dialog__body { color: var(--studio-ink-muted); }
+.studio-dialog__body > * + * { margin-top: 10px; }
+.studio-dialog__error { margin: 14px 0 0; }
+.studio-dialog__actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+
+/* Phase 13I shared operational primitives */
+.route-tabs { border-bottom: 1px solid var(--studio-border); display: flex; gap: 4px; margin-bottom: 22px; max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
+.route-tabs__link { border-bottom: 2px solid transparent; color: var(--studio-ink-muted); flex: 0 0 auto; font-size: 14px; font-weight: 600; min-height: 44px; padding: 12px 14px 10px; text-decoration: none; }
+.route-tabs__link:hover { color: var(--studio-ink); }
+.route-tabs__link[aria-current="page"] { border-bottom-color: var(--studio-accent); color: var(--studio-accent); }
 
 @media (max-width: 1080px) {
   .member-layout { grid-template-columns: 1fr; }
