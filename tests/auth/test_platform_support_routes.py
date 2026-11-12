@@ -385,3 +385,27 @@ def test_operations_snapshot_is_admin_only_and_honest(support_api) -> None:
     }
     for forbidden in ("SECRET", "password", "token", "DATABASE_URL", "postgresql://"):
         assert forbidden not in response.text
+
+
+def test_expired_support_session_returns_gone(support_api, monkeypatch) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    client, repository, ids = support_api
+    session = _start(client, ids["tenant"], duration_minutes=15).json()["session_id"]
+    later = datetime.now(UTC) + timedelta(minutes=16)
+    monkeypatch.setattr(repository, "_now", lambda: later)
+
+    path = f"/v1/platform/support-sessions/{session}/configuration"
+    assert client.get(path, headers=_auth("support")).status_code == 410
+    detail = client.get(
+        f"/v1/platform/support-sessions/{session}", headers=_auth("support")
+    )
+    assert detail.json()["state"] == "expired"
+    ended = client.post(
+        f"/v1/platform/support-sessions/{session}/end",
+        headers=_auth("support"),
+        json={},
+    )
+    assert ended.status_code == 410
+    # An expired session does not block a new one for the same tenant.
+    assert _start(client, ids["tenant"]).status_code == 201
