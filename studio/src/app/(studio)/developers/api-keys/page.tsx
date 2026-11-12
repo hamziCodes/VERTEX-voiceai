@@ -1,7 +1,8 @@
 import { hasWorkspaceCapability, requireWorkspace } from "@/auth/workspace";
-import { listAPIKeys } from "@/features/api-keys/data";
+import { PageHeader } from "@/components/studio/page-header";
 import { createAPIKeyAction, revokeAPIKeyAction } from "@/features/api-keys/actions";
 import { APIKeyManager } from "@/features/api-keys/api-key-manager";
+import { listAPIKeys } from "@/features/api-keys/data";
 
 export default async function APIKeysPage() {
   const { membership } = await requireWorkspace("api_key:read");
@@ -18,11 +19,18 @@ export default async function APIKeysPage() {
   }
 
   return (
-    <APIKeyManager
-      keys={keys}
-      canManage={canManage}
-      onCreate={handleCreate}
-      onRevoke={revokeAPIKeyAction}
-    />
+    <section className="developer-page">
+      <PageHeader
+        eyebrow="Developer"
+        summary="Manage server-side keys that mint short-lived voice sessions for the SDK. Keys never belong in browser or mobile code."
+        title="API keys"
+      />
+      <APIKeyManager
+        keys={keys}
+        canManage={canManage}
+        onCreate={handleCreate}
+        onRevoke={revokeAPIKeyAction}
+      />
+    </section>
   );
 }

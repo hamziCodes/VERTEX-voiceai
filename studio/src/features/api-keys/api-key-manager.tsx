@@ -1,7 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+
+import { ConfirmDialog } from "@/components/studio/confirm-dialog";
+import { FormDialog } from "@/components/studio/form-dialog";
+import { FormField } from "@/components/studio/form-field";
+import { StatusBadge } from "@/components/studio/status-badge";
 import type { APIKeyDto, CreateApiKeyResponseDto } from "@/data/schema";
+import { formatDate } from "@/lib/format";
+
 import type { CreateAPIKeyInput } from "./types";
 
 export interface APIKeyManagerProps {
@@ -11,14 +18,23 @@ export interface APIKeyManagerProps {
   onRevoke: (keyId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
+const KEY_ROLES: ReadonlyArray<{ value: CreateAPIKeyInput["role"]; label: string; description: string }> = [
+  { value: "tenant_viewer", label: "Read and mint sessions", description: "Machine role tenant_viewer. Recommended for a server that only starts voice sessions." },
+  { value: "tenant_editor", label: "Edit and mint sessions", description: "Machine role tenant_editor. Also allows editor-level API access." },
+];
+
+function keyStatus(key: APIKeyDto): { label: string; tone: "success" | "danger" | "neutral" } {
+  if (key.revoked_at) return { label: "Revoked", tone: "danger" };
+  if (key.expires_at && new Date(key.expires_at) < new Date()) return { label: "Expired", tone: "neutral" };
+  return { label: "Active", tone: "success" };
+}
+
 export function APIKeyManager({ keys, canManage, onCreate, onRevoke }: APIKeyManagerProps) {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createdResult, setCreatedResult] = useState<CreateApiKeyResponseDto | null>(null);
-  const [hasCopied, setHasCopied] = useState(false);
-  const [acknowledged, setAcknowledged] = useState(false);
 
   const [name, setName] = useState("");
-  const [role, setRole] = useState<"tenant_viewer" | "tenant_editor">("tenant_viewer");
+  const [role, setRole] = useState<CreateAPIKeyInput["role"]>("tenant_viewer");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -26,7 +42,7 @@ export function APIKeyManager({ keys, canManage, onCreate, onRevoke }: APIKeyMan
   const [isRevoking, setIsRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
-  async function handleCreateSubmit(e: React.FormEvent) {
+  async function handleCreateSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!name.trim()) return;
 
@@ -41,27 +57,11 @@ export function APIKeyManager({ keys, canManage, onCreate, onRevoke }: APIKeyMan
       setIsCreateOpen(false);
       setName("");
       setCreatedResult(res);
-      setHasCopied(false);
-      setAcknowledged(false);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to create key.");
     } finally {
       setIsSubmitting(false);
     }
-  }
-
-  async function handleCopyKey(secret: string) {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      await navigator.clipboard.writeText(secret);
-      setHasCopied(true);
-    }
-  }
-
-  function handleCloseReveal() {
-    if (!acknowledged) return;
-    setCreatedResult(null);
-    setHasCopied(false);
-    setAcknowledged(false);
   }
 
   async function handleConfirmRevoke() {
@@ -83,262 +83,155 @@ export function APIKeyManager({ keys, canManage, onCreate, onRevoke }: APIKeyMan
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h2>API Keys</h2>
-          <p>Manage API keys for server-side token minting and backend SDK integration.</p>
+    <div className="developer-view">
+      <section aria-labelledby="api-keys-list-heading" className="form-panel">
+        <div className="developer-toolbar">
+          <div>
+            <h2 id="api-keys-list-heading">Workspace keys</h2>
+            <p className="muted-copy">Keys mint short-lived voice sessions from your server. Only the prefix is ever shown after creation.</p>
+          </div>
+          {canManage ? (
+            <button className="button button--primary" onClick={() => { setFormError(null); setIsCreateOpen(true); }} type="button">
+              Create API key
+            </button>
+          ) : null}
         </div>
-        {canManage && (
-          <button type="button" onClick={() => setIsCreateOpen(true)}>
-            Create API Key
-          </button>
-        )}
-      </header>
+        {!canManage ? <p className="inline-notice inline-notice--info">Your role can view API keys but cannot create or revoke them.</p> : null}
 
-      <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-        <thead>
-          <tr style={{ borderBottom: "2px solid #e4e4e7" }}>
-            <th style={{ padding: "0.75rem 0.5rem" }}>Name</th>
-            <th style={{ padding: "0.75rem 0.5rem" }}>Key Prefix</th>
-            <th style={{ padding: "0.75rem 0.5rem" }}>Role</th>
-            <th style={{ padding: "0.75rem 0.5rem" }}>Scopes</th>
-            <th style={{ padding: "0.75rem 0.5rem" }}>Created</th>
-            <th style={{ padding: "0.75rem 0.5rem" }}>Status</th>
-            {canManage && <th style={{ padding: "0.75rem 0.5rem" }}>Actions</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {keys.map((k) => {
-            const isRevoked = Boolean(k.revoked_at);
-            const isExpired = Boolean(k.expires_at && new Date(k.expires_at) < new Date());
-            const statusLabel = isRevoked ? "Revoked" : isExpired ? "Expired" : "Active";
-
-            return (
-              <tr key={k.key_id} style={{ borderBottom: "1px solid #f4f4f5" }}>
-                <td style={{ padding: "0.75rem 0.5rem", fontWeight: 500 }}>{k.name}</td>
-                <td style={{ padding: "0.75rem 0.5rem", fontFamily: "monospace" }}>
-                  {k.key_prefix}...
-                </td>
-                <td style={{ padding: "0.75rem 0.5rem" }}>{k.role}</td>
-                <td style={{ padding: "0.75rem 0.5rem" }}>
-                  {k.scopes.map((s) => (
-                    <code key={s} style={{ marginRight: "0.25rem" }}>
-                      {s}
-                    </code>
-                  ))}
-                </td>
-                <td style={{ padding: "0.75rem 0.5rem", color: "#666" }}>
-                  {k.created_at ? new Date(k.created_at).toLocaleDateString() : "-"}
-                </td>
-                <td style={{ padding: "0.75rem 0.5rem" }}>
-                  <span
-                    style={{
-                      padding: "0.2rem 0.5rem",
-                      borderRadius: "4px",
-                      fontSize: "0.8rem",
-                      fontWeight: 600,
-                      background: isRevoked || isExpired ? "#fee2e2" : "#dcfce7",
-                      color: isRevoked || isExpired ? "#991b1b" : "#166534",
-                    }}
-                  >
-                    {statusLabel}
-                  </span>
-                </td>
-                {canManage && (
-                  <td style={{ padding: "0.75rem 0.5rem" }}>
-                    {!isRevoked && !isExpired && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setRevokingKey(k);
-                          setRevokeError(null);
-                        }}
-                        style={{ color: "#dc2626", background: "none", border: "none", cursor: "pointer" }}
-                      >
-                        Revoke
-                      </button>
-                    )}
-                  </td>
-                )}
+        {keys.length === 0 ? (
+          <p className="muted-copy developer-empty">No API keys created yet.</p>
+        ) : (
+          <table aria-label="API keys" className="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Key prefix</th>
+                <th scope="col">Role</th>
+                <th scope="col">Scopes</th>
+                <th scope="col">Created</th>
+                <th scope="col">Status</th>
+                {canManage ? <th scope="col"><span className="sr-only">Actions</span></th> : null}
               </tr>
-            );
-          })}
-          {keys.length === 0 && (
-            <tr>
-              <td colSpan={canManage ? 7 : 6} style={{ padding: "1.5rem", textAlign: "center", color: "#888" }}>
-                No API keys created yet.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {keys.map((k) => {
+                const status = keyStatus(k);
+                return (
+                  <tr key={k.key_id}>
+                    <td data-label="Name"><strong>{k.name}</strong></td>
+                    <td data-label="Key prefix"><span className="technical-value">{k.key_prefix}...</span></td>
+                    <td data-label="Role"><span className="technical-value">{k.role}</span></td>
+                    <td data-label="Scopes">
+                      <span className="token-list">{k.scopes.map((s) => <code className="technical-value" key={s}>{s}</code>)}</span>
+                    </td>
+                    <td data-label="Created">{formatDate(k.created_at)}</td>
+                    <td data-label="Status"><StatusBadge tone={status.tone}>{status.label}</StatusBadge></td>
+                    {canManage ? (
+                      <td className="data-table__actions" data-label="Actions">
+                        {status.label === "Active" ? (
+                          <button
+                            aria-label={`Revoke ${k.name}`}
+                            className="button button--quiet-danger"
+                            onClick={() => { setRevokingKey(k); setRevokeError(null); }}
+                            type="button"
+                          >
+                            Revoke
+                          </button>
+                        ) : null}
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
 
-      {/* Create Dialog */}
-      {isCreateOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100,
-          }}
+      {isCreateOpen ? (
+        <FormDialog
+          busy={isSubmitting}
+          description="The key is shown once after creation. Store it in your server's secret manager or environment, never in browser code."
+          error={formError}
+          onCancel={() => setIsCreateOpen(false)}
+          onSubmit={(event) => void handleCreateSubmit(event)}
+          submitDisabled={!name.trim()}
+          submitLabel="Generate key"
+          title="Create API key"
         >
-          <div style={{ background: "#fff", padding: "1.5rem", borderRadius: "8px", width: "420px" }}>
-            <h3>Create API Key</h3>
-            <form onSubmit={handleCreateSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "1rem" }}>
-              <div>
-                <label htmlFor="key-name" style={{ display: "block", fontSize: "0.9rem", marginBottom: "0.25rem" }}>
-                  Key Name
-                </label>
-                <input
-                  id="key-name"
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  style={{ width: "100%", padding: "0.5rem" }}
-                  placeholder="e.g. Production Web Client"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="key-role" style={{ display: "block", fontSize: "0.9rem", marginBottom: "0.25rem" }}>
-                  Role
-                </label>
-                <select
-                  id="key-role"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as "tenant_viewer" | "tenant_editor")}
-                  style={{ width: "100%", padding: "0.5rem" }}
-                >
-                  <option value="tenant_viewer">tenant_viewer (minting & read access)</option>
-                  <option value="tenant_editor">tenant_editor (minting & editor access)</option>
-                </select>
-              </div>
-
-              {formError && <div style={{ color: "#dc2626", fontSize: "0.85rem" }}>{formError}</div>}
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
-                <button type="button" onClick={() => setIsCreateOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? "Generating..." : "Generate Key"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* One-Time Reveal Modal */}
-      {createdResult && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 110,
-          }}
-        >
-          <div style={{ background: "#fff", padding: "1.5rem", borderRadius: "8px", width: "480px" }}>
-            <h3 style={{ color: "#b45309" }}>Save this secret key now</h3>
-            <p style={{ fontSize: "0.9rem", color: "#4b5563" }}>
-              You will not be able to see it again. Copy and store it safely in your environment variables.
-            </p>
-
-            <div
-              style={{
-                background: "#f4f4f5",
-                padding: "0.75rem",
-                borderRadius: "4px",
-                fontFamily: "monospace",
-                wordBreak: "break-all",
-                margin: "1rem 0",
-              }}
-            >
-              {createdResult.api_key}
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
-              <button type="button" onClick={() => handleCopyKey(createdResult.api_key)}>
-                {hasCopied ? "Copied!" : "Copy to Clipboard"}
-              </button>
-            </div>
-
-            <div style={{ marginBottom: "1rem" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  aria-label="I have copied this secret key"
-                  checked={acknowledged}
-                  onChange={(e) => setAcknowledged(e.target.checked)}
-                />
-                I have copied this secret key
+          <FormField hint="For example Production web client." label="Key name" name="key-name">
+            <input maxLength={128} onChange={(e) => setName(e.target.value)} required type="text" value={name} />
+          </FormField>
+          <fieldset className="choice-grid">
+            <legend className="choice-grid__legend">Role</legend>
+            {KEY_ROLES.map((option) => (
+              <label className="choice-card" key={option.value}>
+                <input checked={role === option.value} name="key-role" onChange={() => setRole(option.value)} type="radio" value={option.value} />
+                <span className="choice-card__copy">
+                  <strong>{option.label}</strong>
+                  <span>{option.description}</span>
+                </span>
               </label>
-            </div>
+            ))}
+          </fieldset>
+        </FormDialog>
+      ) : null}
 
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button type="button" disabled={!acknowledged} onClick={handleCloseReveal}>
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {createdResult ? <SecretReveal onDone={() => setCreatedResult(null)} secret={createdResult.api_key} /> : null}
 
-      {/* Revoke Confirmation Dialog */}
-      {revokingKey && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100,
-          }}
+      {revokingKey ? (
+        <ConfirmDialog
+          busy={isRevoking}
+          confirmLabel="Confirm revoke"
+          error={revokeError}
+          onCancel={() => { setRevokingKey(null); setRevokeError(null); }}
+          onConfirm={() => void handleConfirmRevoke()}
+          title="Revoke API key"
         >
-          <div style={{ background: "#fff", padding: "1.5rem", borderRadius: "8px", width: "420px" }}>
-            <h3 style={{ color: "#dc2626" }}>Revoke API Key</h3>
-            <p style={{ fontSize: "0.9rem", color: "#4b5563", margin: "1rem 0" }}>
-              Are you sure you want to revoke <strong>{revokingKey.name}</strong>? Any services using this key will immediately lose access.
-            </p>
-            {revokeError && <p role="alert" style={{ color: "#dc2626" }}>{revokeError}</p>}
+          <p>Are you sure you want to revoke “{revokingKey.name}”? Any services using this key will immediately lose access.</p>
+        </ConfirmDialog>
+      ) : null}
+    </div>
+  );
+}
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
-              <button type="button" disabled={isRevoking} onClick={() => {
-                setRevokingKey(null);
-                setRevokeError(null);
-              }}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isRevoking}
-                onClick={handleConfirmRevoke}
-                style={{ background: "#dc2626", color: "#fff" }}
-              >
-                {isRevoking ? "Revoking..." : "Confirm Revoke"}
-              </button>
-            </div>
-          </div>
+/** One-time secret reveal: cannot be dismissed (Escape or Done) until the person confirms they copied it. */
+function SecretReveal({ onDone, secret }: { onDone(): void; secret: string }) {
+  const titleId = useId();
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [hasCopied, setHasCopied] = useState(false);
+  const copyRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    copyRef.current?.focus();
+  }, []);
+
+  async function copy() {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      await navigator.clipboard.writeText(secret);
+      setHasCopied(true);
+    }
+  }
+
+  return (
+    <div className="studio-dialog-backdrop">
+      <div aria-labelledby={titleId} aria-modal="true" className="studio-dialog studio-dialog--secret" role="dialog">
+        <h2 id={titleId}>Save this secret key now</h2>
+        <p className="studio-dialog__body">You will not be able to see it again. Copy it into your server&apos;s secret manager or environment variables.</p>
+        <pre className="secret-value">{secret}</pre>
+        <div className="studio-dialog__actions studio-dialog__actions--start">
+          <button className="button button--secondary" onClick={() => void copy()} ref={copyRef} type="button">
+            {hasCopied ? "Copied" : "Copy to clipboard"}
+          </button>
         </div>
-      )}
+        <label className="checkbox-row">
+          <input aria-label="I have copied this secret key" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} type="checkbox" />
+          <span>I have copied this secret key</span>
+        </label>
+        <div className="studio-dialog__actions">
+          <button className="button button--primary" disabled={!acknowledged} onClick={onDone} type="button">Done</button>
+        </div>
+      </div>
     </div>
   );
 }

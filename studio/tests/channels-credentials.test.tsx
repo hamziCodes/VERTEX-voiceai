@@ -19,8 +19,18 @@ vi.mock("@/auth/workspace", async () => {
 vi.mock("@/features/agents/data", () => ({ loadAgents }));
 vi.mock("@/features/channels/data", () => ({ getTelephonySettings }));
 vi.mock("@/features/channels/actions", () => ({ saveTelephonyPolicyAction: vi.fn() }));
+const { listAPIKeys, providerData } = vi.hoisted(() => ({
+  listAPIKeys: vi.fn(),
+  providerData: { getProviderCatalog: vi.fn(), listProviderCredentials: vi.fn(), getWorkspaceEntitlements: vi.fn() },
+}));
+vi.mock("@/features/api-keys/data", () => ({ listAPIKeys }));
+vi.mock("@/features/api-keys/actions", () => ({ createAPIKeyAction: vi.fn(), revokeAPIKeyAction: vi.fn() }));
+vi.mock("@/features/providers/data", () => providerData);
+vi.mock("@/features/providers/actions", () => ({ storeProviderCredentialAction: vi.fn(), revokeProviderCredentialAction: vi.fn() }));
 
 import TelephonyChannelPage from "@/app/(studio)/channels/telephony/page";
+import APIKeysPage from "@/app/(studio)/developers/api-keys/page";
+import ProvidersSettingsPage from "@/app/(studio)/settings/providers/page";
 import WebChannelPage from "@/app/(studio)/channels/web/page";
 
 import { WebChannelView } from "@/features/channels/web-channel-view";
@@ -360,5 +370,84 @@ describe("ProviderCredentialManager", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Credential remains active.");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+});
+
+describe("developer surfaces", () => {
+  const workspace = (capabilities: string[]) => ({ session: { accessToken: "offline" }, membership: { tenant_id: "33333333-3333-4333-8333-333333333333", capabilities } });
+
+  it("composes the API keys page with a shared header and no inline styles", async () => {
+    requireWorkspace.mockResolvedValue(workspace(["api_key:read", "api_key:write"]));
+    listAPIKeys.mockResolvedValue(sampleKeys);
+
+    const { container } = render(await APIKeysPage());
+
+    expect(requireWorkspace).toHaveBeenCalledWith("api_key:read");
+    expect(screen.getByRole("heading", { level: 1, name: "API keys" })).toBeVisible();
+    expect(container.querySelectorAll("[style]")).toHaveLength(0);
+    const table = screen.getByRole("table", { name: "API keys" });
+    const rows = within(table).getAllByRole("row");
+    expect(rows[1]).toHaveTextContent("Production Web Client");
+    expect(within(rows[1]).getByText("Active")).toBeVisible();
+    expect(within(rows[2]).getByText("Revoked")).toBeVisible();
+    expect(within(rows[1]).getByText("1 Oct 2026")).toBeVisible();
+  });
+
+  it("opens a labelled create dialog that focuses the name field and closes on Escape", () => {
+    render(<APIKeyManager keys={sampleKeys} canManage onCreate={vi.fn()} onRevoke={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Create API key" });
+    expect(within(dialog).getByLabelText("Key name")).toHaveFocus();
+    expect(within(dialog).getAllByRole("radio")).toHaveLength(2);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("does not let Escape dismiss an unacknowledged one-time secret", async () => {
+    const onCreate = vi.fn().mockResolvedValue({ api_key: "wavia_live_escape_secret_1", key: { ...sampleKeys[0], key_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" } });
+    render(<APIKeyManager keys={sampleKeys} canManage onCreate={onCreate} onRevoke={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+    fireEvent.change(screen.getByLabelText("Key name"), { target: { value: "Escape test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate key" }));
+
+    const reveal = await screen.findByRole("dialog", { name: "Save this secret key now" });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(reveal).toBeInTheDocument();
+    expect(within(reveal).getByText("wavia_live_escape_secret_1")).toBeVisible();
+  });
+
+  it("revokes a key through the shared confirmation dialog", () => {
+    render(<APIKeyManager keys={sampleKeys} canManage onCreate={vi.fn()} onRevoke={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Revoke Production Web Client" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Revoke API key" });
+    expect(dialog).toHaveTextContent("Production Web Client");
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+  });
+
+  it("composes provider credentials with readable provider names and shared dialogs", async () => {
+    requireWorkspace.mockResolvedValue(workspace(["provider_credential:read", "provider_credential:write"]));
+    providerData.getProviderCatalog.mockResolvedValue(sampleCatalog);
+    providerData.listProviderCredentials.mockResolvedValue(sampleCredentials);
+    providerData.getWorkspaceEntitlements.mockResolvedValue({ advanced_providers_enabled: false });
+
+    const { container } = render(await ProvidersSettingsPage());
+
+    expect(requireWorkspace).toHaveBeenCalledWith("provider_credential:read");
+    expect(screen.getByRole("heading", { level: 1, name: "AI provider credentials" })).toBeVisible();
+    expect(container.querySelectorAll("[style]")).toHaveLength(0);
+    for (const stage of ["Speech-to-text (STT)", "Language models (LLM)", "Text-to-speech (TTS)"]) {
+      expect(screen.getByRole("table", { name: stage })).toBeVisible();
+    }
+    expect(screen.getByRole("cell", { name: "Groq" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Configure groq" }));
+    const configure = screen.getByRole("dialog", { name: "Configure Groq" });
+    expect(within(configure).getByLabelText("API key or secret")).toHaveFocus();
+    fireEvent.click(within(configure).getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(screen.getByRole("button", { name: /^revoke$/i }));
+    expect(screen.getByRole("dialog", { name: "Revoke credential" })).toHaveTextContent("Groq");
   });
 });
