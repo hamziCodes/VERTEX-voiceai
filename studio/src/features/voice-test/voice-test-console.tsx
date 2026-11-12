@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { StatusBadge } from "@/components/studio/status-badge";
+
 import { browserVoiceSupported, createBrowserVoiceRuntime } from "./sdk-runtime";
 import type { ConnectionState, MintVoiceSession, VoiceRuntime, VoiceRuntimeFactory, VoiceTestMode } from "./types";
 
@@ -10,6 +12,13 @@ interface TranscriptLine {
   speaker: "user" | "agent";
   text: string;
 }
+
+const MODE_TONE: Record<VoiceTestMode, "neutral" | "info" | "success"> = {
+  disabled: "neutral",
+  offline: "info",
+  mock: "info",
+  live: "success",
+};
 
 const MODE_LABEL: Record<VoiceTestMode, string> = {
   disabled: "Live disabled",
@@ -144,44 +153,64 @@ export function VoiceTestConsole({
     }
   }
 
+  const connectionLabel = starting ? "starting" : connection;
+  const connectionTone = connectionLabel === "connected" ? "success" : connectionLabel === "disconnected" ? "neutral" : "warning";
+
   return (
-    <section aria-labelledby="voice-test-title">
-      <div>
-        <p>Voice test environment</p>
-        <strong>{MODE_LABEL[mode]}</strong>
-      </div>
-      <h2 id="voice-test-title">Test {agentName}</h2>
-      <p>This uses a short-lived session token. Provider keys never enter the browser.</p>
-      {!canStart ? <p>You have view-only access to test status.</p> : null}
-      {!supported ? <p role="alert">This browser cannot run a microphone voice test. Use a current Chrome or Edge browser with microphone access.</p> : null}
-      {error ? <p role="alert">{error}</p> : null}
-      {message ? <p role="status">{message}</p> : null}
-      <p>Connection: <strong>{starting ? "Starting" : connection}</strong></p>
-      <div>
-        <button type="button" onClick={start} disabled={!canStart || !supported || starting || connection !== "disconnected"}>Start voice test</button>
-        <button type="button" onClick={stop} disabled={connection === "disconnected" && !starting}>End test</button>
-      </div>
-
-      <section aria-labelledby="transcript-title">
-        <h3 id="transcript-title">Transcript</h3>
-        {transcript.length === 0 ? <p>Speak after the session connects. Transcript lines will appear here.</p> : (
-          <ol>
-            {transcript.map((line) => <li key={line.id}><strong>{line.speaker === "user" ? "You" : agentName}:</strong> {line.text}</li>)}
-          </ol>
-        )}
-        <p>{audioReceived ? "Audio received" : "No agent audio yet"}</p>
+    <section aria-labelledby="voice-test-title" className="voice-console">
+      <section aria-label="Session status" className="form-panel voice-console__status">
+        <div className="voice-console__heading">
+          <div>
+            <p className="screen-eyebrow">Voice test environment</p>
+            <h2 id="voice-test-title">Test {agentName}</h2>
+            <p className="muted-copy">This uses a short-lived session token. Provider keys never enter the browser.</p>
+          </div>
+          <StatusBadge tone={MODE_TONE[mode]}>{MODE_LABEL[mode]}</StatusBadge>
+        </div>
+        {!canStart ? <p className="inline-notice inline-notice--info">You have view-only access to test status.</p> : null}
+        {!supported ? <p className="inline-notice inline-notice--danger" role="alert">This browser cannot run a microphone voice test. Use a current Chrome or Edge browser with microphone access.</p> : null}
+        {error ? <p className="inline-notice inline-notice--danger" role="alert">{error}</p> : null}
+        {message ? <p className="inline-notice inline-notice--info" role="status">{message}</p> : null}
+        <div className="voice-console__controls">
+          <p className="voice-console__connection">Connection: <StatusBadge tone={connectionTone}>{connectionLabel}</StatusBadge></p>
+          <div className="voice-console__buttons">
+            <button className="button button--primary" type="button" onClick={start} disabled={!canStart || !supported || starting || connection !== "disconnected"}>Start voice test</button>
+            <button className="button button--secondary" type="button" onClick={stop} disabled={connection === "disconnected" && !starting}>End test</button>
+          </div>
+        </div>
       </section>
 
-      <section aria-labelledby="latency-title">
-        <h3 id="latency-title">Turn latency</h3>
-        <dl>
-          <div><dt>Speech recognition</dt><dd>{metricValue(metrics, "stt_after_acoustic_end")}</dd></div>
-          <div><dt>First model token</dt><dd>{metricValue(metrics, "llm_ttft")}</dd></div>
-          <div><dt>First speech audio</dt><dd>{metricValue(metrics, "tts_ttfb")}</dd></div>
-          <div><dt>Audible end to end</dt><dd>{metricValue(metrics, "user_perceived_e2e")}</dd></div>
-        </dl>
-        <p>Latency remains unmeasured until the worker reports a completed turn.</p>
-      </section>
+      <div className="voice-console__grid">
+        <section aria-labelledby="transcript-title" className="form-panel">
+          <div className="voice-console__panel-title">
+            <h3 id="transcript-title">Transcript</h3>
+            <StatusBadge tone={audioReceived ? "success" : "neutral"}>{audioReceived ? "Audio received" : "No agent audio yet"}</StatusBadge>
+          </div>
+          {transcript.length === 0 ? <p className="muted-copy">Speak after the session connects. Transcript lines will appear here.</p> : (
+            <ol className="voice-transcript">
+              {transcript.map((line) => (
+                <li className={line.speaker === "user" ? "voice-transcript__line" : "voice-transcript__line voice-transcript__line--agent"} key={line.id}>
+                  <span className="voice-transcript__speaker">{line.speaker === "user" ? "You" : agentName}</span>
+                  <span>{line.text}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+
+        <section aria-labelledby="latency-title" className="form-panel">
+          <div className="voice-console__panel-title">
+            <h3 id="latency-title">Turn latency</h3>
+          </div>
+          <dl className="voice-metrics">
+            <div><dt>Speech recognition</dt><dd>{metricValue(metrics, "stt_after_acoustic_end")}</dd></div>
+            <div><dt>First model token</dt><dd>{metricValue(metrics, "llm_ttft")}</dd></div>
+            <div><dt>First speech audio</dt><dd>{metricValue(metrics, "tts_ttfb")}</dd></div>
+            <div><dt>Audible end to end</dt><dd>{metricValue(metrics, "user_perceived_e2e")}</dd></div>
+          </dl>
+          <p className="field-help">Latency remains unmeasured until the worker reports a completed turn.</p>
+        </section>
+      </div>
     </section>
   );
 }

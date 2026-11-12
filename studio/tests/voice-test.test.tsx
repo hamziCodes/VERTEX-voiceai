@@ -2,9 +2,20 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const { loadAgent, requireWorkspace } = vi.hoisted(() => ({ loadAgent: vi.fn(), requireWorkspace: vi.fn() }));
+vi.mock("next/navigation", () => ({ notFound: vi.fn(), usePathname: () => "/agents/11111111-1111-4111-8111-111111111111/test" }));
+vi.mock("@/features/agents/data", () => ({ loadAgent }));
+vi.mock("@/features/voice-test/actions", () => ({ mintVoiceSessionAction: vi.fn() }));
+vi.mock("@/features/voice-test/config", () => ({ configuredVoiceTestMode: () => "mock" }));
+vi.mock("@/auth/workspace", async () => {
+  const permissions = await import("@/auth/workspace-permissions");
+  return { hasWorkspaceCapability: permissions.hasWorkspaceCapability, requireWorkspace };
+});
+
+import AgentTestPage from "@/app/(studio)/agents/[agentId]/test/page";
 import { VoiceTestConsole } from "@/features/voice-test/voice-test-console";
 import { validateWorkerMode } from "@/features/voice-test/sdk-runtime";
 import type { VoiceRuntime, VoiceRuntimeFactory } from "@/features/voice-test/types";
@@ -118,5 +129,39 @@ describe("browser voice test", () => {
     resolveMint(session);
     await waitFor(() => expect(screen.getByText(/Connection:/)).toHaveTextContent("disconnected"));
     expect(factory).not.toHaveBeenCalled();
+  });
+
+  it("composes status, transcript and latency regions without inline styles", async () => {
+    const { container } = render(<VoiceTestConsole agentId="11111111-1111-4111-8111-111111111111" agentName="Store assistant" canStart mintSession={vi.fn().mockResolvedValue(session)} runtimeFactory={runtimeFactory()} browserSupported />);
+
+    expect(container.querySelectorAll("[style]")).toHaveLength(0);
+    const status = screen.getByRole("region", { name: "Session status" });
+    expect(within(status).getByText("Mock mode")).toBeVisible();
+    expect(within(status).getByText(/Connection:/)).toHaveTextContent("disconnected");
+    expect(within(screen.getByRole("region", { name: "Transcript" })).getByText("Speak after the session connects. Transcript lines will appear here.")).toBeVisible();
+    const latency = screen.getByRole("region", { name: "Turn latency" });
+    expect(within(latency).getAllByText("Not measured")).toHaveLength(4);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start voice test" }));
+    await waitFor(() => expect(within(status).getByText(/Connection:/)).toHaveTextContent("connected"));
+    const lines = within(screen.getByRole("region", { name: "Transcript" })).getAllByRole("listitem");
+    expect(lines[0]).toHaveTextContent("You");
+    expect(lines[1]).toHaveTextContent("Store assistant");
+    expect(within(latency).getByText("690 ms")).toBeVisible();
+  });
+});
+
+describe("browser voice test page", () => {
+  it("uses the shared header and explains why a draft agent cannot start", async () => {
+    requireWorkspace.mockResolvedValue({ session: { accessToken: "offline" }, membership: { tenant_id: "22222222-2222-4222-8222-222222222222", capabilities: ["session:read", "session:mint"] } });
+    loadAgent.mockResolvedValue({ agent_id: "11111111-1111-4111-8111-111111111111", name: "Store assistant", is_published: false });
+
+    render(await AgentTestPage({ params: Promise.resolve({ agentId: "11111111-1111-4111-8111-111111111111" }) }));
+
+    expect(requireWorkspace).toHaveBeenCalledWith("session:read");
+    expect(screen.getByRole("heading", { level: 1, name: "Browser voice test" })).toBeVisible();
+    expect(screen.getByRole("navigation", { name: "Agent workspace" })).toBeVisible();
+    expect(screen.getByText("This agent has no published version. Publish it before starting a test.")).toHaveAttribute("role", "alert");
+    expect(screen.getByRole("button", { name: "Start voice test" })).toBeDisabled();
   });
 });

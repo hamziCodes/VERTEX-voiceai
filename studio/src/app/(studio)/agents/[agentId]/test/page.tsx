@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 
 import { hasWorkspaceCapability, requireWorkspace } from "@/auth/workspace";
+import { PageHeader } from "@/components/studio/page-header";
 import { AgentWorkspaceTabs } from "@/features/agents/agent-workspace-tabs";
 import { loadAgent } from "@/features/agents/data";
 import { mintVoiceSessionAction } from "@/features/voice-test/actions";
@@ -16,9 +17,12 @@ export default async function AgentTestPage({ params }: { params: Promise<{ agen
   return (
     <div className="agent-workspace">
       <AgentWorkspaceTabs agentId={agent.agent_id} />
-      <h1>Browser voice test</h1>
-      <p>Check conversation behavior, interruption, and turn timing before connecting a phone number or website.</p>
-      {!agent.is_published ? <p role="alert">This agent has no published version. Publish it before starting a test.</p> : null}
+      <PageHeader
+        eyebrow={agent.name}
+        summary="Check conversation behavior, interruption, and turn timing before connecting a phone number or website."
+        title="Browser voice test"
+      />
+      {!agent.is_published ? <p className="inline-notice inline-notice--warning" role="alert">This agent has no published version. Publish it before starting a test.</p> : null}
       <VoiceTestConsole
         agentId={agent.agent_id}
         agentName={agent.name}
