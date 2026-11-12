@@ -69,6 +69,73 @@ test("platform support searches tenants read-only and cannot open staff or audit
 
   await page.goto("/admin/tenants?q=zeta");
   await expect(page.getByRole("heading", { name: "No matching tenants" })).toBeVisible();
+
+  for (const path of ["/admin/staff", "/admin/audit"]) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/admin\?error=forbidden$/);
+    await expect(page.getByRole("alert").filter({ hasText: "Your platform role cannot open that area." })).toBeVisible();
+  }
+  expect(consoleErrors).toEqual([]);
+});
+
+test("platform admin grants, changes and revokes staff roles with reasons and sees them audited", async ({ context, page }) => {
+  const consoleErrors = collectConsoleErrors(page);
+  await authenticate(context, "user-platform-admin");
+  await page.goto("/admin/staff");
+  await expect(page.getByRole("heading", { level: 1, name: "Staff" })).toBeVisible();
+  const table = page.getByRole("table", { name: "Platform staff" });
+  await expect(table.getByRole("row")).toHaveCount(3);
+
+  // The only administrator is protected in the interface.
+  const self = table.getByRole("row", { name: /user-platform-admin@example\.test/ });
+  await expect(self.getByRole("button", { name: /Revoke/ })).toBeDisabled();
+  await expect(self.getByText("Last platform administrator.")).toBeVisible();
+
+  // A person who never signed in cannot be granted a role.
+  await page.getByRole("button", { name: "Grant a role" }).click();
+  const grant = page.getByRole("dialog", { name: "Grant a platform role" });
+  await expect(grant.getByLabel("Email address")).toBeFocused();
+  await grant.getByLabel("Email address").fill("nobody@example.test");
+  await grant.getByLabel("Reason").fill("Support rota for Q4 onboarding");
+  await grant.getByRole("button", { name: "Grant role" }).click();
+  await expect(grant.getByRole("alert")).toContainText("must sign in once");
+
+  await grant.getByLabel("Email address").fill("user-editor@example.test");
+  await grant.getByRole("button", { name: "Grant role" }).click();
+  await expect(grant).toBeHidden();
+  await expect(page.getByRole("status")).toContainText("user-editor@example.test now has Platform support.");
+
+  const editorRow = table.getByRole("row", { name: /user-editor@example\.test/ });
+  await editorRow.getByRole("button", { name: /Change role/ }).click();
+  const change = page.getByRole("dialog", { name: "Change platform role" });
+  await change.getByLabel("Platform role").selectOption("platform_admin");
+  await change.getByLabel("Reason").fill("Promoted to platform administration");
+  await change.getByRole("button", { name: "Change role" }).click();
+  await expect(change).toBeHidden();
+  await expect(editorRow).toContainText("Platform administrator");
+
+  await table.getByRole("row", { name: /user-platform-support@example\.test/ }).getByRole("button", { name: /Revoke/ }).click();
+  const revoke = page.getByRole("dialog", { name: "Revoke platform role" });
+  await expect(revoke.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await revoke.getByRole("button", { name: "Revoke role" }).click();
+  await expect(revoke.getByRole("alert")).toContainText("Give a reason of at least 8 characters.");
+  await revoke.getByLabel("Reason").fill("Left the support rota");
+  await revoke.getByRole("button", { name: "Revoke role" }).click();
+  await expect(revoke).toBeHidden();
+  await expect(table.getByRole("row", { name: /user-platform-support@example\.test/ })).toHaveCount(0);
+
+  await page.goto(`/admin/tenants/${ALPHA}`);
+  await expect(page.getByRole("heading", { level: 1, name: "Alpha workspace" })).toBeVisible();
+  await page.getByRole("navigation", { name: "Wavia admin" }).getByRole("link", { name: "Audit" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Platform audit" })).toBeVisible();
+  const audit = page.getByRole("table", { name: "Platform audit events" });
+  await expect(audit.getByRole("row")).toHaveCount(5);
+  await expect(audit.getByRole("row").nth(1)).toContainText("Tenant summary viewed");
+  await expect(audit).toContainText("Staff role revoked");
+  await expect(audit).toContainText("Left the support rota");
+  await expect(audit).toContainText("Platform support → Platform administrator");
+  await expect(audit).toContainText("Staff role granted");
+  expect(await page.evaluate(() => localStorage.length + sessionStorage.length)).toBeLessThanOrEqual(1);
   expect(consoleErrors).toEqual([]);
 });
 

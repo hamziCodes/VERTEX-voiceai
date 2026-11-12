@@ -711,6 +711,14 @@ a { color: inherit; }
 .admin-role-counts li { align-items: baseline; border-top: 1px solid var(--studio-border); display: flex; gap: 12px; justify-content: space-between; padding: 10px 0; }
 .admin-role-counts li:first-child { border-top: 0; }
 .admin-entry { margin-bottom: 18px; }
+.admin-staff { display: grid; gap: 18px; min-width: 0; }
+.admin-staff > .inline-notice { margin: 0; }
+.admin-staff__note { font-size: 13px; margin-bottom: 8px; }
+.admin-staff__person { align-items: center; display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.admin-staff__you { background: var(--studio-surface-muted); border-radius: 999px; font-size: 11px; font-weight: 700; padding: 2px 8px; }
+.admin-staff__hint { display: block; font-size: 12px; margin-top: 4px; }
+.admin-staff__reason { display: block; max-width: 34ch; overflow-wrap: anywhere; }
+.admin-audit__details { display: grid; gap: 2px; max-width: 40ch; overflow-wrap: anywhere; }
 
 @media (max-width: 640px) {
   .admin-search__row { flex-direction: column; }
