@@ -142,7 +142,7 @@ a { color: inherit; }
 .status-badge--danger { background: var(--studio-danger-soft); color: var(--studio-danger); }
 .status-badge--info { background: var(--studio-info-soft); color: var(--studio-info); }
 .state-card { align-items: flex-start; background: var(--studio-surface); border: 1px solid var(--studio-border); border-radius: var(--studio-radius-panel); box-shadow: var(--studio-shadow); display: flex; gap: 16px; max-width: 720px; padding: clamp(22px, 4vw, 32px); }
-.state-card__mark { align-items: center; background: var(--studio-surface-raised); border: 1px solid var(--studio-border); border-radius: var(--studio-radius-control); color: var(--studio-accent); display: inline-flex; flex: 0 0 42px; font-family: var(--font-space-mono), monospace; font-size: 18px; font-weight: 700; height: 42px; justify-content: center; }
+.state-card__mark { align-items: center; background: var(--studio-surface-raised); border: 1px solid var(--studio-border); border-radius: var(--studio-radius-control); color: var(--studio-accent); display: inline-flex; flex: 0 0 42px; font-family: var(--font-space-mono), monospace; font-size: 18px; font-weight: 700; height: 42px; justify-content: center; width: 42px; }
 .state-card__copy h2 { font-family: var(--font-bricolage), sans-serif; font-size: 22px; margin: 0 0 7px; }
 .state-card__copy > p { color: var(--studio-ink-muted); margin: 0; max-width: 56ch; }
 .state-card__actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
@@ -637,7 +637,10 @@ a { color: inherit; }
   .data-table tbody tr td:first-child { border-top: 0; }
   .data-table td::before { color: var(--studio-ink-muted); content: attr(data-label); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
   .data-table__actions { text-align: left; white-space: normal; }
-  .data-table td > * { justify-self: start; }
+  .data-table td > * { justify-self: start; max-width: 100%; min-width: 0; }
+  /* Long emails, key prefixes and audit actions wrap inside the card instead of clipping. */
+  .data-table td { overflow-wrap: anywhere; }
+  .data-table .status-badge { white-space: normal; }
 }
 
 /* Phase 13I operate: conversations, usage, audit */
@@ -737,6 +740,10 @@ a { color: inherit; }
 .support-banner__copy { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; min-width: 0; }
 .support-banner__copy p { margin: 0; overflow-wrap: anywhere; }
 .support-banner__actions { flex-shrink: 0; }
+.support-banner__separator { margin: 0 4px; }
+@media (min-width: 761px) {
+  .admin-staff__actions { flex-wrap: nowrap; }
+}
 .support-section__note { font-size: 13px; margin: 0 0 10px; }
 .support-section__subtitle { font-family: var(--font-bricolage), sans-serif; font-size: 16px; margin: 18px 0 8px; }
 .support-agent__meta { display: block; font-size: 12px; margin-top: 2px; }
@@ -748,6 +755,8 @@ a { color: inherit; }
 
 @media (max-width: 640px) {
   .support-banner { position: static; }
+  .support-banner__separator { display: none; }
+  .support-banner__copy .technical-value { display: block; margin-top: 2px; }
   .support-banner__actions, .support-banner__actions .button { width: 100%; }
 }
 

@@ -29,7 +29,7 @@ export function SupportSessionBanner({ actions, session }: { actions?: ReactNode
         <StatusBadge tone="warning">Read-only</StatusBadge>
         <p>
           Support session for <strong>{session.tenant_name}</strong>
-          <span className="support-banner__separator" aria-hidden="true"> · </span>
+          <span aria-hidden="true" className="support-banner__separator">·</span>
           <span className="technical-value">Ends {formatDateTime(session.expires_at)}</span>
         </p>
       </div>
