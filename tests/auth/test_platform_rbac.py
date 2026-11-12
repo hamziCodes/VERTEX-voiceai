@@ -51,7 +51,12 @@ def test_tenant_matrix_contains_only_launch_tenant_roles() -> None:
 
 
 def test_platform_roles_hold_exactly_the_launch_permissions() -> None:
+    from typing import get_args
+
+    from control_plane.studio.models import PlatformRole
+
     assert PLATFORM_ROLES == ("platform_admin", "platform_support")
+    assert get_args(PlatformRole) == PLATFORM_ROLES
     assert platform_permissions_for_role("platform_admin") == frozenset(
         {
             "platform_tenant:read",

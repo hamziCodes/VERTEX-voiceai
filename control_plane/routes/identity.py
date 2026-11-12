@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from control_plane.auth.context import AuthContext
 from control_plane.auth.dependencies import enforce_tenant_access, require_permission
+from control_plane.auth.platform_rbac import platform_permissions_for_role
 from control_plane.auth.rbac import RBACManager
 from control_plane.studio.dependencies import resolve_identity_context
 from control_plane.studio.models import IdentityContext, StudioRole, UserIdentity
@@ -100,9 +101,21 @@ async def get_current_identity(
     request: Request, identity: IdentityReader
 ) -> dict[str, Any]:
     user = await _user_for_identity(request, identity)
-    memberships = await _repository(request).list_memberships(user.user_id)
+    repository = _repository(request)
+    memberships = await repository.list_memberships(user.user_id)
+    # Phase 13J: platform staff role comes from the durable platform membership.
+    # is_platform_admin is kept for compatibility and derived from that role,
+    # never from the legacy users.is_platform_admin flag.
+    platform_role = await repository.get_platform_role(user.user_id)
     return {
-        **user.model_dump(mode="json", exclude={"issuer", "subject"}),
+        **user.model_dump(
+            mode="json", exclude={"issuer", "subject", "is_platform_admin"}
+        ),
+        "is_platform_admin": platform_role == "platform_admin",
+        "platform_role": platform_role,
+        "platform_capabilities": sorted(
+            platform_permissions_for_role(platform_role) if platform_role else ()
+        ),
         "memberships": [
             {
                 **item.model_dump(mode="json"),
