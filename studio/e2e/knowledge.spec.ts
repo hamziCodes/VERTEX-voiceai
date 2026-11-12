@@ -36,7 +36,7 @@ test("creates, verifies, activates, and binds tenant-scoped knowledge", async ({
   await page.getByLabel("Choose document").setInputFiles({ name: "refunds.txt", mimeType: "text/plain", buffer: Buffer.from("Refunds are available within 30 days.") });
   await page.getByRole("button", { name: "Upload document" }).click();
   await expect(page.getByText("refunds.txt", { exact: true })).toBeVisible();
-  await expect(page.locator("strong", { hasText: "Queued" })).toBeVisible();
+  await expect(page.getByRole("listitem", { name: "refunds.txt" }).getByText("Queued")).toBeVisible();
 
   await page.getByLabel("FAQ name").fill("Store hours");
   await page.getByLabel("Question", { exact: true }).fill("When are you open?");
@@ -47,7 +47,8 @@ test("creates, verifies, activates, and binds tenant-scoped knowledge", async ({
 
   await fetch("http://127.0.0.1:3211/advance-knowledge", { method: "POST", headers: { connection: "close" } });
   await page.reload();
-  await expect(page.locator("strong", { hasText: "Ready" })).toHaveCount(2);
+  await expect(page.getByRole("listitem", { name: "refunds.txt" }).getByText("Ready")).toBeVisible();
+  await expect(page.getByRole("listitem", { name: "Store hours.json" }).getByText("Ready")).toBeVisible();
   await page.getByLabel("Ask your knowledge").fill("What is the refund policy?");
   await page.getByRole("button", { name: "Preview answer" }).click();
   await expect(page.getByText("Refunds are available within 30 days.")).toBeVisible();

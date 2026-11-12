@@ -2,9 +2,36 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const { loaders, requireWorkspace } = vi.hoisted(() => ({
+  loaders: {
+    loadKnowledgeAgents: vi.fn(),
+    loadKnowledgeBases: vi.fn(),
+    loadKnowledgeEntitlements: vi.fn(),
+    loadKnowledgeSources: vi.fn(),
+  },
+  requireWorkspace: vi.fn(),
+}));
+
+vi.mock("@/features/knowledge/data", () => loaders);
+vi.mock("@/features/knowledge/actions", () => ({
+  activateKnowledgeBaseAction: vi.fn(),
+  addKnowledgeFaqAction: vi.fn(),
+  bindKnowledgeToAgentAction: vi.fn(),
+  createKnowledgeBaseAction: vi.fn(),
+  deleteKnowledgeSourceAction: vi.fn(),
+  previewKnowledgeAction: vi.fn(),
+  retryKnowledgeSourceAction: vi.fn(),
+  uploadKnowledgeSourceAction: vi.fn(),
+}));
+vi.mock("@/auth/workspace", async () => {
+  const permissions = await import("@/auth/workspace-permissions");
+  return { hasWorkspaceCapability: permissions.hasWorkspaceCapability, requireWorkspace };
+});
+
+import KnowledgePage from "@/app/(studio)/knowledge/page";
 import { KnowledgeManager } from "@/features/knowledge/knowledge-manager";
 import type { KnowledgeBaseDto, KnowledgeSourceDto } from "@/features/knowledge/types";
 
@@ -73,7 +100,7 @@ describe("knowledge lifecycle", () => {
     fireEvent.change(screen.getByLabelText("Answer"), { target: { value: "Returns are accepted within 30 days." } });
     fireEvent.click(screen.getByRole("button", { name: "Add FAQ" }));
     await waitFor(() => expect(screen.getByText("Returns FAQ.json")).toBeVisible());
-    expect(screen.getByText("Queued", { selector: "strong" })).toBeVisible();
+    expect(within(screen.getByRole("listitem", { name: "Returns FAQ.json" })).getByText("Queued")).toBeVisible();
     expect(screen.getByText("0 of 1 sources ready · 0 searchable sections")).toBeVisible();
   });
 
@@ -97,21 +124,44 @@ describe("knowledge lifecycle", () => {
     api.retrySource.mockResolvedValue({ state: "queued", sourceId: failed.source_id });
     render(<KnowledgeManager base={base} sources={[ready, processing, failed]} agents={[]} maxUploadBytes={10 * 1024 * 1024} canEdit actions={api} />);
 
-    expect(screen.getByText("Ready", { selector: "strong" })).toBeVisible();
-    expect(screen.getByText("Processing", { selector: "strong" })).toBeVisible();
-    expect(screen.getByText("Failed", { selector: "strong" })).toBeVisible();
+    expect(within(screen.getByRole("listitem", { name: "refunds.txt" })).getByText("Ready")).toBeVisible();
+    expect(within(screen.getByRole("listitem", { name: "catalog.docx" })).getByText("Processing")).toBeVisible();
+    const failedRow = screen.getByRole("listitem", { name: "hours.csv" });
+    expect(within(failedRow).getByText("Failed")).toBeVisible();
+    expect(within(failedRow).getByText("Processing timed out.")).toBeVisible();
     expect(screen.getAllByRole("button", { name: "Retry source" })).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Retry source" }));
-    await waitFor(() => expect(screen.getByText("Queued", { selector: "strong" })).toBeVisible());
+    await waitFor(() => expect(within(screen.getByRole("listitem", { name: "hours.csv" })).getByText("Queued")).toBeVisible());
   });
 
-  it("removes a source only after the delete action succeeds", async () => {
+  it("asks for confirmation and removes a source only after the delete action succeeds", async () => {
     const api = actions();
     api.deleteSource.mockResolvedValue({ state: "deleted" });
     render(<KnowledgeManager base={base} sources={[ready]} agents={[]} maxUploadBytes={10 * 1024 * 1024} canEdit actions={api} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Delete refunds.txt" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete source" });
+    expect(dialog).toHaveTextContent("refunds.txt");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(api.deleteSource).not.toHaveBeenCalled();
+    expect(screen.getByText("refunds.txt", { selector: "strong" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete refunds.txt" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete source" })).getByRole("button", { name: "Delete source" }));
     await waitFor(() => expect(screen.queryByText("refunds.txt")).not.toBeInTheDocument());
+    expect(api.deleteSource).toHaveBeenCalledWith(base.knowledge_base_id, ready.source_id);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps the delete confirmation open with the failure when deletion fails", async () => {
+    const api = actions();
+    api.deleteSource.mockResolvedValue({ state: "error", message: "The source could not be deleted." });
+    render(<KnowledgeManager base={base} sources={[ready]} agents={[]} maxUploadBytes={10 * 1024 * 1024} canEdit actions={api} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete refunds.txt" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete source" }));
+    await waitFor(() => expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent("The source could not be deleted."));
+    expect(screen.getByText("refunds.txt", { selector: "strong" })).toBeVisible();
   });
 
   it("renders empty retrieval honestly and then shows source-backed citations", async () => {
@@ -161,5 +211,40 @@ describe("knowledge lifecycle", () => {
     expect(screen.getByText("You have view-only access.")).toBeVisible();
     expect(screen.getByRole("button", { name: "Upload document" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Delete refunds.txt" })).toBeDisabled();
+  });
+
+  it("renders composed panels without inline styles and explains why activation is blocked", () => {
+    const { container } = render(<KnowledgeManager base={base} sources={[ready, processing]} agents={[]} maxUploadBytes={10 * 1024 * 1024} canEdit actions={actions()} />);
+
+    expect(container.querySelectorAll("[style]")).toHaveLength(0);
+    for (const name of ["Documents", "Frequently asked questions", "Preview knowledge", "Publish knowledge"]) {
+      expect(screen.getByRole("region", { name })).toBeVisible();
+    }
+    expect(screen.getByText("All sources must finish successfully before activation.")).toBeVisible();
+    expect(screen.getByText("No agent is available to connect yet.")).toBeVisible();
+  });
+});
+
+describe("knowledge page", () => {
+  const second: KnowledgeBaseDto = { ...base, knowledge_base_id: "71111111-1111-4111-8111-111111111111", name: "Returns" };
+
+  it("uses the shared header and marks the selected knowledge base", async () => {
+    requireWorkspace.mockResolvedValue({
+      session: { accessToken: "offline" },
+      membership: { tenant_id: "11111111-1111-4111-8111-111111111111", capabilities: ["knowledge:read"] },
+    });
+    loaders.loadKnowledgeBases.mockResolvedValue([base, second]);
+    loaders.loadKnowledgeAgents.mockResolvedValue([]);
+    loaders.loadKnowledgeEntitlements.mockResolvedValue({ max_knowledge_bytes: 10 * 1024 * 1024 });
+    loaders.loadKnowledgeSources.mockResolvedValue([]);
+
+    render(await KnowledgePage({ searchParams: Promise.resolve({ knowledgeBase: second.knowledge_base_id }) }));
+
+    expect(requireWorkspace).toHaveBeenCalledWith("knowledge:read");
+    expect(screen.getByRole("heading", { level: 1, name: "Knowledge" })).toBeVisible();
+    const switcher = screen.getByRole("navigation", { name: "Knowledge bases" });
+    expect(within(switcher).getByRole("link", { name: "Returns" })).toHaveAttribute("aria-current", "page");
+    expect(within(switcher).getByRole("link", { name: "Store policies" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByText("You have view-only access.")).toBeVisible();
   });
 });
