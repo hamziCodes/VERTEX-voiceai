@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import Link from "next/link";
 
 import { INVITATION_COOKIE_NAME } from "@/auth/invitation";
 import { requireSession } from "@/auth/session";
@@ -47,6 +48,16 @@ export default async function WorkspacesPage({ searchParams }: WorkspacesPagePro
         <PageHeader eyebrow="Workspace access" title="Choose a workspace" summary="Your role and permissions are specific to each workspace." />
         {error && ERROR_MESSAGES[error] ? (
           <div className="inline-notice inline-notice--danger" role="alert">{ERROR_MESSAGES[error]}</div>
+        ) : null}
+        {identity.platform_capabilities.length > 0 ? (
+          <section aria-labelledby="internal-area-heading" className="invitation-panel admin-entry">
+            <div>
+              <StatusBadge tone="info">Wavia staff</StatusBadge>
+              <h2 id="internal-area-heading">Internal area</h2>
+              <p>Your platform role opens the internal Wavia area. It does not open customer workspaces.</p>
+            </div>
+            <Link className="button button--secondary" href="/admin">Open Wavia admin</Link>
+          </section>
         ) : null}
         {hasInvitation ? (
           <form action={acceptPendingInvitationAction} className="invitation-panel">

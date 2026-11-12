@@ -88,6 +88,7 @@ describe("workspace selection", () => {
   it("renders multiple durable memberships with readable roles", async () => {
     requireSession.mockResolvedValue({ displayName: "Hamzi" });
     listCurrentWorkspaces.mockResolvedValue({
+      platform_capabilities: [],
       memberships: [
         membership("11111111-1111-4111-8111-111111111111", "Alpha workspace", "tenant_admin"),
         membership("22222222-2222-4222-8222-222222222222", "Beta workspace", "tenant_viewer"),
@@ -106,7 +107,7 @@ describe("workspace selection", () => {
     const { cookies } = await import("next/headers");
     vi.mocked(cookies).mockResolvedValueOnce({ get: vi.fn(() => ({ value: "sealed" })) } as never);
     requireSession.mockResolvedValue({ displayName: "Hamzi" });
-    listCurrentWorkspaces.mockResolvedValue({ memberships: [] });
+    listCurrentWorkspaces.mockResolvedValue({ platform_capabilities: [], memberships: [] });
 
     render(await WorkspacesPage({ searchParams: Promise.resolve({ error: "invalid-workspace" }) }));
 
@@ -124,7 +125,7 @@ describe("workspace selection", () => {
     ["invitation-mismatch", "This invitation was sent to a different email address."],
   ])("maps the %s error to safe feedback", async (error, message) => {
     requireSession.mockResolvedValue({ displayName: "Hamzi" });
-    listCurrentWorkspaces.mockResolvedValue({ memberships: [] });
+    listCurrentWorkspaces.mockResolvedValue({ platform_capabilities: [], memberships: [] });
 
     render(await WorkspacesPage({ searchParams: Promise.resolve({ error }) }));
 
