@@ -2,14 +2,33 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const { requireWorkspace, conversationsData, getUsage, getAuditEvents } = vi.hoisted(() => ({
+  requireWorkspace: vi.fn(),
+  conversationsData: { listConversations: vi.fn(), getConversation: vi.fn(), getConversationIntelligence: vi.fn() },
+  getUsage: vi.fn(),
+  getAuditEvents: vi.fn(),
+}));
+vi.mock("next/navigation", () => ({ redirect: vi.fn(), usePathname: () => "/conversations" }));
+vi.mock("@/auth/workspace", () => ({ requireWorkspace }));
+vi.mock("@/features/conversations/data", () => conversationsData);
+vi.mock("@/features/usage/data", () => ({ getUsage }));
+vi.mock("@/features/audit/data", () => ({ getAuditEvents }));
+
+import AuditPage from "@/app/(studio)/settings/audit/page";
+import UsagePage from "@/app/(studio)/settings/usage/page";
+import ConversationDetailPage from "@/app/(studio)/conversations/[callId]/page";
+import ConversationsPage from "@/app/(studio)/conversations/page";
 
 import { AuditView } from "@/features/audit/audit-view";
 import { ConversationDetailView } from "@/features/conversations/conversation-detail-view";
 import { ConversationListView } from "@/features/conversations/conversation-list-view";
 import { OperationsNavigation } from "@/features/operations/operations-navigation";
 import { UsageView } from "@/features/usage/usage-view";
+
+afterEach(cleanup);
 
 const calls = [
   {
@@ -214,5 +233,93 @@ describe("OperationsNavigation", () => {
     expect(navigation.getByRole("link", { name: "Conversations" })).toBeVisible();
     expect(navigation.getByRole("link", { name: "Audit" })).toBeVisible();
     expect(navigation.queryByRole("link", { name: "Usage" })).not.toBeInTheDocument();
+  });
+});
+
+describe("composed operations surfaces", () => {
+  const usage = {
+    status: "success",
+    tenant_id: "tenant-hidden",
+    quota: { max_concurrent: 10, max_minutes_month: 1000, max_llm_tokens_month: 100000, current_concurrent: 1, current_monthly_minutes: 12.5, current_monthly_llm_tokens: 2400, soft_cap_percent: 80, hard_cap_percent: 100 },
+    totals: { stt_sec: 300, tts_sec: 240, llm_tokens: 2400, agent_sec: 750, telephony_sec: 0 },
+  };
+  const workspace = { session: { accessToken: "offline" }, membership: { tenant_id: "66666666-6666-4666-8666-666666666666", capabilities: ["conversation:read", "usage:read", "audit:read"] } };
+
+  it("lists conversations in a labelled table with fixed-format times and distinct empty-by-filter text", () => {
+    const { container } = render(<ConversationListView page={{ items: calls, next_cursor: null }} />);
+
+    expect(container.querySelectorAll("[style]")).toHaveLength(0);
+    const table = screen.getByRole("table", { name: "Conversations" });
+    expect(within(table).getByText("4 Nov 2026, 09:00 UTC")).toBeVisible();
+    expect(within(table).getByText("Completed")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Disposition"), { target: { value: "failed" } });
+    fireEvent.change(screen.getByLabelText("Transport"), { target: { value: "websocket" } });
+    expect(screen.getByText("No conversations on this page match the selected filters.")).toBeVisible();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("labels transcript speakers and shows recording and intelligence states as badges", () => {
+    const { container } = render(
+      <ConversationDetailView
+        conversation={{ ...calls[0], end_reason: "completed", transcript: [
+          { speaker: "user", text: "I need help", start_ms: 0, end_ms: 500, language: "en", confidence: 0.98 },
+          { speaker: "assistant", text: "I can help", start_ms: 600, end_ms: 1100, language: "en", confidence: 1 },
+        ], usage: {}, recording: { state: "available", access: "gated" } }}
+        intelligence={{ state: "pending", result: null, review: null }}
+      />,
+    );
+
+    expect(container.querySelectorAll("[style]")).toHaveLength(0);
+    const transcript = screen.getByRole("region", { name: "Transcript" });
+    const turns = within(transcript).getAllByRole("listitem");
+    expect(turns[0]).toHaveTextContent("Caller");
+    expect(turns[1]).toHaveTextContent("Agent");
+    expect(within(screen.getByRole("region", { name: "Recording" })).getByText("Available")).toBeVisible();
+    expect(within(screen.getByRole("region", { name: "Post-call intelligence" })).getByText("Pending")).toBeVisible();
+  });
+
+  it("exposes usage as accessible meters with value and limit text", () => {
+    const { container } = render(<UsageView usage={usage} />);
+
+    expect(container.querySelectorAll("[style]")).toHaveLength(0);
+    const minutes = screen.getByRole("meter", { name: "Monthly minutes" });
+    expect(minutes).toHaveAttribute("aria-valuenow", "12.5");
+    expect(minutes).toHaveAttribute("aria-valuemax", "1000");
+    expect(screen.getByText("12.5 of 1,000")).toBeVisible();
+    expect(screen.getByRole("meter", { name: "Monthly LLM tokens" })).toHaveAttribute("aria-valuenow", "2400");
+    expect(within(screen.getByRole("region", { name: "Measured totals" })).getByText("Speech-to-text seconds")).toBeVisible();
+  });
+
+  it("shows audit events in a labelled table with fixed-format times", () => {
+    render(<AuditView events={[{ id: "55555555-5555-4555-8555-555555555555", tenant_id: "t", actor_id: "a", actor_type: "system", action: "provider.degraded", resource_type: "provider", resource_id: "r", detail: {}, ip: null, user_agent: null, created_at: "2026-11-04T09:04:00Z" }]} />);
+
+    const table = screen.getByRole("table", { name: "Audit events" });
+    expect(within(table).getByText("4 Nov 2026, 09:04 UTC")).toBeVisible();
+  });
+
+  it("gives every operate page a shared header and the operations tabs", async () => {
+    requireWorkspace.mockResolvedValue(workspace);
+    conversationsData.listConversations.mockResolvedValue({ items: calls, next_cursor: null });
+    getUsage.mockResolvedValue(usage);
+    getAuditEvents.mockResolvedValue([]);
+    conversationsData.getConversation.mockResolvedValue({ ...calls[0], end_reason: "completed", transcript: [], usage: {}, recording: { state: "not_requested", access: "unavailable" } });
+    conversationsData.getConversationIntelligence.mockResolvedValue({ state: "unavailable", result: null, review: null });
+
+    const pages: Array<[Promise<React.ReactElement>, string]> = [
+      [ConversationsPage({ searchParams: Promise.resolve({}) }), "Conversation history"],
+      [ConversationDetailPage({ params: Promise.resolve({ callId: calls[0].call_id }) }), "Conversation detail"],
+      [UsagePage(), "Usage and limits"],
+      [AuditPage(), "Audit history"],
+    ];
+    for (const [page, title] of pages) {
+      const { container } = render(await page);
+      expect(screen.getByRole("heading", { level: 1, name: title })).toBeVisible();
+      expect(screen.getByRole("navigation", { name: "Operations" })).toBeVisible();
+      expect(container.querySelectorAll("[style]")).toHaveLength(0);
+      cleanup();
+    }
+    expect(requireWorkspace).toHaveBeenCalledWith("conversation:read");
+    expect(requireWorkspace).toHaveBeenCalledWith("usage:read");
+    expect(requireWorkspace).toHaveBeenCalledWith("audit:read");
   });
 });
