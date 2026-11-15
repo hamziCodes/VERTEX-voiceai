@@ -65,6 +65,28 @@ class AdmissionStoreUnavailableError(RuntimeError):
     """Raised when protected admission state cannot be reached."""
 
 
+def cluster_session_capacity(profile: RuntimeProfile | None = None) -> int:
+    """Cluster-wide concurrent session cap enforced by shared admission.
+
+    ``max_sessions_per_worker`` is a *per-process* limit (each worker enforces
+    it locally and reports not-ready when full). The shared Redis admission
+    key counts sessions across the whole fleet, so its cap must be the fleet
+    capacity: ``UCVE_CLUSTER_MAX_SESSIONS`` when set, otherwise
+    ``max_sessions_per_worker * UCVE_WORKER_REPLICAS`` (default one replica).
+    """
+    selected = profile or load_profile()
+    explicit = (os.environ.get("UCVE_CLUSTER_MAX_SESSIONS") or "").strip()
+    if explicit:
+        value = int(explicit)
+        if value < 1:
+            raise ValueError("UCVE_CLUSTER_MAX_SESSIONS must be positive.")
+        return value
+    replicas = int((os.environ.get("UCVE_WORKER_REPLICAS") or "1").strip() or "1")
+    if replicas < 1:
+        raise ValueError("UCVE_WORKER_REPLICAS must be positive.")
+    return selected.max_sessions_per_worker * replicas
+
+
 class SessionAdmissionController:
     """Acquire expiring session leases atomically across control plane/workers."""
 
@@ -83,7 +105,7 @@ class SessionAdmissionController:
         self.max_sessions = (
             max_sessions
             if max_sessions is not None
-            else self.profile.max_sessions_per_worker
+            else cluster_session_capacity(self.profile)
         )
         self.lease_ttl_sec = max(10, lease_ttl_sec)
         self.clock = clock

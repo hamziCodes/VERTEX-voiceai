@@ -138,7 +138,7 @@ class WebSocketSessionRunner:
         try:
             await self._perform_protocol_handshake()
             self.orchestrator.attach_ws_session(self)
-            await self.orchestrator.apply_provider_selection(self.config)
+            await self._bind_providers()
             start_record = getattr(self.orchestrator, "start_session_record", None)
             if callable(start_record):
                 await start_record(self.config)
@@ -191,6 +191,40 @@ class WebSocketSessionRunner:
                 finally:
                     if self._release_admission is not None:
                         await self._release_admission()
+
+    async def _bind_providers(self) -> None:
+        """Bind the published provider chains or end the session with a typed error.
+
+        A missing tenant credential or an unusable provider configuration is a
+        setup problem the customer can fix in Studio, not a server crash: the
+        client receives a typed, non-retryable error and a clean close instead
+        of an unhandled ASGI exception.
+        """
+        try:
+            await self.orchestrator.apply_provider_selection(self.config)
+        except Exception as exc:
+            from core.secrets.exceptions import SecretNotFoundError
+
+            missing = isinstance(exc, SecretNotFoundError)
+            await self.transport.send_control_event(
+                "error",
+                {
+                    "code": (
+                        "PROVIDER_CREDENTIAL_MISSING"
+                        if missing
+                        else "PROVIDER_SETUP_FAILED"
+                    ),
+                    "message": (
+                        "A provider credential required by this agent is not "
+                        "configured."
+                        if missing
+                        else "The agent's providers could not be prepared."
+                    ),
+                    "retryable": False,
+                },
+            )
+            await self.websocket.close(code=1011, reason="provider setup failed")
+            raise ProtocolSessionError("provider setup failed") from exc
 
     async def _perform_protocol_handshake(self) -> ProtocolNegotiation:
         """Require a compatible client hello before provider startup."""

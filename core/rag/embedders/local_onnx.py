@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -76,7 +77,17 @@ class LocalONNXEmbedder:
     def _default_session_factory(path: str) -> Any:
         ort = importlib.import_module("onnxruntime")
 
-        return ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+        options = ort.SessionOptions()
+        # Bounded, non-spinning threads so embedding jobs cannot starve the
+        # jobs runner's event loop or co-located services.
+        options.intra_op_num_threads = max(
+            1, int(os.environ.get("WAVIA_EMBEDDING_THREADS", "2"))
+        )
+        options.inter_op_num_threads = 1
+        options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+        return ort.InferenceSession(
+            path, sess_options=options, providers=["CPUExecutionProvider"]
+        )
 
     @staticmethod
     def _default_tokenizer_factory(path: str) -> Any:

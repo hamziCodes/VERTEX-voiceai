@@ -23,6 +23,23 @@ _SHARED_ONNX_SESSION: Any | None = None
 _SHARED_LOAD_ATTEMPTED = False
 
 
+def _single_thread_options(ort: Any) -> Any:
+    """One non-spinning thread per inference call.
+
+    Silero inference is ~0.1 ms per 32 ms frame. onnxruntime's default thread
+    pool uses every core and busy-spins between calls, which made a two-session
+    worker burn ~4 cores in the Phase 14 load test. Concurrency comes from
+    sessions sharing the bounded VAD executor, not from intra-op threads.
+    """
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = 1
+    options.inter_op_num_threads = 1
+    options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+    options.add_session_config_entry("session.inter_op.allow_spinning", "0")
+    return options
+
+
 def _load_shared_onnx_session(model_path: Path) -> Any | None:
     """Load the immutable ONNX graph once; recurrent state remains per adapter."""
     global _SHARED_LOAD_ATTEMPTED, _SHARED_ONNX_SESSION
@@ -34,7 +51,9 @@ def _load_shared_onnx_session(model_path: Path) -> Any | None:
             import onnxruntime as ort
 
             _SHARED_ONNX_SESSION = ort.InferenceSession(
-                str(model_path), providers=["CPUExecutionProvider"]
+                str(model_path),
+                sess_options=_single_thread_options(ort),
+                providers=["CPUExecutionProvider"],
             )
             try:
                 import torch
