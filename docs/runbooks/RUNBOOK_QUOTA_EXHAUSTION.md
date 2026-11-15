@@ -6,8 +6,8 @@ Usage and concurrency limits are enforced at session mint (`POST /v1/session/min
 
 | Event | Response to the caller | Alert |
 |---|---|---|
-| Soft threshold passed | Session allowed; header `X-UCVE-Quota-Warning: soft_cap` | `QUOTA_SOFT_CAP` (warning, one per tenant per month) |
-| Plan limit reached | `429` | `QUOTA_EXHAUSTED` (error, one per tenant per month) |
+| Monthly usage at or above the soft cap (default 80%, `soft_cap_percent` per plan) | Session allowed; header `X-UCVE-Quota-Warning: soft_cap` | `QUOTA_SOFT_CAP` (warning, one per tenant per month) |
+| Plan limit reached (100% of monthly minutes, or the concurrent-session limit) | `429` | `QUOTA_EXHAUSTED` (error, one per tenant per month) |
 | Fleet capacity reached (not a plan limit) | `503` "Worker capacity limit reached" | `CAPACITY_EXHAUSTED` (platform) |
 
 Tenants see their own quota alerts at `GET /v1/alerts/{tenant_id}`; staff see all in `/admin/operations`.
