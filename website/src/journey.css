@@ -1,0 +1,506 @@
+/* ── Immersive journey · Scenes 0–4 ───────────────────────────────────────
+   Imported UNLAYERED from index.css (see the note there): preflight in the
+   `base` layer would otherwise beat these class rules on margin, padding
+   and heading type.
+   The pinned call stage. Layout here is the FINAL state of every scene;
+   CallJourney's GSAP timeline sets the hidden/offset states and scrubs
+   between them (transform / opacity / stroke only). Under
+   `journey--static` (prefers-reduced-motion) every absolutely-positioned
+   piece drops back into plain flow and reads top to bottom, unpinned. */
+
+.journey {
+	position: relative;
+	overflow-x: clip;
+	background: var(--theme-bg);
+}
+
+.j-pin {
+	position: relative;
+	height: 100svh;
+	min-height: 580px;
+	overflow: hidden;
+}
+
+.j-dim {
+	position: absolute;
+	inset: 0;
+	background: var(--theme-fg);
+	opacity: 0;
+	pointer-events: none;
+}
+
+.j-inner {
+	position: relative;
+	height: 100%;
+	max-width: 1120px;
+	margin: 0 auto;
+	padding: 0 24px;
+}
+
+/* Scene 0 — land */
+.j-land {
+	position: absolute;
+	left: 24px;
+	top: 50%;
+	translate: 0 -50%;
+	width: min(600px, 56%);
+	z-index: 4;
+}
+
+.j-eyebrow {
+	font-family: var(--font-mono);
+	font-size: 0.68rem;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--theme-accent);
+}
+
+.j-h1 {
+	font-family: var(--font-display);
+	font-weight: 800;
+	font-size: clamp(3rem, 9vw, 7.6rem);
+	line-height: 0.9;
+	letter-spacing: -0.04em;
+	color: var(--theme-fg);
+	margin-top: 18px;
+}
+
+.j-one-line {
+	font-size: 1.1rem;
+	line-height: 1.55;
+	color: var(--theme-fg-muted);
+	max-width: 38ch;
+	margin-top: 22px;
+}
+
+.j-cue {
+	font-family: var(--font-mono);
+	font-size: 0.62rem;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--theme-fg-muted);
+	margin-top: 40px;
+}
+
+.j-cue-thread {
+	display: block;
+	width: 2px;
+	height: 46px;
+	background: var(--theme-accent);
+	margin-top: 10px;
+	border-radius: 2px;
+}
+
+/* The stage column — GSAP moves this; CSS only parks it. */
+.j-stagecol {
+	position: absolute;
+	right: 24px;
+	top: 50%;
+	translate: 0 -50%;
+	width: 420px;
+	z-index: 2;
+}
+
+.j-undercard {
+	margin-top: 28px;
+	text-align: center;
+}
+
+.j-langnames {
+	font-family: var(--font-mono);
+	font-size: 0.68rem;
+	letter-spacing: 0.04em;
+	color: var(--theme-fg-muted);
+}
+
+.j-honest {
+	font-family: var(--font-mono);
+	font-size: 0.62rem;
+	letter-spacing: 0.06em;
+	color: var(--theme-accent);
+	margin-top: 6px;
+}
+
+/* CallStage — the card itself */
+.j-cardwrap { position: relative; }
+
+.j-edge {
+	position: absolute;
+	border-radius: 36px;
+	border: 1.5px solid var(--theme-border);
+}
+
+.j-edge-2 { left: 24px; right: 24px; top: 16px; bottom: -16px; background: var(--theme-surface-2); }
+.j-edge-1 { left: 12px; right: 12px; top: 8px; bottom: -8px; background: var(--theme-surface); }
+
+.j-card {
+	position: relative;
+	background: var(--theme-surface);
+	border: 1.5px solid var(--theme-border);
+	border-radius: 32px;
+	box-shadow: var(--theme-shadow);
+	overflow: hidden;
+}
+
+.j-card-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 12px;
+	padding: 14px 20px 12px;
+	border-bottom: 1.5px solid var(--theme-border);
+}
+
+.j-states { position: relative; flex: 1 1 auto; min-width: 0; min-height: 20px; }
+
+.j-state {
+	display: inline-flex;
+	align-items: center;
+	gap: 9px;
+	font-family: var(--font-mono);
+	font-size: 0.62rem;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--theme-fg);
+	white-space: nowrap;
+}
+
+.j-state-live { position: absolute; left: 0; top: 50%; translate: 0 -50%; }
+
+.j-ringdot { position: relative; width: 10px; height: 10px; flex: 0 0 auto; }
+
+.j-dot {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	border-radius: 999px;
+	background: var(--theme-accent);
+}
+
+.j-ringdot .j-dot { position: absolute; inset: 0; }
+.j-dot-live { background: var(--theme-verify); }
+
+.j-halo {
+	position: absolute;
+	inset: -1px;
+	border-radius: 999px;
+	border: 2px solid var(--theme-accent);
+	pointer-events: none;
+}
+
+.j-scripted {
+	font-family: var(--font-mono);
+	font-size: 0.56rem;
+	flex: 0 1 auto;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--theme-accent);
+	white-space: nowrap;
+}
+
+.j-wave {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 3px;
+	height: 62px;
+	padding: 0 22px;
+	background: var(--theme-surface-2);
+	border-bottom: 1.5px solid var(--theme-border);
+	animation: j-wave-breathe 3.4s ease-in-out infinite;
+}
+
+.j-wave span {
+	display: block;
+	width: 2px;
+	border-radius: 2px;
+	background: var(--theme-accent);
+	transform-origin: center;
+}
+
+@keyframes j-wave-breathe {
+	0%, 100% { opacity: 0.78; }
+	50% { opacity: 1; }
+}
+
+.j-body { position: relative; padding: 18px 20px 20px; min-height: 354px; }
+
+.j-lines { display: flex; flex-direction: column; gap: 14px; }
+
+.j-lines-cut {
+	position: absolute;
+	inset: 0;
+	padding: 18px 20px 20px;
+}
+
+.j-line { position: relative; }
+
+.j-line p {
+	font-size: 0.95rem;
+	line-height: 1.5;
+	color: var(--theme-fg);
+	margin-top: 2px;
+}
+
+.j-line .j-urdu { font-size: 1.08rem; }
+
+.j-line[data-line='ask'],
+.j-line[data-line='thursday'] { padding-left: 20px; }
+
+.j-hl {
+	position: absolute;
+	inset: -5px -9px;
+	background: var(--theme-accent-soft);
+	border-radius: 10px;
+	z-index: -1;
+}
+
+.j-cutline {
+	text-decoration: line-through;
+	text-decoration-thickness: 2px;
+	text-decoration-color: transparent;
+}
+
+.j-cut-chip {
+	align-self: flex-start;
+	font-family: var(--font-mono);
+	font-size: 0.58rem;
+	letter-spacing: 0.08em;
+	background: var(--theme-accent-soft);
+	color: var(--theme-fg);
+	border-radius: 4px;
+	padding: 2px 6px;
+}
+
+/* Scene 2 — callouts + the lifted lines travelling to them */
+.j-callout { position: absolute; right: 24px; width: 320px; z-index: 3; translate: 0 -50%; }
+.j-callout[data-callout='1'] { top: 23%; }
+.j-callout[data-callout='2'] { top: 50%; }
+.j-callout[data-callout='3'] { top: 77%; }
+
+.j-callout-tick {
+	font-family: var(--font-mono);
+	font-size: 0.62rem;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--theme-accent);
+}
+
+.j-callout-rule {
+	display: block;
+	width: 44px;
+	height: 2px;
+	background: var(--theme-accent);
+	margin: 9px 0 11px;
+}
+
+.j-callout p {
+	font-family: var(--font-display);
+	font-weight: 600;
+	font-size: 1.42rem;
+	line-height: 1.25;
+	color: var(--theme-fg);
+}
+
+.j-callout-sub {
+	display: block;
+	font-family: var(--font-mono);
+	font-size: 0.62rem;
+	letter-spacing: 0.04em;
+	color: var(--theme-fg-muted);
+	margin-top: 8px;
+}
+
+.j-lift {
+	position: absolute;
+	left: 500px;
+	width: 300px;
+	z-index: 3;
+	background: var(--theme-surface);
+	border: 1.5px solid var(--theme-border);
+	border-radius: 16px;
+	padding: 10px 14px;
+	box-shadow: var(--theme-shadow);
+}
+
+.j-lift[data-lift='1'] { top: 17%; }
+.j-lift[data-lift='2'] { top: 44%; }
+.j-lift[data-lift='3'] { top: 71%; }
+
+.j-lift span {
+	font-family: var(--font-mono);
+	font-size: 0.58rem;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--theme-accent);
+}
+
+.j-lift p { font-size: 0.9rem; line-height: 1.45; color: var(--theme-fg); }
+.j-lift p.urdu { font-size: 1rem; }
+
+/* Scene 3 — the serif line */
+.j-serif {
+	position: absolute;
+	left: 50%;
+	translate: -50% 0;
+	top: 75%;
+	width: min(700px, 86%);
+	text-align: center;
+	font-family: var(--font-serif);
+	font-style: italic;
+	font-size: clamp(1.5rem, 3.2vw, 2.4rem);
+	line-height: 1.25;
+	color: var(--theme-fg);
+	z-index: 3;
+}
+
+/* Scene 4 — thread + CRM record */
+.j-threadline {
+	position: absolute;
+	top: 50%;
+	left: 452px;
+	right: 372px;
+	height: 2px;
+	border-radius: 2px;
+	background: var(--theme-accent);
+	z-index: 1;
+}
+
+.j-threadline::after {
+	content: '';
+	position: absolute;
+	right: -4px;
+	top: 50%;
+	translate: 0 -50%;
+	width: 8px;
+	height: 8px;
+	border-radius: 999px;
+	background: var(--theme-accent);
+}
+
+.j-crm {
+	position: absolute;
+	right: 24px;
+	top: 50%;
+	translate: 0 -50%;
+	width: 340px;
+	z-index: 3;
+	background: var(--theme-surface);
+	border: 1.5px solid var(--theme-border);
+	border-radius: 24px;
+	padding: 18px 20px;
+	box-shadow: var(--theme-shadow);
+}
+
+.j-crm-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-family: var(--font-mono);
+	font-size: 0.66rem;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--theme-accent);
+	padding-bottom: 12px;
+	border-bottom: 1.5px solid var(--theme-border);
+}
+
+.j-crm-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--theme-verify); }
+
+.j-field {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 16px;
+	padding: 12px 0;
+	border-bottom: 1px solid var(--theme-border);
+}
+
+.j-field-k {
+	font-family: var(--font-mono);
+	font-size: 0.62rem;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--theme-fg-muted);
+}
+
+.j-field-v { font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; color: var(--theme-fg); }
+
+.j-crm-foot {
+	font-family: var(--font-mono);
+	font-size: 0.6rem;
+	letter-spacing: 0.04em;
+	color: var(--theme-fg-muted);
+	margin-top: 12px;
+}
+
+.j-finalline {
+	position: absolute;
+	left: 50%;
+	translate: -50% 0;
+	bottom: 6%;
+	font-family: var(--font-display);
+	font-weight: 600;
+	font-size: clamp(1.2rem, 2.4vw, 1.7rem);
+	color: var(--theme-fg);
+	white-space: nowrap;
+	z-index: 3;
+}
+
+/* Mobile — scenes compress: stage full-width, callouts share one slot
+   under the card, pins shorten (handled in the timeline). */
+@media (max-width: 1023px) {
+	.j-land { left: 20px; right: 20px; width: auto; top: 11%; translate: 0 0; }
+	.j-h1 { font-size: clamp(2.6rem, 11.5vw, 7.6rem); margin-top: 10px; }
+	.j-one-line { margin-top: 10px; font-size: 0.98rem; }
+	.j-cue { display: none; }
+	.j-cue-thread { height: 30px; }
+
+	.j-stagecol { left: 20px; right: 20px; width: auto; top: 65%; }
+	.j-body { min-height: 372px; }
+	.j-scripted { display: none; }
+
+	.j-callout, .j-callout[data-callout] { left: 20px; right: 20px; width: auto; top: auto; bottom: 4.5%; translate: 0 0; }
+	.j-callout p { font-size: 1.2rem; }
+
+	.j-lift { display: none; }
+
+	.j-serif { top: auto; bottom: 25%; width: 88%; }
+
+	.j-threadline { display: none; }
+
+	.j-crm { left: 20px; right: 20px; width: auto; top: auto; bottom: 4.5%; translate: 0 0; }
+
+	.j-finalline { top: 12%; bottom: auto; width: 92%; text-align: center; white-space: normal; font-size: 1.05rem; }
+}
+
+/* Reduced motion — no pin, no scrub: the journey stacks in final state. */
+.journey--static .j-pin { height: auto; min-height: 0; overflow: visible; padding: 52px 0 60px; }
+.journey--static .j-dim { display: none; }
+.journey--static .j-inner { display: flex; flex-direction: column; gap: 30px; height: auto; }
+
+.journey--static .j-land,
+.journey--static .j-stagecol,
+.journey--static .j-callout,
+.journey--static .j-lift,
+.journey--static .j-crm,
+.journey--static .j-serif,
+.journey--static .j-finalline {
+	position: static;
+	translate: none;
+	width: auto;
+	max-width: 620px;
+	margin-left: auto;
+	margin-right: auto;
+}
+
+.journey--static .j-land { width: 100%; }
+.journey--static .j-stagecol { width: 100%; max-width: 460px; }
+.journey--static .j-threadline { display: none; }
+.journey--static .j-halo { display: none; }
+.journey--static .j-serif { text-align: center; }
+.journey--static .j-finalline { text-align: center; white-space: normal; }
+.journey--static .j-body { min-height: 0; }
+.journey--static .j-lines-cut { position: static; padding: 18px 0 0; }
+.journey--static .j-state-live { position: static; translate: none; margin-left: 16px; }
+.journey--static .j-wave { animation: none; }

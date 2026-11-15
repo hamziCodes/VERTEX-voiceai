@@ -1,0 +1,322 @@
+/**
+ * Wavia Design System — Theme B "Marigold Market" (light only)
+ *
+ * One polarity. There is no dark mode, no [data-theme] switch and no
+ * prefers-color-scheme override: the site is printed on warm paper.
+ * The single dark act lives in the one-stack section and uses
+ * --theme-dark directly, never by flipping the whole page.
+ *
+ * Colour, type and radii come from docs/design/theme-proposal.md §3.
+ */
+@theme {
+	--color-bg: #fff6e5;
+	--color-bg-2: #fbeacd;
+	--color-surface: #fffbf2;
+	--color-surface-2: #f6e6c8;
+	--color-border: #e8d8ba;
+	--color-border-ink: #1c1408;
+	--color-input: #fffbf2;
+
+	/* Burnt marigold — live states, labels, link underline. Never body copy. */
+	--color-accent: #b45309;
+	--color-accent-hover: #93430a;
+	--color-accent-soft: rgba(180, 83, 9, 0.1);
+	--color-ring: #1c1408;
+
+	/* Palm green = verified/success. Brass = Shield marks only. */
+	--color-verify: #1e6b4f;
+	--color-verify-soft: rgba(30, 107, 79, 0.1);
+	--color-shield: #a8862b;
+	--color-shield-soft: rgba(168, 134, 43, 0.1);
+	--color-alert: #b3261e;
+	--color-success: #1e6b4f;
+
+	--color-fg: #1c1408;
+	--color-fg-muted: #6b5b45;
+
+	--font-sans: 'Instrument Sans', system-ui, -apple-system, sans-serif;
+	--font-display: 'Bricolage Grotesque', 'Instrument Sans', system-ui, sans-serif;
+	--font-mono: 'Space Mono', ui-monospace, monospace;
+	--font-serif: 'Instrument Serif', Georgia, serif;
+	--font-urdu: 'Noto Nastaliq Urdu', 'Instrument Sans', serif;
+	/* Arabic is Naskh, never Nastaliq — the two scripts share a script block but
+	   not a face, and Nastaliq sets Arabic as if it were Urdu. */
+	--font-arabic: 'Noto Naskh Arabic', 'Noto Nastaliq Urdu', serif;
+
+	/* B radii: pills for controls, 24px cards, 32px media, 40px panels.
+	   rounded-lg is mapped to the pill so every existing control becomes one. */
+	--radius-sm: 8px;
+	--radius-md: 12px;
+	--radius-lg: 999px;
+	--radius-xl: 24px;
+	--radius-2xl: 32px;
+	--radius-3xl: 40px;
+	--radius-pill: 999px;
+}
+
+:root {
+	/* Surfaces — warm paper only. Never #fff, never a cool grey. */
+	--theme-bg: #fff6e5;
+	--theme-bg-2: #fbeacd;
+	--theme-surface: #fffbf2;
+	--theme-surface-2: #f6e6c8;
+	--theme-border: #e8d8ba;
+	--theme-border-ink: #1c1408;
+
+	--theme-fg: #1c1408;
+	--theme-fg-muted: #6b5b45;
+
+	--theme-accent: #b45309;
+	--theme-accent-hover: #93430a;
+	--theme-accent-soft: rgba(180, 83, 9, 0.1);
+
+	--theme-verify: #1e6b4f;
+	--theme-verify-soft: rgba(30, 107, 79, 0.1);
+	--theme-shield: #a8862b;
+	--theme-shield-soft: rgba(168, 134, 43, 0.1);
+	--theme-alert: #b3261e;
+	--theme-success: #1e6b4f;
+
+	/* The single dark act. Used by the one-stack section only. */
+	--theme-dark: #16120b;
+	--theme-dark-fg: #fff6e5;
+
+	/* Shadow is earned by exactly two elements: the hero demo card and the
+	   trailer poster. Everything else is flat colour and a 1.5px rule. */
+	--theme-shadow: 0 24px 60px -24px rgba(80, 52, 12, 0.35);
+	--theme-shadow-lg: 0 24px 60px -24px rgba(80, 52, 12, 0.35);
+
+	/* Retired: kept at zero so any legacy usage resolves to nothing rather
+	   than an invalid var. Nothing may reintroduce a glow. */
+	--theme-glow: none;
+	--theme-glow-alpha: 0;
+	--glow-alpha: 0;
+
+	--grain-opacity: 0.025;
+
+	--wavia-signal: #b45309;
+	--wavia-verify: #1e6b4f;
+	--wavia-shield: #a8862b;
+}
+
+html {
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+	scroll-behavior: smooth;
+	background-color: var(--theme-bg);
+}
+
+body {
+	background-color: var(--theme-bg);
+	color: var(--theme-fg);
+	font-family: var(--font-sans);
+	font-feature-settings: 'ss01' 1;
+	line-height: 1.6;
+	position: relative;
+}
+
+/* Focus is ink, not marigold — marigold is a live state, not chrome. */
+*:focus-visible {
+	outline: 2px solid var(--theme-fg);
+	outline-offset: 3px;
+	border-radius: var(--radius-sm);
+}
+
+/* Inside the dark act the ink ring disappears, so it inverts. */
+.on-dark *:focus-visible,
+.on-dark:focus-visible {
+	outline-color: var(--theme-dark-fg);
+}
+
+/* Urdu is set in Nastaliq with generous leading, right-to-left, and is
+   never rendered in a Latin face. */
+.urdu {
+	font-family: var(--font-urdu);
+	line-height: 2.05;
+	direction: rtl;
+	unicode-bidi: isolate;
+}
+
+/* Arabic — Naskh, right-to-left, and the demo's Arabic rows only. */
+.arabic {
+	font-family: var(--font-arabic);
+	direction: rtl;
+	unicode-bidi: isolate;
+}
+
+/* Printed paper texture. Low enough to read as stock, not as noise. */
+.grain {
+	position: fixed;
+	inset: 0;
+	z-index: 200;
+	pointer-events: none;
+	opacity: var(--grain-opacity);
+	mix-blend-mode: multiply;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+	background-size: 180px 180px;
+}
+
+/* Retired hero glow — kept as a no-op so the ten pages that still render
+   <div className="hero-glow" /> stay valid until their own sessions. */
+.hero-glow {
+	position: relative;
+	overflow: hidden;
+}
+.hero-glow::before {
+	display: none;
+}
+
+/* Brand mark — the thread draws itself once on load, then holds. */
+@keyframes thread-draw {
+	from { stroke-dashoffset: 64; }
+	to { stroke-dashoffset: 0; }
+}
+
+/* The marigold thread's travelling pulse — one lit segment runs the line per
+   cycle while Wavia is speaking. Dash period must match ThreadWave's dasharray. */
+@keyframes thread-travel {
+	from { stroke-dashoffset: 956; }
+	to { stroke-dashoffset: 0; }
+}
+
+/* Hero scroll cue — a single marigold tick falling down a hairline. */
+@keyframes cue-drop {
+	0% { transform: translateY(-100%); opacity: 0; }
+	25% { opacity: 1; }
+	100% { transform: translateY(100%); opacity: 0; }
+}
+
+/* ── Ambient hero motion ──────────────────────────────────────────────────
+   The fold has to be alive before anyone touches it: the chips bob, the
+   waveform breathes, the thread travels, the cue falls. All of it is
+   transform/opacity or stroke-paint only, on absolutely positioned or
+   scaled elements, so nothing here can move layout.
+
+   Every one of these loops carries `data-ambient-loop`. The hero section
+   carries `data-ambient="live|paused"` (see useAmbientPause), and the rule
+   below stops the lot when the fold scrolls away or the tab is hidden. */
+@keyframes chip-bob {
+	from { transform: translateY(0); }
+	to { transform: translateY(-6px); }
+}
+
+@keyframes chip-bob-sm {
+	from { transform: translateY(0); }
+	to { transform: translateY(-3px); }
+}
+
+/* Idle breathing: low amplitude, slow, so the card reads as live and not loud. */
+@keyframes wave-idle {
+	0%, 100% { transform: scaleY(0.58); opacity: 0.72; }
+	50% { transform: scaleY(1); opacity: 1; }
+}
+
+/* The thread's ambient pass — same travel as the speak pulse, much slower. */
+@keyframes thread-ambient {
+	from { stroke-dashoffset: 956; }
+	to { stroke-dashoffset: 0; }
+}
+
+/* The pipeline rail's ambient pass — one soft breath of cream running the
+   length of Beat 7's track, so the dark act is alive at rest. The element is
+   a fifth of the rail's width; -100%..500% of its own width carries it from
+   the left edge to past the right one. */
+@keyframes rail-shimmer {
+	from { transform: translateX(-100%); }
+	to { transform: translateX(500%); }
+}
+
+.chip-bob {
+	animation: chip-bob 4.4s ease-in-out infinite alternate;
+	animation-delay: var(--bob-delay, 0s);
+}
+
+@media (max-width: 1023px) {
+	.chip-bob { animation-name: chip-bob-sm; }
+}
+
+/* `!important` because several loops are set with the inline `animation`
+   shorthand, which also declares animation-play-state at inline origin and
+   would otherwise keep running while the section is off-screen. */
+[data-ambient='paused'] [data-ambient-loop] {
+	animation-play-state: paused !important;
+}
+
+@keyframes stamp-in {
+	0% { opacity: 0; transform: scale(0.94); }
+	100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes dot-pulse {
+	0%, 100% { transform: scale(1); opacity: 0.85; }
+	50% { transform: scale(1.35); opacity: 1; }
+}
+
+/* Legacy waveform idle — retained for components not yet rebuilt. */
+@keyframes idle-breathe {
+	0%, 100% { transform: scaleY(0.9); }
+	50% { transform: scaleY(1.15); }
+}
+
+@keyframes listen-bounce {
+	0% { height: 20%; }
+	100% { height: 80%; }
+}
+
+@keyframes think-pulse {
+	0%, 100% { transform: scale(1); opacity: 0.7; }
+	50% { transform: scale(1.35); opacity: 1; }
+}
+
+@keyframes speak-wave {
+	0%, 100% { transform: scaleY(0.4); }
+	50% { transform: scaleY(1); }
+}
+
+/* Beat 1 entrance: a line of display type is clipped up from below its own
+   baseline — the type arrives like print coming off a press, never a bounce. */
+@keyframes clip-rise {
+	from { opacity: 0; transform: translateY(0.4em); clip-path: inset(0 0 102% 0); }
+	to { opacity: 1; transform: translateY(0); clip-path: inset(-15% 0 -15% 0); }
+}
+
+.reveal-line {
+	display: block;
+	animation: clip-rise 0.78s cubic-bezier(0.22, 0.86, 0.16, 1) both;
+	animation-delay: var(--d, 0ms);
+}
+
+@keyframes fade-up {
+	from { opacity: 0; transform: translateY(10px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-up {
+	animation: fade-up 0.7s cubic-bezier(0.22, 0.86, 0.16, 1) both;
+	animation-delay: var(--d, 0ms);
+}
+
+@keyframes letter-rise {
+	from { opacity: 0; transform: translateY(8px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes caret-blink {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0; }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after {
+		animation-duration: 0.001ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.001ms !important;
+		scroll-behavior: auto !important;
+	}
+
+	/* Ambient loops are off, not merely fast: reduced motion gets a still fold. */
+	[data-ambient-loop] {
+		animation: none !important;
+	}
+}
