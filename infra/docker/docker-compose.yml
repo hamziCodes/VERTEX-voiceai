@@ -82,6 +82,9 @@ services:
       UCVE_RUNTIME_PROFILE: ${UCVE_RUNTIME_PROFILE:-dev}
       UCVE_ENABLE_LIVEKIT: "false"
       OMP_NUM_THREADS: "1"
+      WAVIA_DRAIN_TIMEOUT_S: ${WAVIA_DRAIN_TIMEOUT_S:-120}
+    # Must exceed WAVIA_DRAIN_TIMEOUT_S so live calls finish before SIGKILL.
+    stop_grace_period: 130s
     depends_on:
       postgres:
         condition: service_healthy

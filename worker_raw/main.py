@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -21,16 +22,6 @@ from core.db.async_pg import get_default_database
 from core.db.pg import use_memory_repos
 from core.observability.context import ObservabilityContext
 from core.observability.http import install_observability, observability_runtime
-from core.runtime.health import (
-    CheckResult,
-    ReadinessProbe,
-    database_check,
-    install_health_routes,
-    profile_check,
-    provider_configuration_check,
-    redis_check,
-)
-from core.runtime.profile_loader import load_profile
 from core.observability.metrics import (
     ucve_active_sessions,
     ucve_worker_session_capacity,
@@ -43,7 +34,18 @@ from core.runtime.admission import (
     CapacityExceededError,
     SessionAdmissionController,
 )
+from core.runtime.drain import DrainingServer
 from core.runtime.env import require_production_secrets
+from core.runtime.health import (
+    CheckResult,
+    ReadinessProbe,
+    database_check,
+    install_health_routes,
+    profile_check,
+    provider_configuration_check,
+    redis_check,
+)
+from core.runtime.profile_loader import load_profile
 from core.runtime.session_plan import RuntimeSessionPlan, SessionPlanIntegrityError
 from core.transport.native_websocket import NativeWebSocketTransport
 from worker_raw.orchestration.pipeline import PipelineOrchestrator
@@ -137,7 +139,8 @@ async def _session_capacity_check() -> CheckResult:
     limit = load_profile().max_sessions_per_worker
     if LOCAL_SESSIONS.count >= limit:
         return CheckResult.fail("session_capacity", f"at capacity ({limit})")
-    return CheckResult.ok("session_capacity", f"{LOCAL_SESSIONS.count}/{limit} sessions")
+    used = LOCAL_SESSIONS.count
+    return CheckResult.ok("session_capacity", f"{used}/{limit} sessions")
 
 
 async def _vad_model_check() -> CheckResult:
@@ -146,7 +149,8 @@ async def _vad_model_check() -> CheckResult:
     status = shared_model_status()
     if status == "loaded":
         return CheckResult.ok("vad_model", "Silero ONNX loaded")
-    return CheckResult.fail("vad_model", f"Silero ONNX {status}; energy fallback in use")
+    detail = f"Silero ONNX {status}; energy fallback in use"
+    return CheckResult.fail("vad_model", detail)
 
 
 readiness = ReadinessProbe(SERVICE_NAME)
@@ -270,6 +274,12 @@ async def _load_session_config(
 
 @app.websocket("/ws/audio")
 async def ws_audio(websocket: WebSocket) -> None:
+    if readiness.draining:
+        # Rolling deploy / scale-in: this process takes no new calls. Accept
+        # first so the client sees the retryable 1013 instead of an HTTP 403.
+        await websocket.accept()
+        await websocket.close(code=1013, reason="worker draining")
+        return
     token = websocket.query_params.get("token")
     if not token:
         await websocket.close(code=4401, reason="missing token")
@@ -339,6 +349,15 @@ async def ws_audio(websocket: WebSocket) -> None:
             "transcript.final", {"speaker": speaker, "text": text}
         )
 
+    if LOCAL_SESSIONS.count >= load_profile().max_sessions_per_worker:
+        # This process is full (readiness already reports it); the client
+        # retries and the load balancer routes to a worker with capacity.
+        await transport.send_control_event(
+            "error", {"code": "WORKER_AT_CAPACITY", "retryable": True}
+        )
+        await websocket.close(code=1013, reason="worker at capacity")
+        return
+
     orchestrator = PipelineOrchestrator(
         on_audio_out=_on_audio_out,
         on_transcript=_on_transcript,
@@ -387,14 +406,26 @@ async def ws_audio(websocket: WebSocket) -> None:
 
 
 def main() -> None:
-    """Bind HTTP/WS on 8081 (compose / Dockerfile contract)."""
-    uvicorn.run(
+    """Bind HTTP/WS on 8081 (compose / Dockerfile contract).
+
+    SIGTERM drains instead of cutting calls: readiness flips to draining, new
+    sessions are refused with 1013, and the process exits when the last
+    session ends or ``WAVIA_DRAIN_TIMEOUT_S`` (default 120 s) expires. A
+    second signal exits immediately.
+    """
+    config = uvicorn.Config(
         "worker_raw.main:app",
         host="0.0.0.0",
-        port=8081,
+        port=int(os.environ.get("PORT", "8081")),
         log_level="info",
         ws_max_size=WS_MAX_SIZE_BYTES,
     )
+    DrainingServer(
+        config,
+        probe=readiness,
+        active_sessions=lambda: LOCAL_SESSIONS.count,
+        drain_timeout_s=float(os.environ.get("WAVIA_DRAIN_TIMEOUT_S", "120")),
+    ).run()
 
 
 if __name__ == "__main__":

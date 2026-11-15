@@ -132,9 +132,19 @@ def main() -> None:
     if slow_ms > 0:
         _install_slow_callback_probe(slow_ms / 1000.0)
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-    uvicorn.run(
+    # The same draining server worker_raw.main.main() uses in production.
+    from core.runtime.drain import DrainingServer
+    from worker_raw.main import LOCAL_SESSIONS, readiness
+
+    config = uvicorn.Config(
         app, host="127.0.0.1", port=args.port, log_level="warning", ws_max_size=2**20
     )
+    DrainingServer(
+        config,
+        probe=readiness,
+        active_sessions=lambda: LOCAL_SESSIONS.count,
+        drain_timeout_s=float(os.environ.get("WAVIA_DRAIN_TIMEOUT_S", "120")),
+    ).run()
 
 
 if __name__ == "__main__":
