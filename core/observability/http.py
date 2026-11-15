@@ -27,6 +27,7 @@ from fastapi.responses import PlainTextResponse
 from starlette.responses import Response
 
 from core.observability.context import ObservabilityContext
+from core.observability.logging import install_log_redaction
 from core.observability.metrics import (
     get_metrics_registry,
     ucve_event_loop_lag_ms,
@@ -71,6 +72,7 @@ def _status_class(status_code: int) -> str:
 def install_observability(app: FastAPI, service: str) -> None:
     """Attach request metrics, server spans and ``/metrics`` to ``app``."""
     app.state.observability_service = service
+    install_log_redaction()
     tracer = get_tracer()
 
     @app.middleware("http")

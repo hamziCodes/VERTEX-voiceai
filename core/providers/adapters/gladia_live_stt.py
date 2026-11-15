@@ -156,7 +156,7 @@ class GladiaLiveSTTSession(BaseLiveSTTSession):
         except asyncio.CancelledError:
             return
         except Exception as exc:  # pragma: no cover
-            logger.warning("Gladia Live send loop ended", error=str(exc))
+            logger.warning("Gladia Live send loop ended", error_type=type(exc).__name__)
 
     async def _send_stop(self) -> None:
         try:
@@ -173,7 +173,7 @@ class GladiaLiveSTTSession(BaseLiveSTTSession):
         except asyncio.CancelledError:
             return
         except Exception as exc:  # pragma: no cover
-            logger.warning("Gladia Live recv loop ended", error=str(exc))
+            logger.warning("Gladia Live recv loop ended", error_type=type(exc).__name__)
         finally:
             await self._transcript_q.put(_STOP_SENTINEL)
 
@@ -194,7 +194,9 @@ class GladiaLiveSTTSession(BaseLiveSTTSession):
             return None
         msg_type = data.get("type")
         if msg_type == "error":
-            logger.error("Gladia Live error event", payload=data.get("data") or data)
+            error_data = data.get("data") if isinstance(data.get("data"), dict) else {}
+            code = error_data.get("code") or error_data.get("type") or "unknown"
+            logger.error("Gladia Live error event", error_code=str(code)[:64])
             return None
         if msg_type != "transcript":
             return None
@@ -206,9 +208,9 @@ class GladiaLiveSTTSession(BaseLiveSTTSession):
             return None
         if not is_final and not self._receive_partials:
             return None
-        logger.info(
+        logger.debug(
             "Gladia Live transcript",
-            text=text[:120],
+            text_chars=len(text),
             is_final=is_final,
         )
         return Transcript(

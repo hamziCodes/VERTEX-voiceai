@@ -8,9 +8,8 @@ import logging
 import sys
 from typing import Any
 
-from core.compliance.redaction import redact_sensitive_data, redact_text
+from core.compliance.redaction import redact_log_fields, redact_text
 from core.observability.context import ObservabilityContext
-
 
 CORRELATION_KEYS = (
     "service",
@@ -66,7 +65,7 @@ class StructuredJSONFormatter(logging.Formatter):
 
         # Merge extra attributes if passed
         if hasattr(record, "extra_fields") and isinstance(record.extra_fields, dict):
-            sanitized = redact_sensitive_data(record.extra_fields)
+            sanitized = redact_log_fields(record.extra_fields)
             if isinstance(sanitized, dict):
                 log_data.update(sanitized)
 
@@ -103,6 +102,42 @@ class StructuredLoggerWrapper:
         )
         record.extra_fields = kwargs
         self._logger.handle(record)
+
+
+_REDACTION_INSTALLED = False
+
+
+def install_log_redaction() -> None:
+    """Redact every log record in the process, whichever logger created it.
+
+    Modules that use ``logging.getLogger`` directly (and third-party libraries)
+    bypass :class:`StructuredJSONFormatter`. Wrapping the record factory makes
+    the message, its ``%`` arguments and any formatted traceback pass through
+    the same PII/credential redaction before any handler sees them.
+    """
+    global _REDACTION_INSTALLED
+    if _REDACTION_INSTALLED:
+        return
+    previous = logging.getLogRecordFactory()
+
+    def factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
+        record = previous(*args, **kwargs)
+        try:
+            record.msg = redact_text(record.getMessage())
+            record.args = None
+        except Exception:  # noqa: BLE001 - a log line must never crash the caller
+            record.msg = "[UNRENDERABLE LOG MESSAGE]"
+            record.args = None
+        if record.exc_info and record.exc_info[0] is not None:
+            import traceback
+
+            record.exc_text = redact_text(
+                "".join(traceback.format_exception(*record.exc_info))
+            ).rstrip("\n")
+        return record
+
+    logging.setLogRecordFactory(factory)
+    _REDACTION_INSTALLED = True
 
 
 _loggers: dict[str, StructuredLoggerWrapper] = {}

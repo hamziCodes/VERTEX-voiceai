@@ -89,7 +89,10 @@ class CartesiaTTSProvider(BaseTTSProvider):
         cleaned = (text or "").strip()
         # Skip punctuation-only scraps (e.g. Urdu full stop "۔") — Cartesia 400s on these.
         if not cleaned or not any(ch.isalnum() for ch in cleaned):
-            logger.info("Skipping Cartesia TTS for empty/punctuation text", preview=cleaned[:20])
+            logger.info(
+                "Skipping Cartesia TTS for empty/punctuation text",
+                text_chars=len(cleaned),
+            )
             return
 
         use_mock = should_use_mock_provider(
