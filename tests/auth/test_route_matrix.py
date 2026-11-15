@@ -93,7 +93,7 @@ def test_route_policy_classifies_every_management_route(client: TestClient) -> N
     [
         ("GET", "/v1/agents", None),
         ("GET", f"/v1/knowledge-bases/status/{uuid4()}", None),
-        ("POST", f"/v1/alerts/config/{uuid4()}", None),
+        ("GET", f"/v1/alerts/{uuid4()}", None),
         (
             "POST",
             "/v1/extraction-schemas",
@@ -205,7 +205,7 @@ def test_path_and_body_tenant_must_match_context(client: TestClient) -> None:
         == 403
     )
     assert (
-        client.post(f"/v1/alerts/config/{other_tenant}", headers=headers).status_code
+        client.get(f"/v1/alerts/{other_tenant}", headers=headers).status_code
         == 403
     )
     assert (

@@ -16,6 +16,7 @@ from control_plane.routes.session import (
     get_default_mint_context,
     unsafe_session_overrides_enabled,
 )
+from core.alerts.service import build_alert_service, set_process_alert_service
 from core.db.async_pg import get_default_database
 from core.db.pg import use_memory_repos
 from core.observability.context import ObservabilityContext
@@ -30,7 +31,10 @@ from core.runtime.health import (
     redis_check,
 )
 from core.runtime.profile_loader import load_profile
-from core.observability.metrics import ucve_active_sessions
+from core.observability.metrics import (
+    ucve_active_sessions,
+    ucve_worker_session_capacity,
+)
 from core.providers.mode import provider_runtime_status
 from core.redis.nonce_store import ReplayStoreUnavailableError
 from core.redis.token_store import SessionTokenStore
@@ -62,9 +66,15 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
             await database.open()
         _app.state.database = database
         _app.state.token_store = SessionTokenStore()
+        _app.state.alert_service = build_alert_service(database)
+        ucve_worker_session_capacity.labels(service=SERVICE_NAME).set(
+            load_profile().max_sessions_per_worker
+        )
+        set_process_alert_service(_app.state.alert_service)
         try:
             yield
         finally:
+            set_process_alert_service(None)
             if database is not None:
                 await database.close()
 

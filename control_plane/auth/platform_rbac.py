@@ -24,6 +24,9 @@ _PLATFORM_MATRIX: dict[str, frozenset[str]] = {
             "platform_support_session:write",
             "platform_support_session:manage",
             "platform_operations:read",
+            # Phase 14: operational alerts.
+            "platform_alerts:read",
+            "platform_alerts:manage",
         }
     ),
     "platform_support": frozenset(

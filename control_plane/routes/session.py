@@ -18,6 +18,7 @@ from control_plane.agents.repo import get_default_agent_config_repo
 from control_plane.auth.hmac_mint import verify_mint_signature
 from control_plane.auth.jwt import issue_session_jwt, verify_session_jwt
 from control_plane.auth.rate_limit import RateLimiter
+from core.alerts.models import AlertCode, AlertSeverity
 from core.db.models import Session, Tenant
 from core.db.repos.pg_repos import (
     build_session_repository,
@@ -50,6 +51,7 @@ class MintContext:
     admission: SessionAdmissionController = field(
         default_factory=SessionAdmissionController
     )
+    alerts: Any | None = None
     mint_rejections: list[dict[str, Any]] = field(default_factory=list)
     audit_events: list[dict[str, Any]] = field(default_factory=list)
 
@@ -105,6 +107,33 @@ def _record_rejection(
     event = {"tenant_id": tenant_id, "status": status, "reason": reason}
     ctx.mint_rejections.append(event)
     ctx.audit_events.append({"action": "mint_rejected", **event})
+
+
+async def _raise_quota_alert(
+    ctx: MintContext, tenant_id: str | None, *, exhausted: bool
+) -> None:
+    """Record a tenant quota alert, de-duplicated per tenant per month."""
+    if ctx.alerts is None or not tenant_id:
+        return
+    month = datetime.now(UTC).strftime("%Y-%m")
+    if exhausted:
+        await ctx.alerts.raise_safely(
+            alert_key=f"quota_exhausted:{tenant_id}:{month}",
+            code=AlertCode.QUOTA_EXHAUSTED,
+            severity=AlertSeverity.ERROR,
+            summary="A session was refused because a plan limit was reached.",
+            tenant_id=tenant_id,
+            facts={"period": month},
+        )
+    else:
+        await ctx.alerts.raise_safely(
+            alert_key=f"quota_soft_cap:{tenant_id}:{month}",
+            code=AlertCode.QUOTA_SOFT_CAP,
+            severity=AlertSeverity.WARNING,
+            summary="Usage passed the soft warning threshold for this month.",
+            tenant_id=tenant_id,
+            facts={"period": month},
+        )
 
 
 def unsafe_session_overrides_enabled() -> bool:
@@ -238,9 +267,11 @@ async def handle_session_mint(
     )
     if not quota_result.allowed:
         _record_rejection(mint_ctx, tenant_id, 429, quota_result.reason or "quota")
+        await _raise_quota_alert(mint_ctx, tenant_id, exhausted=True)
         return 429, {"error": quota_result.reason or "Quota exceeded."}
     if quota_result.is_soft_cap_warn:
         headers["X-UCVE-Quota-Warning"] = "soft_cap"
+        await _raise_quota_alert(mint_ctx, tenant_id, exhausted=False)
 
     session_id = str(generate_session_id())
     try:
@@ -251,6 +282,14 @@ async def handle_session_mint(
         )
     except CapacityExceededError as exc:
         _record_rejection(mint_ctx, tenant_id, 503, str(exc))
+        if mint_ctx.alerts is not None:
+            await mint_ctx.alerts.raise_safely(
+                alert_key="capacity:session_admission",
+                code=AlertCode.CAPACITY_EXHAUSTED,
+                severity=AlertSeverity.ERROR,
+                summary="Session admission refused a session: worker capacity reached.",
+                facts={"max_sessions": mint_ctx.admission.max_sessions},
+            )
         return 503, {"error": "Worker capacity limit reached. Please retry shortly."}
     except AdmissionStoreUnavailableError:
         _record_rejection(mint_ctx, tenant_id, 503, "admission unavailable")

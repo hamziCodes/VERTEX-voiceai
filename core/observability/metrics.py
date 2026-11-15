@@ -490,6 +490,11 @@ ucve_active_sessions = _global_registry.gauge(
     "Realtime sessions currently open in this process",
     labelnames=("service",),
 )
+ucve_worker_session_capacity = _global_registry.gauge(
+    "ucve_worker_session_capacity",
+    "Maximum concurrent sessions this worker accepts (runtime profile)",
+    labelnames=("service",),
+)
 ucve_http_requests_total = _global_registry.counter(
     "ucve_http_requests_total",
     "HTTP requests by route template and status class",

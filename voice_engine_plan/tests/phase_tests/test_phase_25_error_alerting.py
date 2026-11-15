@@ -123,6 +123,20 @@ async def test_alert_router_routes_by_severity() -> None:
         severity="warn",
     )
 
-    await router.route_alert(tenant_id, error, alert_webhook_url="https://tenant.com/alert-webhook")
-    assert len(router.routed_alerts) == 1
-    assert router.routed_alerts[0]["webhook_dispatched"] is True
+    # Phase 14: delivery is reported honestly. A 2xx receiver counts as
+    # delivered; an unreachable one is a failure in every environment.
+    import httpx
+
+    ok_router = AlertRouter(transport=httpx.MockTransport(lambda r: httpx.Response(204)))
+    assert await ok_router.route_alert(
+        tenant_id, error, alert_webhook_url="https://tenant.example/alert-webhook"
+    )
+    assert ok_router.routed_alerts[0]["webhook_dispatched"] is True
+
+    down = httpx.MockTransport(lambda r: httpx.Response(503))
+    failing = AlertRouter(transport=down)
+    assert not await failing.route_alert(
+        tenant_id, error, alert_webhook_url="https://tenant.example/alert-webhook"
+    )
+    assert failing.routed_alerts[0]["webhook_dispatched"] is False
+    assert len(router.routed_alerts) == 0

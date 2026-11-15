@@ -99,6 +99,31 @@ async def _queue_signal(state: Any) -> dict[str, Any]:
     )
 
 
+async def _alerts_signal(state: Any) -> dict[str, Any]:
+    service = getattr(state, "alert_service", None)
+    if service is None:
+        return _signal(
+            "alerts", "Operational alerts", "not_configured", "Alerting is not running."
+        )
+    try:
+        counts = await service.repository.count_open()
+    except Exception:  # noqa: BLE001 - reported as attention, never raised
+        return _signal(
+            "alerts", "Operational alerts", "attention", "Open alerts could not be read."
+        )
+    serious = counts.get("error", 0) + counts.get("critical", 0)
+    total = sum(counts.values())
+    return _signal(
+        "alerts",
+        "Operational alerts",
+        "attention" if serious else "healthy",
+        f"{total} open alert(s); {serious} at error or critical severity."
+        if total
+        else "No open alerts.",
+        {"open": total, "error_or_critical": serious},
+    )
+
+
 async def build_operations_snapshot(
     state: Any, studio_repository: Any
 ) -> dict[str, Any]:
@@ -160,6 +185,7 @@ async def build_operations_snapshot(
             "not_measured",
             "No carrier health probe runs from the control plane.",
         ),
+        await _alerts_signal(state),
         _signal(
             "support_sessions",
             "Support sessions",

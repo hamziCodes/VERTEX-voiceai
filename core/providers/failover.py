@@ -26,6 +26,24 @@ T = TypeVar("T")
 _FAILOVER_CATEGORIES = frozenset({"stt", "llm", "tts", "s2s", "embedding"})
 
 
+async def _alert_chain_exhausted(category: str, failed_routes: int) -> None:
+    """Record a de-duplicated platform alert when a whole chain is down."""
+    from core.alerts.models import AlertCode, AlertSeverity
+    from core.alerts.service import get_process_alert_service
+
+    service = get_process_alert_service()
+    if service is None:
+        return
+    label = category if category in _FAILOVER_CATEGORIES else "other"
+    await service.raise_safely(
+        alert_key=f"provider_chain_exhausted:{label}",
+        code=AlertCode.PROVIDER_CHAIN_EXHAUSTED,
+        severity=AlertSeverity.CRITICAL,
+        summary=f"Every {label} provider route failed or was unavailable for a request.",
+        facts={"category": label, "failed_routes": failed_routes},
+    )
+
+
 def _count_failover(category: str) -> None:
     label = category if category in _FAILOVER_CATEGORIES else "other"
     ucve_provider_failover_total.labels(category=label).inc()
@@ -287,6 +305,7 @@ class FailoverRouter:
             f"All providers for {category}/{language} failed or are unavailable. "
             f"Failures: {evidence or 'circuits_open'}"
         )
+        await _alert_chain_exhausted(category, len(errors))
         raise NoProviderAvailableError(err_msg)
 
     async def stream_with_failover(
@@ -395,6 +414,7 @@ class FailoverRouter:
         evidence = ", ".join(
             f"{provider}:{failure.value}" for provider, failure in errors
         )
+        await _alert_chain_exhausted(category, len(errors))
         raise NoProviderAvailableError(
             f"All providers for {category}/{language} failed or are unavailable. "
             f"Failures: {evidence or 'circuits_open'}"

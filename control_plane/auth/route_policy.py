@@ -20,6 +20,8 @@ class RoutePolicy:
 ROUTE_POLICIES: tuple[RoutePolicy, ...] = (
     RoutePolicy("GET", "/", "public"),
     RoutePolicy("GET", "/health", "public"),
+    RoutePolicy("GET", "/health/live", "public"),
+    RoutePolicy("GET", "/health/ready", "public"),
     RoutePolicy("GET", "/favicon.ico", "public"),
     RoutePolicy("GET", "/json/version", "public"),
     RoutePolicy("GET", "/demo", "public", exact=False),
@@ -136,12 +138,7 @@ ROUTE_POLICIES: tuple[RoutePolicy, ...] = (
         "management",
         "extraction:write",
     ),
-    RoutePolicy(
-        "POST",
-        "/v1/alerts/config/{tenant_id}",
-        "management",
-        "alert:write",
-    ),
+    RoutePolicy("GET", "/v1/alerts/{tenant_id}", "management", "alert:read"),
     RoutePolicy("GET", "/v1/usage", "management", "usage:read"),
     RoutePolicy("GET", "/v1/audit", "management", "audit:read"),
     RoutePolicy("POST", "/v1/secrets/rotate", "management", "secret:rotate"),

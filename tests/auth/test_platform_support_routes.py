@@ -366,6 +366,7 @@ def test_operations_snapshot_is_admin_only_and_honest(support_api) -> None:
         "provider_health",
         "telephony",
         "carrier_health",
+        "alerts",
         "support_sessions",
     }
     assert signals["control_plane"]["status"] == "healthy"

@@ -112,6 +112,8 @@ def test_platform_me_reports_role_and_capabilities(platform_api) -> None:
         "email": "admin@wavia.test",
         "role": "platform_admin",
         "capabilities": [
+            "platform_alerts:manage",
+            "platform_alerts:read",
             "platform_audit:read",
             "platform_operations:read",
             "platform_staff:read",

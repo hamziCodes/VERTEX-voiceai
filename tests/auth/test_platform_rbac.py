@@ -67,6 +67,8 @@ def test_platform_roles_hold_exactly_the_launch_permissions() -> None:
             "platform_support_session:write",
             "platform_support_session:manage",
             "platform_operations:read",
+            "platform_alerts:read",
+            "platform_alerts:manage",
         }
     )
     assert platform_permissions_for_role("platform_support") == frozenset(

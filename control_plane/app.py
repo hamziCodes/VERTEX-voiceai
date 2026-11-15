@@ -51,6 +51,7 @@ from control_plane.telephony_settings import (
     PostgresTelephonySettingsRepository,
 )
 from core.db.async_pg import get_default_database
+from core.alerts.service import build_alert_service, set_process_alert_service
 from core.db.pg import use_memory_repos
 from core.runtime.health import (
     CheckResult,
@@ -207,6 +208,9 @@ async def _control_plane_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.secret_vault = build_secret_vault()
     set_secret_vault(app.state.secret_vault)
     app.state.redis = None
+    app.state.alert_service = build_alert_service(database)
+    app.state.mint_ctx.alerts = app.state.alert_service
+    set_process_alert_service(app.state.alert_service)
     outbound_runtime = None
     if database is not None and not hasattr(app.state, "outbound_call_service"):
         from telephony_gateway.outbound_runtime import build_outbound_runtime

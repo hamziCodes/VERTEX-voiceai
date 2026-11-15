@@ -73,6 +73,12 @@ SupportWriter = Annotated[
 OperationsReader = Annotated[
     PlatformContext, Depends(require_platform_permission("platform_operations:read"))
 ]
+AlertsReader = Annotated[
+    PlatformContext, Depends(require_platform_permission("platform_alerts:read"))
+]
+AlertsManager = Annotated[
+    PlatformContext, Depends(require_platform_permission("platform_alerts:manage"))
+]
 
 Reason = Annotated[
     str, Field(min_length=REASON_MIN_LENGTH, max_length=REASON_MAX_LENGTH)
@@ -354,6 +360,33 @@ async def read_support_readiness(
         "entitlements": entitlements_projection(entitlements),
         "telephony": telephony_projection(telephony),
     }
+
+
+@router.get("/alerts")
+async def list_platform_alerts(
+    request: Request,
+    context: AlertsReader,
+    alert_status: Annotated[
+        Literal["open", "resolved"] | None, Query(alias="status")
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> dict[str, Any]:
+    service = request.app.state.alert_service
+    alerts = await service.repository.list_alerts(status=alert_status, limit=limit)
+    return {"alerts": [alert.to_public() for alert in alerts]}
+
+
+@router.post("/alerts/{alert_id}/resolve")
+async def resolve_platform_alert(
+    alert_id: UUID, request: Request, context: AlertsManager
+) -> dict[str, Any]:
+    service = request.app.state.alert_service
+    resolved = await service.repository.resolve_by_id(
+        alert_id, resolved_by=f"staff:{context.user_id}"
+    )
+    if resolved is None:
+        raise HTTPException(status_code=404, detail="Open alert not found.")
+    return resolved.to_public()
 
 
 @router.get("/operations")
