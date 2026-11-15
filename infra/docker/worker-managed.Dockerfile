@@ -30,6 +30,6 @@ RUN pip install --no-cache-dir \
 EXPOSE 8082
 
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
-    CMD curl -f http://localhost:8082/health || exit 1
+    CMD curl -f http://localhost:8082/health/live || exit 1
 
 CMD ["python", "-m", "worker_managed.main"]

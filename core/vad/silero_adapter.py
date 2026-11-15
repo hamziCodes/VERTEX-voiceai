@@ -50,6 +50,15 @@ def _load_shared_onnx_session(model_path: Path) -> Any | None:
         return _SHARED_ONNX_SESSION
 
 
+def shared_model_status() -> str:
+    """Return ``loaded``, ``unavailable`` or ``missing`` for readiness checks."""
+    model_path = _MODEL_DIR / _ONNX_NAME
+    if not model_path.is_file():
+        return "missing"
+    session = _load_shared_onnx_session(model_path)
+    return "loaded" if session is not None else "unavailable"
+
+
 class SileroVADAdapter(BaseVADProvider):
     """Silero VAD (ONNX when model present) with numpy RMS energy fallback.
 

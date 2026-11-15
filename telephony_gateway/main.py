@@ -10,6 +10,13 @@ from typing import Any
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 
 from core.observability.http import install_observability, observability_runtime
+from core.runtime.health import (
+    CheckResult,
+    ReadinessProbe,
+    database_check,
+    install_health_routes,
+    profile_check,
+)
 from telephony_gateway.telnyx.webhook import (
     TelnyxWebhookError,
     TelnyxWebhookService,
@@ -39,6 +46,7 @@ async def _gateway_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
             database = AsyncDatabase.from_environment()
             await database.open()
+            _app.state.database = database
             event_sink = PostgresTelephonyRepository(database)
             _app.state.telnyx_event_sink = event_sink
         if _app.state.telnyx_webhook_service is None and event_sink is not None:
@@ -49,6 +57,7 @@ async def _gateway_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     finally:
         if database is not None:
             await database.close()
+            _app.state.database = None
             _app.state.telnyx_event_sink = None
             _app.state.telnyx_webhook_service = None
 
@@ -56,9 +65,27 @@ async def _gateway_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(title="Wavia Telephony Gateway", version="0.1.0", lifespan=lifespan)
 app.state.telnyx_webhook_service = None
 app.state.telnyx_event_sink = None
+app.state.database = None
 
 
 install_observability(app, "telephony-gateway")
+
+
+async def _webhook_verifier_check() -> CheckResult:
+    if getattr(app.state, "telnyx_webhook_service", None) is not None:
+        return CheckResult.ok("telnyx_webhooks", "signature verifier configured")
+    return CheckResult.fail(
+        "telnyx_webhooks", "verifier unavailable (TELNYX_PUBLIC_KEY or event store missing)"
+    )
+
+
+readiness = ReadinessProbe("telephony-gateway")
+readiness.add_check(
+    "database", database_check(lambda: getattr(app.state, "database", None))
+)
+readiness.add_check("telnyx_webhooks", _webhook_verifier_check)
+readiness.add_check("runtime_profile", profile_check)
+install_health_routes(app, readiness)
 
 
 @app.get("/health")

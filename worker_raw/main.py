@@ -20,6 +20,16 @@ from core.db.async_pg import get_default_database
 from core.db.pg import use_memory_repos
 from core.observability.context import ObservabilityContext
 from core.observability.http import install_observability, observability_runtime
+from core.runtime.health import (
+    CheckResult,
+    ReadinessProbe,
+    database_check,
+    install_health_routes,
+    profile_check,
+    provider_configuration_check,
+    redis_check,
+)
+from core.runtime.profile_loader import load_profile
 from core.observability.metrics import ucve_active_sessions
 from core.providers.mode import provider_runtime_status
 from core.redis.nonce_store import ReplayStoreUnavailableError
@@ -101,6 +111,44 @@ def _enforce_provider_mode_constraint(
 
 
 install_observability(app, SERVICE_NAME)
+
+
+class _LocalSessions:
+    """Sessions open in this process (admission leases are cluster-wide)."""
+
+    def __init__(self) -> None:
+        self.count = 0
+
+
+LOCAL_SESSIONS = _LocalSessions()
+
+
+async def _session_capacity_check() -> CheckResult:
+    limit = load_profile().max_sessions_per_worker
+    if LOCAL_SESSIONS.count >= limit:
+        return CheckResult.fail("session_capacity", f"at capacity ({limit})")
+    return CheckResult.ok("session_capacity", f"{LOCAL_SESSIONS.count}/{limit} sessions")
+
+
+async def _vad_model_check() -> CheckResult:
+    from core.vad.silero_adapter import shared_model_status
+
+    status = shared_model_status()
+    if status == "loaded":
+        return CheckResult.ok("vad_model", "Silero ONNX loaded")
+    return CheckResult.fail("vad_model", f"Silero ONNX {status}; energy fallback in use")
+
+
+readiness = ReadinessProbe(SERVICE_NAME)
+readiness.add_check(
+    "database", database_check(lambda: getattr(app.state, "database", None))
+)
+readiness.add_check("redis", redis_check())
+readiness.add_check("runtime_profile", profile_check)
+readiness.add_check("session_capacity", _session_capacity_check)
+readiness.add_check("vad_model", _vad_model_check, required=False)
+readiness.add_check("providers", provider_configuration_check, required=False)
+install_health_routes(app, readiness)
 
 
 @app.get("/health")
@@ -317,6 +365,7 @@ async def ws_audio(websocket: WebSocket) -> None:
     )
     active = ucve_active_sessions.labels(service=SERVICE_NAME)
     active.inc()
+    LOCAL_SESSIONS.count += 1
     ObservabilityContext.bind(session_id=str(config.session_id))
     try:
         await runner.start()
@@ -324,6 +373,7 @@ async def ws_audio(websocket: WebSocket) -> None:
         pass
     finally:
         active.dec()
+        LOCAL_SESSIONS.count -= 1
 
 
 def main() -> None:

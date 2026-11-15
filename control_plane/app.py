@@ -52,6 +52,15 @@ from control_plane.telephony_settings import (
 )
 from core.db.async_pg import get_default_database
 from core.db.pg import use_memory_repos
+from core.runtime.health import (
+    CheckResult,
+    ReadinessProbe,
+    database_check,
+    install_health_routes,
+    profile_check,
+    provider_configuration_check,
+    redis_check,
+)
 from core.observability.http import (
     install_observability,
     observability_runtime,
@@ -61,7 +70,11 @@ from core.db.repos.post_call_repo import (
     InMemoryPostCallRepository,
     PostgresPostCallRepository,
 )
-from core.runtime.env import get_ucve_env, require_production_secrets
+from core.runtime.env import (
+    get_ucve_env,
+    is_protected_environment,
+    require_production_secrets,
+)
 from core.secrets.repository import PostgresSecretRepository
 from core.secrets.vault import SecretVault, build_secret_vault
 from post_call.jobs.repository import (
@@ -295,6 +308,26 @@ async def request_id_and_tenant_middleware(request: Request, call_next):  # type
 
 
 install_observability(app, "control-plane")
+
+
+async def _identity_check() -> CheckResult:
+    configured = getattr(app.state, "oidc_provider", None) is not None
+    if configured:
+        return CheckResult.ok("identity", "OIDC provider configured")
+    if is_protected_environment():
+        return CheckResult.fail("identity", "OIDC provider not configured")
+    return CheckResult.ok("identity", "OIDC not configured (development)")
+
+
+readiness = ReadinessProbe("control-plane")
+readiness.add_check(
+    "database", database_check(lambda: getattr(app.state, "database", None))
+)
+readiness.add_check("redis", redis_check())
+readiness.add_check("runtime_profile", profile_check)
+readiness.add_check("identity", _identity_check)
+readiness.add_check("providers", provider_configuration_check, required=False)
+install_health_routes(app, readiness)
 
 
 @app.get("/health")

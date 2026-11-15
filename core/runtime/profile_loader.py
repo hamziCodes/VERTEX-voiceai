@@ -35,29 +35,48 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PROFILES_DIR = REPO_ROOT / "infra" / "scaling" / "profiles"
 
 
+class ProfileNotFoundError(FileNotFoundError):
+    """Raised when the selected runtime profile does not exist."""
+
+
+def _resolve_profile_path(name_or_path: str | Path | None) -> Path:
+    if name_or_path is None:
+        name_or_path = os.getenv("UCVE_RUNTIME_PROFILE", "dev").strip() or "dev"
+    if isinstance(name_or_path, str) and not name_or_path.endswith((".yaml", ".yml")):
+        return PROFILES_DIR / f"{name_or_path.lower()}.yaml"
+    return Path(name_or_path)
+
+
+def _read_profile(profile_path: Path) -> RuntimeProfile:
+    with open(profile_path, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    return RuntimeProfile(**data)
+
+
+def load_profile_strict(name_or_path: str | Path | None = None) -> RuntimeProfile:
+    """Load the selected profile or raise :class:`ProfileNotFoundError`."""
+    profile_path = _resolve_profile_path(name_or_path)
+    if not profile_path.is_file():
+        raise ProfileNotFoundError(f"Runtime profile not found: {profile_path.name}")
+    return _read_profile(profile_path)
+
+
 def load_profile(name_or_path: str | Path | None = None) -> RuntimeProfile:
     """Load a runtime profile by name (dev, standard, high_density) or file path.
 
     If name_or_path is None, inspects the UCVE_RUNTIME_PROFILE environment variable,
-    defaulting to 'dev'.
+    defaulting to 'dev'. Protected environments (staging/production) refuse an
+    unknown profile; development keeps the dev fallback, and readiness reports
+    the mismatch either way.
     """
-    if name_or_path is None:
-        name_or_path = os.getenv("UCVE_RUNTIME_PROFILE", "dev").strip()
+    from core.runtime.env import is_protected_environment
 
-    if isinstance(name_or_path, str) and not name_or_path.endswith((".yaml", ".yml")):
-        profile_path = PROFILES_DIR / f"{name_or_path.lower()}.yaml"
-    else:
-        profile_path = Path(name_or_path)
-
-    if not profile_path.is_file():
-        # Fallback to dev if specified profile not found
+    try:
+        return load_profile_strict(name_or_path)
+    except ProfileNotFoundError:
+        if is_protected_environment():
+            raise
         fallback = PROFILES_DIR / "dev.yaml"
-        if fallback.is_file():
-            profile_path = fallback
-        else:
-            raise FileNotFoundError(f"Runtime profile not found: {profile_path}")
-
-    with open(profile_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-
-    return RuntimeProfile(**data)
+        if not fallback.is_file():
+            raise
+        return _read_profile(fallback)
