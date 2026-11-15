@@ -1,37 +1,23 @@
-# Runbook: Quota Exhaustion
+# Runbook: quota and plan limits
 
-Phase 14 usage metering thresholds. Ports habiba cap exhaustion pattern.
+Usage and concurrency limits are enforced at session mint (`POST /v1/session/mint`). Monthly usage is derived from the usage ledger for the current calendar month; no reset job exists or is needed.
 
-## Symptoms
+## Signals
 
-- `QUOTA_SOFT_WARN` alert at **80%** of tenant quota
-- `QUOTA_EXCEEDED` at **100%** — mint returns 503
-- Dashboard usage graph flatlines at cap
+| Event | Response to the caller | Alert |
+|---|---|---|
+| Soft threshold passed | Session allowed; header `X-UCVE-Quota-Warning: soft_cap` | `QUOTA_SOFT_CAP` (warning, one per tenant per month) |
+| Plan limit reached | `429` | `QUOTA_EXHAUSTED` (error, one per tenant per month) |
+| Fleet capacity reached (not a plan limit) | `503` "Worker capacity limit reached" | `CAPACITY_EXHAUSTED` (platform) |
+
+Tenants see their own quota alerts at `GET /v1/alerts/{tenant_id}`; staff see all in `/admin/operations`.
 
 ## Immediate actions
 
-1. Confirm tenant_id from alert (no PHI in ticket).
-2. Check Redis quota counter vs Postgres usage ledger (Phase 14).
-3. **80%:** notify tenant admin via email webhook; no hard block yet.
-4. **100%:** new sessions rejected; active sessions continue until disconnect.
-
-## Mitigation
-
-| Action | When |
-|---|---|
-| Temporary quota bump | Contracted overage approved |
-| Ask tenant to reduce concurrency | Self-serve |
-| Scale workers | Cluster capacity, not quota — see RUNBOOK_WORKER_OOM |
+1. Distinguish plan limit (429, tenant alert) from fleet capacity (503, platform alert). Capacity is an operations problem — see RUNBOOK_WORKER_OOM.
+2. For a plan limit, check the tenant's entitlements in `/admin` (tenant summary). Active sessions continue; only new sessions are refused.
+3. Any limit change is a commercial decision; record who approved it.
 
 ## Escalation
 
-SEV-3 at 80%; SEV-2 at 100% for paid tier > 15 min.
-
-## Prevention
-
-- Set tenant alert contacts in control-plane (Phase 25)
-- Review Phase 31 admission limits vs quota
-
-## Related
-
-- [../developer/TROUBLESHOOTING.md](../developer/TROUBLESHOOTING.md) — `QUOTA_EXCEEDED`
+SEV-3 at the soft threshold; SEV-2 if a paying tenant is blocked for more than 15 minutes without an approved decision.
