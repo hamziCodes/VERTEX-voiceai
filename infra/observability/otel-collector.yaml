@@ -1,0 +1,38 @@
+# Local OpenTelemetry Collector for verifying Wavia telemetry export.
+# Traces arrive over OTLP/HTTP; metrics are scraped from each service's
+# bearer-protected /metrics endpoint. Both are written to a local file.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: wavia
+          scrape_interval: 5s
+          authorization:
+            type: Bearer
+            credentials: ${env:UCVE_METRICS_BEARER}
+          static_configs:
+            - targets: ${env:WAVIA_SCRAPE_TARGETS}
+
+processors:
+  batch: {}
+
+exporters:
+  file:
+    path: /telemetry/telemetry.jsonl
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file, debug]
+    metrics:
+      receivers: [prometheus]
+      processors: [batch]
+      exporters: [file, debug]

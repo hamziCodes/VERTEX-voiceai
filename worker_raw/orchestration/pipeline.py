@@ -43,7 +43,9 @@ from core.listening.vad_worker import VADWorker
 from core.mcp.filler import ConversationalFillerSynth, FillerConfig
 from core.metering.kinds import AGENT_SEC, LLM_TOKENS, STT_SEC, TTS_SEC
 from core.metering.usage_meter import UsageMeter
+from core.observability.context import ObservabilityContext
 from core.observability.logging import get_logger
+from core.observability.metrics import ucve_barge_in_total, ucve_buffer_drop_total
 from core.playback.turn_commit import PlayedTextCommit, TurnCommitTracker
 from core.providers.adapters.cartesia_tts import CartesiaTTSProvider
 from core.providers.adapters.deepgram_stt import DeepgramSTTProvider
@@ -479,6 +481,7 @@ class PipelineOrchestrator:
             except Exception:
                 break
         if dropped > 0:
+            ucve_buffer_drop_total.labels(buffer="egress_barge_in_flush").inc(dropped)
             logger.info(
                 "Flushed egress audio queue on barge-in", dropped_chunks=dropped
             )
@@ -1064,6 +1067,7 @@ class PipelineOrchestrator:
                 return
             if turn_id:
                 self._interrupted_turn_ids.add(turn_id)
+            ucve_barge_in_total.inc()
 
             logger.info(
                 "Executing immediate barge-in",
@@ -1675,6 +1679,7 @@ class PipelineOrchestrator:
         )
         self._active_latency_turn_id = waterfall.turn_id
         turn_id = str(waterfall.turn_id)
+        ObservabilityContext.bind(turn_id=turn_id)
         self._active_playback_turn_id = turn_id
         self._turn_commit_tracker.begin_turn(turn_id)
         self._pending_assistant_turns[turn_id] = (

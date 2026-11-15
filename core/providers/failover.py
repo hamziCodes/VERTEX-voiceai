@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
+from core.observability.metrics import ucve_provider_failover_total
 from core.providers.circuit_breaker import CircuitBreakerConfig, CircuitState
 from core.providers.exceptions import (
     NoProviderAvailableError,
@@ -20,6 +21,14 @@ from core.providers.exceptions import (
 )
 
 T = TypeVar("T")
+
+
+_FAILOVER_CATEGORIES = frozenset({"stt", "llm", "tts", "s2s", "embedding"})
+
+
+def _count_failover(category: str) -> None:
+    label = category if category in _FAILOVER_CATEGORIES else "other"
+    ucve_provider_failover_total.labels(category=label).inc()
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,6 +252,7 @@ class FailoverRouter:
                 raise
             except ProviderInvocationError as exc:
                 self.record_route_failure(route, exc.failure, now_ts=time.time())
+                _count_failover(category)
                 self._release_probes(route)
                 errors.append((exc.failure.provider_id, exc.failure.category))
             except TimeoutError:
@@ -254,6 +264,7 @@ class FailoverRouter:
                     retryable=True,
                 )
                 self.record_route_failure(route, failure, now_ts=time.time())
+                _count_failover(category)
                 self._release_probes(route)
                 errors.append((provider_id, failure.category))
             except Exception:
@@ -265,6 +276,7 @@ class FailoverRouter:
                     retryable=False,
                 )
                 self.record_route_failure(route, failure, now_ts=time.time())
+                _count_failover(category)
                 self._release_probes(route)
                 errors.append((provider_id, failure.category))
 
@@ -360,6 +372,7 @@ class FailoverRouter:
                 else:
                     failure = provider_invocation_error(provider_id, exc).failure
                 self.record_route_failure(route, failure, now_ts=time.time())
+                _count_failover(category)
                 self._release_probes(route)
                 if committed_items:
                     raise ProviderStreamInterruptedError(

@@ -23,7 +23,6 @@ from control_plane.auth.context import AuthContext
 from control_plane.auth.dependencies import enforce_tenant_access, require_permission
 from control_plane.auth.hmac_mint import expected_signature
 from control_plane.auth.rate_limit import RateLimiter
-from control_plane.metrics import handle_metrics_request
 from control_plane.middleware.security_headers import SecurityHeadersMiddleware
 from control_plane.openapi_serve import register_self_hosted_docs
 from control_plane.routes.agents import router as agents_router
@@ -53,6 +52,11 @@ from control_plane.telephony_settings import (
 )
 from core.db.async_pg import get_default_database
 from core.db.pg import use_memory_repos
+from core.observability.http import (
+    install_observability,
+    observability_runtime,
+    render_metrics,
+)
 from core.db.repos.post_call_repo import (
     InMemoryPostCallRepository,
     PostgresPostCallRepository,
@@ -140,6 +144,13 @@ def _allowed_origins() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    async with observability_runtime(app, "control-plane"):
+        async with _control_plane_lifespan(app):
+            yield
+
+
+@asynccontextmanager
+async def _control_plane_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     require_production_secrets()
     from control_plane.auth.oidc_jwks import build_oidc_provider_from_environment
 
@@ -241,7 +252,11 @@ if web_client_path.exists():
 
 @app.middleware("http")
 async def request_id_and_tenant_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
-    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    request_id = (
+        getattr(request.state, "request_id", None)
+        or request.headers.get("x-request-id")
+        or str(uuid.uuid4())
+    )
     request.state.request_id = request_id
     auth_paths = {
         "/mint",
@@ -277,6 +292,9 @@ async def request_id_and_tenant_middleware(request: Request, call_next):  # type
     response: Response = await call_next(request)
     response.headers["X-Request-Id"] = request_id
     return response
+
+
+install_observability(app, "control-plane")
 
 
 @app.get("/health")
@@ -514,12 +532,4 @@ async def rotate_secret(
 async def metrics(
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> PlainTextResponse:
-    expected = _metrics_bearer()
-    if not expected:
-        raise HTTPException(
-            status_code=503, detail="UCVE_METRICS_BEARER not configured."
-        )
-    if not authorization or authorization != f"Bearer {expected}":
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    code, headers, body = handle_metrics_request()
-    return PlainTextResponse(content=body, status_code=code, headers=headers)
+    return render_metrics(authorization)

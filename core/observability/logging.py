@@ -12,6 +12,19 @@ from core.compliance.redaction import redact_sensitive_data, redact_text
 from core.observability.context import ObservabilityContext
 
 
+CORRELATION_KEYS = (
+    "service",
+    "request_id",
+    "trace_id",
+    "span_id",
+    "call_id",
+    "tenant_id",
+    "session_id",
+    "turn_id",
+    "phase",
+)
+
+
 def redact_phi(text: str) -> str:
     """Redact sensitive PHI patterns (phone numbers, emails, SSNs) from text."""
     if not isinstance(text, str):
@@ -47,7 +60,7 @@ class StructuredJSONFormatter(logging.Formatter):
         }
 
         # Merge correlation IDs from context
-        for key in ("call_id", "tenant_id", "session_id", "phase"):
+        for key in CORRELATION_KEYS:
             if key in ctx:
                 log_data[key] = ctx[key]
 

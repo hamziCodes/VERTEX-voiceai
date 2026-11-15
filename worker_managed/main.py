@@ -9,13 +9,19 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 import uvicorn
 
+from core.observability.http import install_observability, observability_runtime
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    yield
+    async with observability_runtime(_app, "worker-managed"):
+        yield
 
 
 app = FastAPI(title="Wavia Managed Worker", version="0.1.0", lifespan=lifespan)
+
+
+install_observability(app, "worker-managed")
 
 
 @app.get("/health")

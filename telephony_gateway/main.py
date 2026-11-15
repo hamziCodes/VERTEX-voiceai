@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 
+from core.observability.http import install_observability, observability_runtime
 from telephony_gateway.telnyx.webhook import (
     TelnyxWebhookError,
     TelnyxWebhookService,
@@ -18,6 +19,13 @@ from telephony_gateway.telnyx.webhook import (
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    async with observability_runtime(_app, "telephony-gateway"):
+        async with _gateway_lifespan(_app):
+            yield
+
+
+@asynccontextmanager
+async def _gateway_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     event_sink = getattr(_app.state, "telnyx_event_sink", None)
     database = None
     try:
@@ -48,6 +56,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(title="Wavia Telephony Gateway", version="0.1.0", lifespan=lifespan)
 app.state.telnyx_webhook_service = None
 app.state.telnyx_event_sink = None
+
+
+install_observability(app, "telephony-gateway")
 
 
 @app.get("/health")

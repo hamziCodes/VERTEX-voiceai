@@ -18,6 +18,9 @@ from control_plane.routes.session import (
 )
 from core.db.async_pg import get_default_database
 from core.db.pg import use_memory_repos
+from core.observability.context import ObservabilityContext
+from core.observability.http import install_observability, observability_runtime
+from core.observability.metrics import ucve_active_sessions
 from core.providers.mode import provider_runtime_status
 from core.redis.nonce_store import ReplayStoreUnavailableError
 from core.redis.token_store import SessionTokenStore
@@ -42,19 +45,21 @@ from worker_raw.ws_session import ProtocolSessionError, WebSocketSessionRunner
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     require_production_secrets()
-    database = None
-    if not use_memory_repos():
-        database = get_default_database()
-        await database.open()
-    _app.state.database = database
-    _app.state.token_store = SessionTokenStore()
-    try:
-        yield
-    finally:
-        if database is not None:
-            await database.close()
+    async with observability_runtime(_app, SERVICE_NAME):
+        database = None
+        if not use_memory_repos():
+            database = get_default_database()
+            await database.open()
+        _app.state.database = database
+        _app.state.token_store = SessionTokenStore()
+        try:
+            yield
+        finally:
+            if database is not None:
+                await database.close()
 
 
+SERVICE_NAME = "worker-raw"
 app = FastAPI(title="Wavia Worker Raw", version="0.1.0", lifespan=lifespan)
 session_admission = SessionAdmissionController()
 _default_token_store = SessionTokenStore()
@@ -93,6 +98,9 @@ def _enforce_provider_mode_constraint(
         raise ProviderModeConstraintError(
             "Signed STT transcript mode constraint mismatch."
         )
+
+
+install_observability(app, SERVICE_NAME)
 
 
 @app.get("/health")
@@ -307,10 +315,15 @@ async def ws_audio(websocket: WebSocket) -> None:
         ),
         token_expires_at=(float(payload["exp"]) if payload.get("exp") else None),
     )
+    active = ucve_active_sessions.labels(service=SERVICE_NAME)
+    active.inc()
+    ObservabilityContext.bind(session_id=str(config.session_id))
     try:
         await runner.start()
     except (ProtocolSessionError, WebSocketDisconnect):
         pass
+    finally:
+        active.dec()
 
 
 def main() -> None:

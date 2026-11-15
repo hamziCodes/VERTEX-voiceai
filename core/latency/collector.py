@@ -11,6 +11,33 @@ from uuid import UUID
 from core.latency.demotion import LatencyDemotionRule
 from core.latency.slo_policy import SLOPolicy
 from core.latency.waterfall import LatencyWaterfall, StageBudget
+from core.observability.metrics import ucve_turn_latency_ms, ucve_turn_stage_ms
+
+_QUALITY_LABELS = frozenset(
+    {"server_ack_upper_bound", "playback_ack_only", "incomplete", "excluded"}
+)
+
+
+def _observe_e2e(waterfall: LatencyWaterfall) -> None:
+    if getattr(waterfall, "_e2e_metric_recorded", False):
+        return
+    value = waterfall.user_perceived_latency_ms()
+    if value is None:
+        return
+    quality = waterfall.measurement_quality
+    label = quality if quality in _QUALITY_LABELS else "other"
+    ucve_turn_latency_ms.labels(measurement_quality=label).observe(value)
+    waterfall._e2e_metric_recorded = True  # type: ignore[attr-defined]
+
+
+def _observe_stages(waterfall: LatencyWaterfall) -> None:
+    if getattr(waterfall, "_stage_metrics_recorded", False):
+        return
+    for stage, value in waterfall.stage_durations_ms().items():
+        if stage == "user_perceived_e2e" or value is None:
+            continue
+        ucve_turn_stage_ms.labels(stage=stage).observe(value)
+    waterfall._stage_metrics_recorded = True  # type: ignore[attr-defined]
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +147,7 @@ class LatencyCollector:
             else "playback_ack_only"
         )
         waterfall.compute_e2e_latency()
+        _observe_e2e(waterfall)
         return PlaybackAckResult(True, "accepted", waterfall)
 
     def record_turn(self, waterfall: LatencyWaterfall) -> LatencyWaterfall:
@@ -127,6 +155,8 @@ class LatencyCollector:
         self.register_turn(waterfall)
         waterfall.compute_e2e_latency()
         self.collected_waterfalls.append(waterfall)
+        _observe_stages(waterfall)
+        _observe_e2e(waterfall)
         return waterfall
 
     def percentile_summary(self) -> dict[str, int | float]:
