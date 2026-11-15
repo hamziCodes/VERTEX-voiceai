@@ -38,6 +38,7 @@ packages = [
     "worker_raw",
     "telephony_gateway",
     "post_call",
+    "worker_jobs",
 ]
 
 [tool.uv]

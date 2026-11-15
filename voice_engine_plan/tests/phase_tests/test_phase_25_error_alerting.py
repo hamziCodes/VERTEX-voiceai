@@ -84,7 +84,15 @@ async def test_dlq_retention_and_retry_sweeper() -> None:
     assert job.attempts == 1
     assert (job.expires_at - job.created_at).days == 30  # 30-day TTL
 
-    sweeper = DLQRetrySweeper(repo)
+    # Phase 14: without a real re-dispatch path nothing is counted as retried.
+    honest = await DLQRetrySweeper(repo).run_sweep()
+    assert honest["retried"] == 0 and honest["redispatch_unavailable"] == 1
+    assert job.attempts == 1
+
+    async def redispatch(_job) -> bool:
+        return True
+
+    sweeper = DLQRetrySweeper(repo, redispatch=redispatch)
     res = await sweeper.run_sweep()
     assert res["retried"] == 1
     assert job.attempts == 2

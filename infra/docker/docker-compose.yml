@@ -95,6 +95,35 @@ services:
       timeout: 5s
       retries: 3
 
+  worker-jobs:
+    build:
+      context: ../..
+      dockerfile: infra/docker/worker-jobs.Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      UCVE_ENV: ${UCVE_ENV:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ucve}:${POSTGRES_PASSWORD:-ucve_dev}@postgres:5432/${POSTGRES_DB:-ucve}
+      REDIS_URL: redis://redis:6379/0
+      UCVE_MASTER_KEY: ${UCVE_MASTER_KEY:-}
+      UCVE_METRICS_BEARER: ${UCVE_METRICS_BEARER:-}
+      UCVE_EMBEDDING_MODEL_PATH: ${UCVE_EMBEDDING_MODEL_PATH:-}
+      WAVIA_ALERT_WEBHOOK_URL: ${WAVIA_ALERT_WEBHOOK_URL:-}
+      WAVIA_ALERT_WEBHOOK_SECRET: ${WAVIA_ALERT_WEBHOOK_SECRET:-}
+      WAVIA_JOBS_DRAIN_S: ${WAVIA_JOBS_DRAIN_S:-30}
+      OTEL_EXPORTER_ENABLED: ${OTEL_EXPORTER_ENABLED:-false}
+    stop_grace_period: 40s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      control-plane:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
   adminer:
     image: adminer:latest
     ports:
