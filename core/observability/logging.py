@@ -107,6 +107,39 @@ class StructuredLoggerWrapper:
 _REDACTION_INSTALLED = False
 
 
+def _redact_argument(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return redact_text(value if isinstance(value, str) else str(value))
+
+
+def _redact_record_message(record: logging.LogRecord) -> None:
+    """Redact the message and each ``%`` argument while keeping their shape.
+
+    Formatters such as uvicorn's access formatter unpack ``record.args``, so
+    the arguments stay a tuple (or mapping) of the same length. When the
+    redacted pieces no longer format (a ``%d`` that received text), the
+    record falls back to one fully rendered, redacted message.
+    """
+    original_args = record.args
+    rendered = record.getMessage()
+    if isinstance(record.msg, str) and isinstance(original_args, tuple):
+        record.args = tuple(_redact_argument(value) for value in original_args)
+        record.msg = redact_text(record.msg)
+    elif isinstance(record.msg, str) and isinstance(original_args, dict):
+        record.args = {key: _redact_argument(value) for key, value in original_args.items()}
+        record.msg = redact_text(record.msg)
+    else:
+        record.msg = redact_text(rendered)
+        record.args = None
+        return
+    try:
+        record.getMessage()
+    except (TypeError, ValueError, KeyError):
+        record.msg = redact_text(rendered)
+        record.args = None
+
+
 def install_log_redaction() -> None:
     """Redact every log record in the process, whichever logger created it.
 
@@ -123,8 +156,7 @@ def install_log_redaction() -> None:
     def factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
         record = previous(*args, **kwargs)
         try:
-            record.msg = redact_text(record.getMessage())
-            record.args = None
+            _redact_record_message(record)
         except Exception:  # noqa: BLE001 - a log line must never crash the caller
             record.msg = "[UNRENDERABLE LOG MESSAGE]"
             record.args = None

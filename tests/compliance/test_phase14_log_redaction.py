@@ -99,6 +99,41 @@ def test_stdlib_loggers_are_redacted_process_wide() -> None:
     assert "ValueError" in output  # the traceback survives, minus the PII
 
 
+def test_redaction_keeps_argument_shape_for_uvicorn_access_logs() -> None:
+    """Regression (Phase 15 container smoke): uvicorn's access formatter
+    unpacks ``record.args``; flattening them broke every access log line."""
+    from uvicorn.logging import AccessFormatter
+
+    install_log_redaction()
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(
+        AccessFormatter('%(client_addr)s - "%(request_line)s" %(status_code)s', use_colors=False)
+    )
+    logger = logging.getLogger("uvicorn.access.phase15")
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    try:
+        logger.info(
+            '%s - "%s %s HTTP/%s" %d',
+            "172.17.0.1:44786",
+            "GET",
+            "/v1/calls?email=someone@example.com",
+            "1.1",
+            200,
+        )
+        logger.info("count %d of %s", 3, "4111 1111 1111 1111")
+    finally:
+        logger.removeHandler(handler)
+    output = stream.getvalue()
+    assert '"GET /v1/calls?email=' in output
+    assert "someone@example.com" not in output
+    assert " 200" in output
+    assert "4111" not in output
+    assert "Logging error" not in output
+
+
 def test_structured_logger_removes_content_fields() -> None:
     stream = io.StringIO()
     handler = logging.StreamHandler(stream)
