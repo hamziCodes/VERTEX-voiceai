@@ -5,3 +5,4 @@
 Dockerfile text eol=lf
 requirements/*.txt text eol=lf
 *.onnx binary
+*.sql text eol=lf

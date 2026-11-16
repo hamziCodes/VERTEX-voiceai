@@ -34,6 +34,9 @@ class Migration:
     name: str
     path: Path
     checksum: str
+    # Checksums of the same text with CRLF line endings: ledgers written from
+    # a Windows checkout before line endings were normalised (Phase 15).
+    equivalent_checksums: frozenset[str] = frozenset()
 
     @property
     def sql(self) -> str:
@@ -54,13 +57,18 @@ def discover_migrations(directory: Path = MIGRATIONS_DIR) -> list[Migration]:
                 f"{versions[version]} and {path.name}"
             )
         versions[version] = path.name
-        content = path.read_bytes()
+        # Hash the text with LF line endings: the same migration must have the
+        # same checksum whether the image was built from a Windows (CRLF) or a
+        # Linux (LF) checkout, or a deploy refuses to start with "drift".
+        content = path.read_bytes().replace(b"\r\n", b"\n")
+        crlf = content.replace(b"\n", b"\r\n")
         migrations.append(
             Migration(
                 version=version,
                 name=path.name,
                 path=path,
                 checksum=hashlib.sha256(content).hexdigest(),
+                equivalent_checksums=frozenset({hashlib.sha256(crlf).hexdigest()}),
             )
         )
     return migrations
@@ -73,7 +81,11 @@ def list_migrations() -> list[Path]:
 
 
 def validate_applied(migration: Migration, applied_checksum: str | None) -> None:
-    if applied_checksum is not None and applied_checksum != migration.checksum:
+    if (
+        applied_checksum is not None
+        and applied_checksum != migration.checksum
+        and applied_checksum not in migration.equivalent_checksums
+    ):
         raise MigrationDriftError(
             f"Applied migration checksum differs from source: {migration.name}"
         )

@@ -94,6 +94,30 @@ def test_migration_checksum_drift_fails_closed(tmp_path: Path) -> None:
         validate_applied(migration, "different-checksum")
 
 
+def test_migration_checksum_ignores_checkout_line_endings(tmp_path: Path) -> None:
+    """Regression (Phase 15 upgrade drill): a Windows (CRLF) checkout and a
+    Linux (LF) checkout gave the same migration different checksums, so an
+    image built on one refused a database migrated by the other."""
+    import hashlib
+
+    lf_dir, crlf_dir = tmp_path / "lf", tmp_path / "crlf"
+    lf_dir.mkdir()
+    crlf_dir.mkdir()
+    text = b"CREATE TABLE t (id int);\nSELECT 1;\n"
+    (lf_dir / "001_example.sql").write_bytes(text)
+    (crlf_dir / "001_example.sql").write_bytes(text.replace(b"\n", b"\r\n"))
+    lf = discover_migrations(lf_dir)[0]
+    crlf = discover_migrations(crlf_dir)[0]
+
+    assert lf.checksum == crlf.checksum == hashlib.sha256(text).hexdigest()
+    # Ledgers written from either checkout before this fix stay valid.
+    validate_applied(lf, hashlib.sha256(text).hexdigest())
+    validate_applied(lf, hashlib.sha256(text.replace(b"\n", b"\r\n")).hexdigest())
+    # Real content drift still fails closed.
+    with pytest.raises(MigrationDriftError):
+        validate_applied(lf, hashlib.sha256(b"SELECT 2;\n").hexdigest())
+
+
 def test_all_tenant_rls_migrations_use_canonical_variable() -> None:
     root = Path(__file__).resolve().parents[2] / "infra" / "db" / "migrations"
     tenant_sql = "\n".join(
