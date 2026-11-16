@@ -345,3 +345,18 @@ async def test_refresh_during_store_outage_is_503_not_invalid_token(
 
     assert status == 503
     assert body == {"error": "Session token state is temporarily unavailable."}
+
+
+def test_redis_clients_check_idle_connections_and_bound_timeouts() -> None:
+    """Regression (Phase 15 Redis-restart drill): the first command after a
+    Redis restart went out on a dead pooled socket."""
+    from core.redis.client import async_redis_from_url, sync_redis_from_url
+
+    for client in (
+        async_redis_from_url("redis://127.0.0.1:1/0"),
+        sync_redis_from_url("redis://127.0.0.1:1/0"),
+    ):
+        kwargs = client.connection_pool.connection_kwargs
+        assert kwargs["health_check_interval"] == 5
+        assert kwargs["socket_timeout"] == 2.0
+        assert kwargs["socket_connect_timeout"] == 2.0

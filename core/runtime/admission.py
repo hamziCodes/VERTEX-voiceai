@@ -120,9 +120,9 @@ class SessionAdmissionController:
             and redis_client is None
         )
         if self._redis is None and not memory_mode and redis_url:
-            from redis.asyncio import Redis
+            from core.redis.client import async_redis_from_url
 
-            self._redis = Redis.from_url(redis_url, decode_responses=True)
+            self._redis = async_redis_from_url(redis_url)
         if self._redis is None and not memory_mode and is_protected_environment():
             raise AdmissionStoreUnavailableError(
                 "Protected environments require Redis admission state."

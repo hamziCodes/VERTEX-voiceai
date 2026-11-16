@@ -26,9 +26,9 @@ class RateLimiter:
         url = redis_url if redis_url is not None else os.environ.get("REDIS_URL")
         if url and not is_test_env():
             try:
-                import redis as redis_sync
+                from core.redis.client import sync_redis_from_url
 
-                self._redis = redis_sync.from_url(url, decode_responses=True)
+                self._redis = sync_redis_from_url(url)
             except Exception:
                 self._redis = None
 
