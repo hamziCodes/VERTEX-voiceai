@@ -16,6 +16,7 @@ from typing import Any
 
 from core.alerts.models import AlertCode, AlertSeverity
 from core.observability.metrics import ucve_job_queue_depth
+from post_call.intelligence_providers import post_call_disabled_reason
 from worker_jobs.scheduler import JobSpec, drain
 
 DRAIN_BATCH = 25
@@ -74,9 +75,9 @@ def build_job_specs(
 ) -> list[JobSpec]:
     """Build the scheduled jobs for this process.
 
-    ``post_call_providers`` is ``(extraction_provider, summary_provider)``; no
-    concrete structured-output provider ships yet, so the intelligence queue is
-    disabled unless one is injected.
+    ``post_call_providers`` is ``(extraction_provider, summary_provider)`` from
+    ``post_call.intelligence_providers.build_post_call_providers``; ``None``
+    disables the intelligence queue with the reason it gives.
     """
     if database is None:
         reason = "no database configured"
@@ -101,7 +102,7 @@ def build_job_specs(
                 "post_call_intelligence",
                 5.0,
                 None,
-                disabled_reason="no structured extraction/summary provider configured",
+                disabled_reason=post_call_disabled_reason(),
             )
         )
     else:

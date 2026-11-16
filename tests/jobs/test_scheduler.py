@@ -169,9 +169,9 @@ def test_catalogue_never_schedules_known_no_op_jobs() -> None:
         "dlq_retry_sweeper",
     }
     by_name = {s.name: s for s in specs}
-    assert by_name["post_call_intelligence"].disabled_reason == (
-        "no structured extraction/summary provider configured"
-    )
+    # Without injected providers the job is disabled and says how to enable it.
+    reason = by_name["post_call_intelligence"].disabled_reason or ""
+    assert "PLATFORM_GROQ_API_KEY" in reason
     assert by_name["retention_enqueue"].singleton
     assert by_name["queue_observer"].singleton
 

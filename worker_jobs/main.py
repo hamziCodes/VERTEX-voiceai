@@ -33,6 +33,7 @@ from core.runtime.health import (
     database_check,
     install_health_routes,
 )
+from post_call.intelligence_providers import build_post_call_providers
 from worker_jobs.catalog import build_job_specs, default_runner_id
 from worker_jobs.scheduler import InMemorySlotClaims, JobsRunner, PostgresSlotClaims
 
@@ -52,7 +53,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         set_process_alert_service(alerts)
         runner_id = default_runner_id()
         runner = JobsRunner(
-            build_job_specs(database, runner_id=runner_id, alerts=alerts),
+            build_job_specs(
+                database,
+                runner_id=runner_id,
+                alerts=alerts,
+                post_call_providers=build_post_call_providers(),
+            ),
             runner_id=runner_id,
             claims=PostgresSlotClaims(database) if database else InMemorySlotClaims(),
             alerts=alerts,
