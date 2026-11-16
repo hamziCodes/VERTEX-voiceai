@@ -18,9 +18,14 @@ PREFIX="wavia-qual"
 DB_PASSWORD="${WAVIA_QUAL_DB_PASSWORD:-$(python -c 'import secrets;print(secrets.token_hex(16))')}"
 export WAVIA_QUAL_DB_PASSWORD="$DB_PASSWORD"
 DB_URL="postgresql://wavia:${DB_PASSWORD}@${PREFIX}-postgres:5432/wavia"
-COMMON_ENV=(
+# Live providers only through scripts/release/live_certification.sh, which
+# sets WAVIA_STACK_LIVE_PROVIDERS=1 and WAVIA_STACK_ENV_FILE after an explicit
+# per-step approval. The env file is passed to Docker, never read here.
+COMMON_ENV=()
+if [[ -n "${WAVIA_STACK_ENV_FILE:-}" ]]; then COMMON_ENV+=(--env-file "$WAVIA_STACK_ENV_FILE"); fi
+COMMON_ENV+=(
   -e UCVE_ENV=development -e UCVE_DEMO_MODE=1 -e UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES=1
-  -e RUN_LIVE_PROVIDERS=0 -e RUN_LIVE_TELEPHONY=0
+  -e RUN_LIVE_PROVIDERS="${WAVIA_STACK_LIVE_PROVIDERS:-0}" -e RUN_LIVE_TELEPHONY=0
   -e DATABASE_URL="$DB_URL" -e REDIS_URL="redis://${PREFIX}-redis:6379/0"
   -e UCVE_WS_PUBLIC_URL="ws://127.0.0.1:28081/ws/audio"
 )
