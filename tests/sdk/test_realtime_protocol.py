@@ -102,52 +102,80 @@ def test_python_client_rejects_empty_text_turn() -> None:
         UCVEVoiceClient("token").build_text_turn("   ")
 
 
+class _FakeSocket:
+    def __init__(self, ready: dict[str, Any] | Exception) -> None:
+        self.ready = ready
+        self.closed = False
+
+    async def send(self, _value: str) -> None:
+        return None
+
+    async def recv(self) -> str:
+        if isinstance(self.ready, Exception):
+            raise self.ready
+        return json.dumps(self.ready)
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+_READY = {"event_type": "session.ready", "payload": {"protocol_version": PROTOCOL_VERSION}}
+
+
 @pytest.mark.asyncio
-async def test_python_client_retries_failed_handshake_and_closes_attempt(
+async def test_python_client_retries_only_when_the_worker_is_unreachable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class FakeSocket:
-        def __init__(self, ready: dict[str, Any] | Exception) -> None:
-            self.ready = ready
-            self.closed = False
+    opened = _FakeSocket(_READY)
+    outcomes: list[Any] = [OSError("connection refused"), opened]
 
-        async def send(self, _value: str) -> None:
-            return None
-
-        async def recv(self) -> str:
-            if isinstance(self.ready, Exception):
-                raise self.ready
-            return json.dumps(self.ready)
-
-        async def close(self) -> None:
-            self.closed = True
-
-    first = FakeSocket(ConnectionError("negotiation interrupted"))
-    second = FakeSocket(
-        {
-            "event_type": "session.ready",
-            "payload": {"protocol_version": PROTOCOL_VERSION},
-        }
-    )
-    sockets = [first, second]
-
-    async def fake_connect(_url: str) -> FakeSocket:
-        return sockets.pop(0)
+    async def fake_connect(_url: str) -> _FakeSocket:
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
     monkeypatch.setattr("sdk.python.ucve.client.websockets.connect", fake_connect)
-    client = UCVEVoiceClient(
-        "token",
-        max_connect_attempts=2,
-        reconnect_backoff_sec=0,
-    )
+    client = UCVEVoiceClient("token", max_connect_attempts=2, reconnect_backoff_sec=0)
 
     await client.connect()
 
     assert client._running is True
-    assert first.closed is True
-    assert sockets == []
+    assert outcomes == []
     await client.disconnect()
-    assert second.closed is True
+    assert opened.closed is True
+
+
+@pytest.mark.asyncio
+async def test_python_client_does_not_reuse_a_spent_token_after_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression (Phase 15 SDK qualification): the worker claims the token
+    when the socket opens, so retrying turned a 4401 into a misleading 403."""
+    from websockets.exceptions import ConnectionClosedError
+    from websockets.frames import Close
+
+    from sdk.python.ucve.client import SessionRejectedError
+
+    rejected = _FakeSocket(
+        ConnectionClosedError(Close(4401, "invalid session"), Close(4401, "invalid session"), True)
+    )
+    attempts: list[_FakeSocket] = [rejected, _FakeSocket(_READY)]
+
+    async def fake_connect(_url: str) -> _FakeSocket:
+        return attempts.pop(0)
+
+    monkeypatch.setattr("sdk.python.ucve.client.websockets.connect", fake_connect)
+    client = UCVEVoiceClient("token", max_connect_attempts=3, reconnect_backoff_sec=0)
+
+    with pytest.raises(SessionRejectedError) as excinfo:
+        await client.connect()
+
+    assert excinfo.value.code == 4401
+    assert excinfo.value.reason == "invalid session"
+    assert rejected.closed is True
+    assert len(attempts) == 1  # never reconnected with the spent token
+    assert client._running is False
 
 
 def test_roadmap_clients_cannot_be_mistaken_for_v1_packages() -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .client import UCVEVoiceClient
+from .client import SessionRejectedError, UCVEVoiceClient
 from .events import (
     AudioStartPayload,
     LatencyMetricPayload,
@@ -24,6 +24,7 @@ __all__ = [
     "RealtimeEvent",
     "RealtimeEventType",
     "SUPPORTED_PROTOCOL_RANGE",
+    "SessionRejectedError",
     "UCVEVoiceClient",
     "SDK_VERSION_MANIFEST",
     "__version__",

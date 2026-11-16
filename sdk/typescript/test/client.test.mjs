@@ -100,3 +100,44 @@ test('audio lifecycle events expose the turn needed for playback acknowledgement
   assert.deepEqual(received, [['start', 'turn-1'], ['end', 'turn-1']]);
   client.disconnect();
 });
+
+test('a session rejected after the socket opens is not retried with the spent token', async () => {
+  FakeWebSocket.instances.length = 0;
+  const { SessionRejectedError } = await import('../dist/index.js');
+  const client = new UCVEVoiceClient('token', {
+    wsUrl: 'ws://localhost/ws/audio',
+    maxConnectAttempts: 3,
+    reconnectBackoffMs: 0,
+  });
+  const connecting = client.connect();
+  const socket = FakeWebSocket.instances[0];
+  socket.onopen();
+  socket.onclose?.({ code: 4401, reason: 'invalid session' });
+
+  await assert.rejects(connecting, (error) => {
+    assert.ok(error instanceof SessionRejectedError);
+    assert.equal(error.code, 4401);
+    assert.equal(error.reason, 'invalid session');
+    return true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(FakeWebSocket.instances.length, 1);
+});
+
+test('an unreachable worker is retried before giving up', async () => {
+  FakeWebSocket.instances.length = 0;
+  const client = new UCVEVoiceClient('token', {
+    wsUrl: 'ws://localhost/ws/audio',
+    maxConnectAttempts: 2,
+    reconnectBackoffMs: 0,
+  });
+  const connecting = client.connect();
+  FakeWebSocket.instances[0].onerror?.();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const second = FakeWebSocket.instances[1];
+  assert.ok(second, 'expected a second attempt');
+  second.onopen();
+  second.emitJson({ event_type: 'session.ready', payload: { protocol_version: '1.0.0' } });
+  await connecting;
+  client.disconnect();
+});

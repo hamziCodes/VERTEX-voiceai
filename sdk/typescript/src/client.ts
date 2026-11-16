@@ -30,6 +30,23 @@ export interface UCVEVoiceClientOptions {
   [key: string]: unknown;
 }
 
+/**
+ * The worker accepted the socket and then refused the session (for example
+ * close code 4401 invalid or expired session, 4403 forbidden, 1013 at
+ * capacity). The session token is spent: mint a new session to retry.
+ */
+export class SessionRejectedError extends Error {
+  public readonly code: number | null;
+  public readonly reason: string;
+
+  constructor(code: number | null, reason: string) {
+    super(`Wavia worker rejected the session: ${code ?? ''} ${reason}`.replace(/\s+/g, ' ').trim());
+    this.name = 'SessionRejectedError';
+    this.code = code;
+    this.reason = reason;
+  }
+}
+
 export class UCVEVoiceClient {
   public readonly token: string;
   public readonly wsUrl: string;
@@ -103,6 +120,9 @@ export class UCVEVoiceClient {
       } catch (error) {
         lastError = error;
         this.disconnect();
+        // Once the socket opened, the worker has consumed the single-use
+        // session token: retrying would only hide the real rejection.
+        if (error instanceof SessionRejectedError) throw error;
         if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, baseDelay * 2 ** attempt));
       }
     }
@@ -115,14 +135,20 @@ export class UCVEVoiceClient {
       this.ws = socket;
       socket.binaryType = 'arraybuffer';
       let negotiated = false;
-      const fail = (error: Error) => {
+      let opened = false;
+      let settled = false;
+      const fail = (error: Error, code?: number) => {
+        if (settled) return;
+        settled = true;
         if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
         this.handshakeTimer = null;
-        this.options.onError?.(error);
-        reject(error);
+        const reported = opened ? new SessionRejectedError(code ?? null, error.message) : error;
+        this.options.onError?.(reported);
+        reject(reported);
       };
 
       socket.onopen = () => {
+        opened = true;
         socket.send(JSON.stringify(this.buildHelloEvent()));
         this.handshakeTimer = setTimeout(
           () => fail(new Error('Protocol handshake timed out.')),
@@ -133,7 +159,7 @@ export class UCVEVoiceClient {
       socket.onclose = (event) => {
         this.activeTurnId = null;
         this.options.onClose?.({ code: event.code, reason: event.reason, retryable: event.code >= 1011 });
-        if (!negotiated) fail(new Error(event.reason || 'WebSocket closed during handshake'));
+        if (!negotiated) fail(new Error(event.reason || 'WebSocket closed during handshake'), event.code);
       };
       socket.onmessage = async (event: MessageEvent) => {
         if (event.data instanceof ArrayBuffer) {

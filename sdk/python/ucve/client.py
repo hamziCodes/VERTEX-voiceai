@@ -15,6 +15,31 @@ import websockets
 from .version import SDK_VERSION_MANIFEST
 
 
+class SessionRejectedError(ConnectionError):
+    """The worker accepted the socket and then refused the session.
+
+    ``code`` is the WebSocket close code when the server sent one (4401
+    invalid or expired session, 4403 forbidden, 1013 at capacity or
+    draining). The session token is spent; mint a new session to retry.
+    """
+
+    def __init__(self, code: int | None, reason: str) -> None:
+        self.code = code
+        self.reason = reason
+        label = f"{code} {reason}" if code is not None else reason
+        super().__init__(f"Wavia worker rejected the session: {label}")
+
+
+def _as_session_error(exc: Exception) -> SessionRejectedError:
+    if isinstance(exc, SessionRejectedError):
+        return exc
+    if isinstance(exc, websockets.ConnectionClosed) and exc.rcvd is not None:
+        return SessionRejectedError(exc.rcvd.code, exc.rcvd.reason or "closed")
+    if isinstance(exc, asyncio.TimeoutError):
+        return SessionRejectedError(None, "no session.ready before the handshake timeout")
+    return SessionRejectedError(None, str(exc) or type(exc).__name__)
+
+
 class UCVEVoiceClient:
     """Async client for connecting to sovereign UCVE realtime audio streaming sessions.
 
@@ -150,38 +175,57 @@ class UCVEVoiceClient:
         return self._build_event("text.turn", {"text": cleaned})
 
     async def connect(self) -> None:
-        """Establish the WebSocket and start the background receiver loop."""
+        """Establish the WebSocket and start the background receiver loop.
+
+        Only failures to *reach* the worker are retried. Once a socket opens,
+        the worker has consumed the single-use session token, so a rejection
+        or failed handshake raises :class:`SessionRejectedError` with the
+        server's close code and reason; mint a new session to try again.
+        """
         last_error: Exception | None = None
         for attempt in range(self.max_connect_attempts):
             try:
                 self._ws = await websockets.connect(self.connection_url)
-                await self._ws.send(json.dumps(self.build_hello_event()))
-                raw_ready = await asyncio.wait_for(
-                    self._ws.recv(), timeout=self.handshake_timeout_sec
-                )
-                if not isinstance(raw_ready, str):
-                    raise ConnectionError(
-                        "Server did not return a JSON session.ready event"
-                    )
-                ready = json.loads(raw_ready)
-                if ready.get("event_type") != "session.ready":
-                    payload = ready.get("payload") or {}
-                    code = payload.get("code") or "protocol handshake failed"
-                    raise ConnectionError(str(code))
-                self._running = True
-                self._listen_task = asyncio.create_task(self._listen_loop())
-                return
-            except Exception as exc:
+            except (OSError, asyncio.TimeoutError, websockets.InvalidHandshake) as exc:
                 last_error = exc
-                if self._ws is not None:
-                    try:
-                        await self._ws.close()
-                    finally:
-                        self._ws = None
                 if attempt + 1 >= self.max_connect_attempts:
-                    raise
+                    raise ConnectionError(
+                        f"Could not reach the Wavia worker: {exc}"
+                    ) from exc
                 await asyncio.sleep(self.reconnect_backoff_sec * (2**attempt))
+                continue
+            try:
+                await self._handshake()
+            except Exception as exc:
+                await self._abandon_socket()
+                raise _as_session_error(exc) from exc
+            self._running = True
+            self._listen_task = asyncio.create_task(self._listen_loop())
+            return
         raise ConnectionError("WebSocket connection failed") from last_error
+
+    async def _handshake(self) -> None:
+        assert self._ws is not None
+        await self._ws.send(json.dumps(self.build_hello_event()))
+        raw_ready = await asyncio.wait_for(
+            self._ws.recv(), timeout=self.handshake_timeout_sec
+        )
+        if not isinstance(raw_ready, str):
+            raise ConnectionError("Server did not return a JSON session.ready event")
+        ready = json.loads(raw_ready)
+        if ready.get("event_type") != "session.ready":
+            payload = ready.get("payload") or {}
+            code = payload.get("code") or "protocol handshake failed"
+            raise SessionRejectedError(None, str(code))
+
+    async def _abandon_socket(self) -> None:
+        if self._ws is not None:
+            try:
+                await self._ws.close()
+            except Exception:  # noqa: BLE001 - already failing; keep the first error
+                pass
+            finally:
+                self._ws = None
 
     async def _listen_loop(self) -> None:
         """Background receiver loop routing incoming audio and control events."""
