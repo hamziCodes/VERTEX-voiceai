@@ -72,7 +72,11 @@ up() {
   service control-plane 8080
   service worker-raw 8081
   service worker-jobs 8084
-  service telephony-gateway 8083 -e TELNYX_PUBLIC_KEY="${TELNYX_PUBLIC_KEY:-qualification-placeholder}"
+  # A throwaway Ed25519 public key (the gateway rejects malformed keys at
+  # startup); no Telnyx account is involved.
+  local telnyx_key="${TELNYX_PUBLIC_KEY:-$(docker run --rm "wavia-control-plane:$TAG" python -c \
+    'import base64;from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey as K;from cryptography.hazmat.primitives import serialization as s;print(base64.b64encode(K.generate().public_key().public_bytes(s.Encoding.Raw,s.PublicFormat.Raw)).decode())')}"
+  service telephony-gateway 8083 -e TELNYX_PUBLIC_KEY="$telnyx_key"
   wait_ready control-plane http://127.0.0.1:28080/health/ready
   wait_ready worker-raw http://127.0.0.1:28081/health/ready
   wait_ready worker-jobs http://127.0.0.1:28084/health/ready

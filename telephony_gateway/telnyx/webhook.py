@@ -43,6 +43,29 @@ class InMemoryTelnyxEventSink:
             return True
 
 
+def _require_ed25519_public_key(value: str) -> None:
+    """Fail at startup, not on the first webhook, when the key is unusable.
+
+    A malformed key would otherwise report "verifier configured" while every
+    genuine Telnyx webhook fails signature verification.
+    """
+    import base64
+    import binascii
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    try:
+        raw = base64.b64decode(value, validate=True)
+        if len(raw) != 32:
+            raise ValueError
+        Ed25519PublicKey.from_public_bytes(raw)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError(
+            "TELNYX_PUBLIC_KEY must be the base64 Ed25519 public key from the "
+            "Telnyx portal."
+        ) from exc
+
+
 class TelnyxWebhookService:
     """Verify exact bytes, validate the envelope, then durably accept once."""
 
@@ -57,6 +80,7 @@ class TelnyxWebhookService:
     ) -> None:
         if not public_key.strip():
             raise ValueError("Telnyx public key is required.")
+        _require_ed25519_public_key(public_key.strip())
         if max_body_bytes < 1:
             raise ValueError("max_body_bytes must be positive.")
         self.public_key = public_key.strip()

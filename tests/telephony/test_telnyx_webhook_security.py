@@ -206,3 +206,19 @@ def test_verified_event_with_unknown_did_fails_closed() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "telnyx_call_not_admitted"
+
+
+@pytest.mark.parametrize(
+    "bad_key",
+    ["qualification-placeholder", "c2hvcnQ=", "!!!not-base64!!!"],
+)
+def test_malformed_public_key_fails_at_startup_not_on_first_webhook(bad_key: str) -> None:
+    """Regression (Phase 15): a placeholder key made the gateway report the
+    verifier as configured while every real webhook would fail."""
+    from telephony_gateway.telnyx.webhook import (
+        InMemoryTelnyxEventSink,
+        build_telnyx_webhook_service,
+    )
+
+    with pytest.raises(ValueError, match="TELNYX_PUBLIC_KEY must be"):
+        build_telnyx_webhook_service(event_sink=InMemoryTelnyxEventSink(), public_key=bad_key)
