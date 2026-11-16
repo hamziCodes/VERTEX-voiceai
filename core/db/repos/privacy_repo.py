@@ -15,10 +15,37 @@ from core.compliance.privacy_jobs import (
 )
 from core.db.async_pg import AsyncDatabase, get_default_database
 
+# Tables kept on tenant erasure, and why:
+# - privacy_deletion_jobs/events: the erasure job itself and its append-only
+#   proof (identifiers and codes only, no content);
+# - platform_audit_events, platform_support_sessions: staff accountability
+#   (who accessed what and why), no customer content by construction;
+# - audit_log: the tenant's security audit trail is immutable by trigger
+#   (migration 006) and is retained as the record of who did what, including
+#   the erasure request itself. It holds actor identifiers and actions, not
+#   conversation content. Whether it must also be erased is a legal decision
+#   (H14 chose no compliance claims at launch);
+# - tenants: a tombstone row (name replaced, deleted_at set) so the identifier
+#   cannot be reused and foreign keys stay valid;
+# - schema_migrations: not tenant data.
+_ERASURE_KEEP = frozenset(
+    {
+        "privacy_deletion_jobs",
+        "privacy_deletion_events",
+        "platform_audit_events",
+        "platform_support_sessions",
+        "audit_log",
+        "tenants",
+        "schema_migrations",
+    }
+)
+
 
 class PostgresPrivacyJobRepository:
     """PostgreSQL job queue with durable per-object deletion checkpoints."""
 
+    # Pre-Phase-14 explicit list, kept for reference; tenant erasure now
+    # discovers every table with a tenant_id column (see _erasure_plan).
     _ERASURE_ROOT_TABLES = (
         "telephony_outbound_requests",
         "telephony_outbound_policies",
@@ -47,6 +74,68 @@ class PostgresPrivacyJobRepository:
 
     def __init__(self, database: AsyncDatabase | Any | None = None) -> None:
         self.database = database or get_default_database()
+
+    @staticmethod
+    async def _event(
+        connection: Any,
+        job: PrivacyDeletionJob,
+        event: str,
+        *,
+        error_code: str | None = None,
+        actor: str = "system",
+        counts: dict[str, int] | None = None,
+    ) -> None:
+        await connection.execute(
+            "INSERT INTO privacy_deletion_events "
+            "(job_id, tenant_id, job_kind, call_id, event, error_code, actor, counts) "
+            "VALUES (%s::uuid, %s::uuid, %s, %s::uuid, %s, %s, %s, %s::jsonb)",
+            (
+                str(job.job_id),
+                str(job.tenant_id),
+                job.kind.value,
+                str(job.call_id) if job.call_id else None,
+                event,
+                error_code[:64] if error_code else None,
+                actor[:128],
+                json.dumps(counts or {}),
+            ),
+        )
+
+    async def record_event(
+        self,
+        job: PrivacyDeletionJob,
+        event: str,
+        *,
+        counts: dict[str, int] | None = None,
+    ) -> None:
+        async with self.database.platform_transaction() as connection:
+            await self._event(connection, job, event, counts=counts)
+
+    async def events(self, job_id: UUID) -> list[dict[str, Any]]:
+        async with self.database.platform_transaction() as connection:
+            cursor = await connection.execute(
+                "SELECT event, error_code, actor, counts, created_at "
+                "FROM privacy_deletion_events WHERE job_id = %s::uuid "
+                "ORDER BY event_id",
+                (str(job_id),),
+            )
+            rows = await cursor.fetchall()
+        return [
+            {
+                "event": r[0],
+                "error_code": r[1],
+                "actor": r[2],
+                "counts": r[3] or {},
+                "at": r[4].isoformat(),
+            }
+            for r in rows
+        ]
+
+    async def get_for_tenant(self, tenant_id: UUID, job_id: UUID) -> PrivacyDeletionJob:
+        job = await self.get(job_id)
+        if job.tenant_id != tenant_id:
+            raise KeyError(job_id)
+        return job
 
     @staticmethod
     def _select() -> str:
@@ -89,6 +178,7 @@ class PostgresPrivacyJobRepository:
         object_references: tuple[str, ...] = (),
         max_attempts: int = 5,
         now: datetime | None = None,
+        actor: str = "system",
     ) -> PrivacyDeletionJob:
         if not request_key.strip():
             raise ValueError("request_key is required.")
@@ -104,7 +194,8 @@ class PostgresPrivacyJobRepository:
                 "(%s::uuid, %s::uuid, %s, %s, %s::uuid, %s::jsonb, %s, %s, %s, %s) "
                 "ON CONFLICT (tenant_id, request_key) DO UPDATE SET "
                 "updated_at = privacy_deletion_jobs.updated_at RETURNING "
-                + self._select(),
+                + self._select()
+                + ", (xmax = 0) AS inserted",
                 (
                     str(uuid4()),
                     str(tenant_id),
@@ -119,7 +210,10 @@ class PostgresPrivacyJobRepository:
                 ),
             )
             row = await cursor.fetchone()
-        return self._from_row(row)
+            job = self._from_row(row)
+            if row[-1]:
+                await self._event(connection, job, "requested", actor=actor)
+        return job
 
     async def enqueue_due_retention(
         self, *, now: datetime | None = None, limit: int = 100
@@ -140,7 +234,151 @@ class PostgresPrivacyJobRepository:
                 (timestamp, timestamp, max(1, min(limit, 1000))),
             )
             rows = await cursor.fetchall()
+            if rows:
+                await connection.execute(
+                    "INSERT INTO privacy_deletion_events "
+                    "(job_id, tenant_id, job_kind, call_id, event, actor) "
+                    "SELECT job_id, tenant_id, job_kind, call_id, 'requested', "
+                    "'retention_policy' FROM privacy_deletion_jobs "
+                    "WHERE job_id = ANY(%s::uuid[])",
+                    ([str(r[0]) for r in rows],),
+                )
         return len(rows)
+
+    async def request_call_deletion(
+        self, tenant_id: UUID, call_id: UUID, *, actor: str
+    ) -> PrivacyDeletionJob | None:
+        """Queue deletion of one conversation and its recording.
+
+        Returns ``None`` when the call does not exist for this tenant and raises
+        :class:`PrivacyJobConflictError` when it is under legal hold.
+        """
+        async with self.database.platform_transaction() as connection:
+            cursor = await connection.execute(
+                "SELECT legal_hold, recording_s3_uri FROM call_records "
+                "WHERE tenant_id = %s::uuid AND call_id = %s::uuid",
+                (str(tenant_id), str(call_id)),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        if row[0]:
+            raise PrivacyJobConflictError("Legal hold prevents deletion.")
+        return await self.enqueue(
+            tenant_id=tenant_id,
+            kind=PrivacyJobKind.RETENTION,
+            request_key=f"erasure:call:{call_id}",
+            call_id=call_id,
+            object_references=(row[1],) if row[1] else (),
+            actor=actor,
+        )
+
+    async def request_tenant_erasure(
+        self, tenant_id: UUID, *, actor: str
+    ) -> PrivacyDeletionJob:
+        """Queue erasure of the whole workspace (held calls block completion)."""
+        async with self.database.platform_transaction() as connection:
+            cursor = await connection.execute(
+                "SELECT recording_s3_uri FROM call_records WHERE tenant_id = %s::uuid "
+                "AND recording_s3_uri IS NOT NULL",
+                (str(tenant_id),),
+            )
+            references = tuple(r[0] for r in await cursor.fetchall())
+        return await self.enqueue(
+            tenant_id=tenant_id,
+            kind=PrivacyJobKind.TENANT_ERASURE,
+            request_key="erasure:tenant",
+            object_references=references,
+            actor=actor,
+        )
+
+    async def set_legal_hold(
+        self, tenant_id: UUID, call_id: UUID, *, hold: bool, actor: str
+    ) -> bool:
+        """Set or release a call's legal hold; releasing requeues parked jobs."""
+        async with self.database.platform_transaction() as connection:
+            cursor = await connection.execute(
+                "UPDATE call_records SET legal_hold = %s WHERE tenant_id = %s::uuid "
+                "AND call_id = %s::uuid RETURNING call_id",
+                (hold, str(tenant_id), str(call_id)),
+            )
+            if await cursor.fetchone() is None:
+                return False
+            if not hold:
+                await self._release_held(connection, tenant_id, call_id, actor)
+        return True
+
+    async def _release_held(
+        self, connection: Any, tenant_id: UUID, call_id: UUID, actor: str
+    ) -> None:
+        remaining = await connection.execute(
+            "SELECT EXISTS (SELECT 1 FROM call_records WHERE tenant_id = %s::uuid "
+            "AND legal_hold = TRUE)",
+            (str(tenant_id),),
+        )
+        tenant_still_held = bool((await remaining.fetchone())[0])
+        cursor = await connection.execute(
+            "UPDATE privacy_deletion_jobs SET state = 'queued', available_at = NOW(), "
+            "last_error_code = NULL, updated_at = NOW() "
+            "WHERE tenant_id = %s::uuid AND state = 'held' AND "
+            "(call_id = %s::uuid OR (call_id IS NULL AND NOT %s)) RETURNING "
+            + self._select(),
+            (str(tenant_id), str(call_id), tenant_still_held),
+        )
+        for row in await cursor.fetchall():
+            await self._event(connection, self._from_row(row), "released", actor=actor)
+
+    async def hold(
+        self, job_id: UUID, *, worker_id: str, now: datetime | None = None
+    ) -> PrivacyDeletionJob:
+        """Park a job behind a legal hold without consuming a retry."""
+        timestamp = now or datetime.now(UTC)
+        async with self.database.platform_transaction() as connection:
+            job = await self._leased(connection, job_id, worker_id)
+            cursor = await connection.execute(
+                "UPDATE privacy_deletion_jobs SET state = 'held', lease_owner = NULL, "
+                "lease_expires_at = NULL, last_error_code = 'legal_hold', "
+                "updated_at = %s WHERE job_id = %s::uuid RETURNING " + self._select(),
+                (timestamp, str(job_id)),
+            )
+            held = self._from_row(await cursor.fetchone())
+            await self._event(connection, job, "held", error_code="legal_hold")
+        return held
+
+    @staticmethod
+    async def _erasure_plan(connection: Any) -> list[str]:
+        """Every public table with a tenant_id column, children before parents."""
+        cursor = await connection.execute(
+            "SELECT c.table_name FROM information_schema.columns c "
+            "JOIN information_schema.tables t ON t.table_schema = c.table_schema "
+            "AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE' "
+            "WHERE c.table_schema = 'public' AND c.column_name = 'tenant_id'"
+        )
+        tables = {r[0] for r in await cursor.fetchall()} - _ERASURE_KEEP
+        cursor = await connection.execute(
+            "SELECT DISTINCT child.relname, parent.relname FROM pg_constraint k "
+            "JOIN pg_class child ON child.oid = k.conrelid "
+            "JOIN pg_class parent ON parent.oid = k.confrelid "
+            "WHERE k.contype = 'f' AND child.relnamespace = 'public'::regnamespace"
+        )
+        parents: dict[str, set[str]] = {table: set() for table in tables}
+        for child, parent in await cursor.fetchall():
+            if child in tables and parent in tables and child != parent:
+                parents[child].add(parent)
+        # Delete a table only after every table that references it.
+        children: dict[str, set[str]] = {table: set() for table in tables}
+        for child, refs in parents.items():
+            for parent in refs:
+                children[parent].add(child)
+        ordered: list[str] = []
+        remaining = set(tables)
+        while remaining:
+            ready = sorted(t for t in remaining if not (children[t] & remaining))
+            if not ready:  # a cycle: fall back to a stable order; CASCADE handles it
+                ready = sorted(remaining)
+            ordered.extend(ready)
+            remaining -= set(ready)
+        return ordered
 
     async def get(self, job_id: UUID) -> PrivacyDeletionJob:
         async with self.database.platform_transaction() as connection:
@@ -249,10 +487,16 @@ class PostgresPrivacyJobRepository:
                 row = await held.fetchone()
                 if row and row[0]:
                     raise PrivacyJobConflictError("Legal hold prevents deletion.")
-                await connection.execute(
+                deleted = await connection.execute(
                     "DELETE FROM call_records WHERE tenant_id = %s::uuid "
                     "AND call_id = %s::uuid AND legal_hold = FALSE",
                     (str(job.tenant_id), str(job.call_id)),
+                )
+                await self._event(
+                    connection,
+                    job,
+                    "database_deleted",
+                    counts={"call_records": deleted.rowcount or 0},
                 )
             else:
                 held = await connection.execute(
@@ -262,21 +506,46 @@ class PostgresPrivacyJobRepository:
                 )
                 if (await held.fetchone())[0]:
                     raise PrivacyJobConflictError("Legal hold prevents deletion.")
-                for table in self._ERASURE_ROOT_TABLES:
-                    await connection.execute(
-                        f"DELETE FROM {table} WHERE tenant_id = %s::uuid",  # noqa: S608
+                member_cursor = await connection.execute(
+                    "SELECT DISTINCT user_id FROM memberships "
+                    "WHERE tenant_id = %s::uuid",
+                    (str(job.tenant_id),),
+                )
+                member_ids = [str(r[0]) for r in await member_cursor.fetchall()]
+                counts: dict[str, int] = {}
+                for table in await self._erasure_plan(connection):
+                    deleted = await connection.execute(
+                        f'DELETE FROM "{table}" WHERE tenant_id = %s::uuid',  # noqa: S608
                         (str(job.tenant_id),),
                     )
+                    if deleted.rowcount:
+                        counts[table] = deleted.rowcount
                 await connection.execute(
                     "DELETE FROM privacy_deletion_jobs WHERE tenant_id = %s::uuid "
                     "AND job_id <> %s::uuid",
                     (str(job.tenant_id), str(job.job_id)),
                 )
+                if member_ids:
+                    # People whose only access was this workspace (and who are
+                    # not Wavia staff) are erased with it.
+                    orphans = await connection.execute(
+                        "DELETE FROM users u WHERE u.id = ANY(%s::uuid[]) "
+                        "AND NOT EXISTS (SELECT 1 FROM memberships m "
+                        "WHERE m.user_id = u.id) "
+                        "AND NOT EXISTS (SELECT 1 FROM platform_memberships p "
+                        "WHERE p.user_id = u.id) "
+                        "AND NOT EXISTS (SELECT 1 FROM platform_audit_events a "
+                        "WHERE a.actor_user_id = u.id)",
+                        (member_ids,),
+                    )
+                    if orphans.rowcount:
+                        counts["users"] = orphans.rowcount
                 await connection.execute(
                     "UPDATE tenants SET name = %s, allowed_origins = '{}', "
                     "deleted_at = NOW(), updated_at = NOW() WHERE id = %s::uuid",
                     (f"Erased tenant {str(job.tenant_id)[:8]}", str(job.tenant_id)),
                 )
+                await self._event(connection, job, "database_deleted", counts=counts)
             cursor = await connection.execute(
                 "UPDATE privacy_deletion_jobs SET database_deleted = TRUE, "
                 "updated_at = NOW() WHERE job_id = %s::uuid RETURNING "
@@ -307,6 +576,7 @@ class PostgresPrivacyJobRepository:
                 (timestamp, str(job_id)),
             )
             row = await cursor.fetchone()
+            await self._event(connection, job, "completed")
         return self._from_row(row)
 
     async def fail(
@@ -348,4 +618,10 @@ class PostgresPrivacyJobRepository:
                 ),
             )
             row = await cursor.fetchone()
+            await self._event(
+                connection,
+                job,
+                "failed" if will_retry else "dead_lettered",
+                error_code=error_code,
+            )
         return self._from_row(row)

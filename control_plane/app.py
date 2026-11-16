@@ -27,6 +27,7 @@ from control_plane.middleware.security_headers import SecurityHeadersMiddleware
 from control_plane.openapi_serve import register_self_hosted_docs
 from control_plane.routes.agents import router as agents_router
 from control_plane.routes.alerts import router as alerts_router
+from control_plane.routes.privacy import router as privacy_router
 from control_plane.routes.api_keys import router as api_keys_router
 from control_plane.routes.conversations import router as conversations_router
 from control_plane.routes.extraction_schemas import router as extraction_router
@@ -52,6 +53,7 @@ from control_plane.telephony_settings import (
 )
 from core.db.async_pg import get_default_database
 from core.alerts.service import build_alert_service, set_process_alert_service
+from core.db.repos.privacy_repo import PostgresPrivacyJobRepository
 from core.db.pg import use_memory_repos
 from core.runtime.health import (
     CheckResult,
@@ -209,6 +211,9 @@ async def _control_plane_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     set_secret_vault(app.state.secret_vault)
     app.state.redis = None
     app.state.alert_service = build_alert_service(database)
+    app.state.privacy_repository = (
+        PostgresPrivacyJobRepository(database) if database is not None else None
+    )
     app.state.mint_ctx.alerts = app.state.alert_service
     set_process_alert_service(app.state.alert_service)
     outbound_runtime = None
@@ -257,6 +262,7 @@ app.include_router(agents_router)
 app.include_router(conversations_router)
 app.include_router(api_keys_router)
 app.include_router(credentials_router)
+app.include_router(privacy_router)
 
 register_self_hosted_docs(app)
 

@@ -28,7 +28,9 @@ class PrivacyDeletionWorker:
         if job is None:
             return False
         if await self.repository.is_legal_hold(job):
-            await self._fail(job.job_id, "legal_hold", now)
+            # A hold is not a failure: park the job (no retry consumed, no dead
+            # letter). Releasing the hold requeues it.
+            await self.repository.hold(job.job_id, worker_id=self.worker_id, now=now)
             return True
 
         completed = set(job.completed_object_references)
@@ -49,8 +51,26 @@ class PrivacyDeletionWorker:
                 reference=reference,
             )
 
+        swept = 0
+        sweep = getattr(self.object_store, "delete_tenant_objects", None)
+        if job.kind.value == "tenant_erasure" and callable(sweep):
+            # Recordings not listed on the job (or written after it) still sit
+            # under the tenant's prefix; erase them all.
+            try:
+                swept = await sweep(job.tenant_id)
+            except Exception:
+                await self._fail(job.job_id, "object_prefix_sweep_failed", now)
+                return True
+        record = getattr(self.repository, "record_event", None)
+        if callable(record):
+            await record(
+                job,
+                "objects_deleted",
+                counts={"listed": len(job.object_references), "swept": swept},
+            )
+
         if await self.repository.is_legal_hold(job):
-            await self._fail(job.job_id, "legal_hold_applied_during_delete", now)
+            await self.repository.hold(job.job_id, worker_id=self.worker_id, now=now)
             return True
         try:
             job = await self.repository.delete_database_data(

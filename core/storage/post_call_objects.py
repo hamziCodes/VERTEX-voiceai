@@ -32,6 +32,8 @@ class PostCallObjectStore(Protocol):
 
     async def delete(self, reference: str) -> bool: ...
 
+    async def delete_tenant_objects(self, tenant_id: UUID) -> int: ...
+
 
 class LocalPostCallObjectStore:
     """Tenant-scoped local object store for development and offline tests."""
@@ -104,6 +106,25 @@ class LocalPostCallObjectStore:
         except FileNotFoundError:
             pass
         return True
+
+    async def delete_tenant_objects(self, tenant_id: UUID) -> int:
+        """Remove every object stored for ``tenant_id``; return the count."""
+        directory = self.root / str(UUID(str(tenant_id)))
+        if not directory.exists():
+            return 0
+
+        def _remove() -> int:
+            removed = 0
+            for path in sorted(directory.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                    removed += 1
+                else:
+                    path.rmdir()
+            directory.rmdir()
+            return removed
+
+        return await asyncio.to_thread(_remove)
 
 
 class S3PostCallObjectStore:
@@ -189,6 +210,40 @@ class S3PostCallObjectStore:
             self.client.delete_object, Bucket=self.bucket, Key=self._key(reference)
         )
         return True
+
+    async def delete_tenant_objects(self, tenant_id: UUID) -> int:
+        """Delete every object under ``<prefix>/<tenant_id>/``; return the count.
+
+        Lists and deletes in pages of up to 1000 keys and raises if S3 reports
+        any per-key error, so a partial sweep is never recorded as complete.
+        """
+        tenant_prefix = f"{self.prefix}/{UUID(str(tenant_id))}/"
+
+        def _sweep() -> int:
+            removed = 0
+            token: str | None = None
+            while True:
+                kwargs: dict[str, object] = {
+                    "Bucket": self.bucket,
+                    "Prefix": tenant_prefix,
+                    "MaxKeys": 1000,
+                }
+                if token:
+                    kwargs["ContinuationToken"] = token
+                page = self.client.list_objects_v2(**kwargs)
+                keys = [{"Key": item["Key"]} for item in page.get("Contents", [])]
+                if keys:
+                    result = self.client.delete_objects(
+                        Bucket=self.bucket, Delete={"Objects": keys, "Quiet": True}
+                    )
+                    if result.get("Errors"):
+                        raise RuntimeError("S3 refused part of the tenant sweep.")
+                    removed += len(keys)
+                if not page.get("IsTruncated"):
+                    return removed
+                token = page.get("NextContinuationToken")
+
+        return await asyncio.to_thread(_sweep)
 
 
 _default_store: PostCallObjectStore | None = None

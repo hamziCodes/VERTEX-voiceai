@@ -119,8 +119,11 @@ async def test_legal_hold_blocks_every_deletion_layer_until_released() -> None:
 
     assert await worker.run_once(now=now) is True
     held = await repository.get(job.job_id)
-    assert held.state is PrivacyJobState.RETRY_WAIT
+    # Phase 14: a hold parks the job without consuming a retry.
+    assert held.state is PrivacyJobState.HELD
+    assert held.attempt_count == 0
     assert held.last_error_code == "legal_hold"
+    assert await worker.run_once(now=now + timedelta(hours=1)) is False
     assert store.deleted == []
     assert repository.database_deletions == []
 

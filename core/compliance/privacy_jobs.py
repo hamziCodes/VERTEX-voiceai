@@ -19,6 +19,7 @@ class PrivacyJobState(StrEnum):
     RETRY_WAIT = "retry_wait"
     SUCCEEDED = "succeeded"
     DEAD_LETTER = "dead_letter"
+    HELD = "held"
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,8 +147,33 @@ class InMemoryPrivacyJobRepository:
         key = (tenant_id, call_id)
         if hold:
             self.holds.add(key)
-        else:
-            self.holds.discard(key)
+            return
+        self.holds.discard(key)
+        # Releasing a hold requeues the jobs it parked, as PostgreSQL does.
+        for job in list(self.jobs.values()):
+            if job.state is not PrivacyJobState.HELD or job.tenant_id != tenant_id:
+                continue
+            if job.call_id == call_id or (
+                job.call_id is None
+                and not any(t == tenant_id for t, _ in self.holds)
+            ):
+                self.jobs[job.job_id] = replace(job, state=PrivacyJobState.QUEUED)
+
+    async def hold(
+        self, job_id: UUID, *, worker_id: str, now: datetime | None = None
+    ) -> PrivacyDeletionJob:
+        """Park a job behind a legal hold without consuming a retry."""
+        job = self._leased(job_id, worker_id)
+        updated = replace(
+            job,
+            state=PrivacyJobState.HELD,
+            lease_owner=None,
+            lease_expires_at=None,
+            last_error_code="legal_hold",
+            updated_at=now or datetime.now(UTC),
+        )
+        self.jobs[job_id] = updated
+        return updated
 
     async def mark_object_deleted(
         self, job_id: UUID, *, worker_id: str, reference: str
