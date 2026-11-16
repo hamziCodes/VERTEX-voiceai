@@ -1,6 +1,6 @@
 # Phase 14 — Operations, Compliance, and Cleanup
 
-**Status:** NOT STARTED
+**Status:** COMPLETE (offline) 2026-11-16 — evidence in `Codex Fix/evidence/phase-14/`; delete-proposed list awaits Hamzi
 
 **Goal:** Make production operations truthful: readiness, telemetry export, alerts, jobs, resource limits, privacy, retention, recovery and clearly classified unfinished/dead code.
 
