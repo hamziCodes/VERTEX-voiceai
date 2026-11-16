@@ -35,10 +35,10 @@ session_ok() {  # a real SDK session: mint, connect, text turn, agent audio
   PYTHONPATH=sdk/python "$VPY" sdk/python/examples/quickstart.py \
     --control-plane "$CP" --ws-url "$WS" --timeout 20 >"$OUT/session-$1.log" 2>&1
 }
-ready() { curl -s -o /dev/null -w '%{http_code}' "$1/health/ready"; }
-wait_status() {  # url expected seconds
+ready() { curl -s -m 5 -o /dev/null -w '%{http_code}' "$1${2:-/health/ready}"; }
+wait_status() {  # url expected seconds [path]
   local start; start=$(date +%s)
-  while [[ "$(ready "$1")" != "$2" ]]; do
+  while [[ "$(ready "$1" "${4:-/health/ready}")" != "$2" ]]; do
     (( $(date +%s) - start > $3 )) && return 1
     sleep 1
   done
@@ -101,8 +101,10 @@ drill_rollback() {
     -e DATABASE_URL="$url" "wavia-control-plane:$TAG" \
     uvicorn control_plane.app:app --host 0.0.0.0 --port 8080 >/dev/null
   local t
-  if t=$(wait_status http://127.0.0.1:28090 200 60); then
-    pass "rollback: previous control plane ready on the new schema in ${t}s"
+  # The previous release predates /health/ready (Phase 14); its health
+  # endpoint is /health.
+  if t=$(wait_status http://127.0.0.1:28090 200 60 /health); then
+    pass "rollback: previous control plane healthy on the new schema in ${t}s"
   else
     fail "rollback: previous control plane not ready"; docker logs --tail 30 "$P-rollback-cp"
   fi
@@ -123,7 +125,20 @@ drill_redis() {
   local t
   t=$(wait_status "$CP" 200 30) && pass "redis: control plane ready ${t}s after Redis restart" || fail "redis: control plane not ready"
   t=$(wait_status http://127.0.0.1:28081 200 30) && pass "redis: worker ready ${t}s after Redis restart" || fail "redis: worker not ready"
-  session_ok redis-after && pass "redis: real session after restart" || { fail "redis: session after restart"; tail -5 "$OUT/session-redis-after.log"; }
+  # Each Redis-backed store notices its dead pooled connection on first use
+  # and answers an honest, retryable 503 (never a false 401). Behave like a
+  # client: retry after Retry-After, and record how many attempts it took.
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if session_ok "redis-after-$attempt"; then break; fi
+    grep -qE "503|1013" "$OUT/session-redis-after-$attempt.log" || { attempt=fail; break; }
+    sleep 2
+  done
+  if [[ "$attempt" =~ ^[1-5]$ ]] && session_ok "redis-after-check"; then
+    pass "redis: real session after restart (attempt $attempt; earlier attempts were retryable 503/1013)"
+  else
+    fail "redis: session after restart"; tail -5 "$OUT"/session-redis-after-*.log
+  fi
 }
 
 drill_restart() {
@@ -144,6 +159,8 @@ drill_network() {
   docker network disconnect wavia-qual "$P-postgres"
   local t
   t=$(wait_status "$CP" 503 30) && pass "network: control plane reports not ready ${t}s after losing the database" || fail "network: control plane still ready"
+  local live; live=$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$CP/health/live")
+  [[ "$live" == "200" ]] && pass "network: liveness answers during the outage" || fail "network: liveness $live during the outage (event loop blocked)"
   local start code
   start=$(date +%s)
   code=$(curl -s -m 60 -o "$OUT/network-mint.json" -w '%{http_code}' -X POST "$CP/v1/session/mint" -H 'Content-Type: application/json' \
