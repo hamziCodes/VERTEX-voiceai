@@ -313,10 +313,20 @@ class PostgresAgentConfigRepo:
                 (str(tenant_id), str(agent_id)),
             )
             rows = await cursor.fetchall()
-        if not rows:
-            raise AgentNotFoundError(
-                f"Agent {agent_id} not found for tenant {tenant_id}."
-            )
+            if not rows:
+                # An agent that was never published has no versions; only a
+                # missing agent is "not found" (matches the in-memory repo).
+                exists = await (
+                    await conn.execute(
+                        "SELECT 1 FROM agent_configs "
+                        "WHERE tenant_id = %s::uuid AND agent_id = %s::uuid",
+                        (str(tenant_id), str(agent_id)),
+                    )
+                ).fetchone()
+                if exists is None:
+                    raise AgentNotFoundError(
+                        f"Agent {agent_id} not found for tenant {tenant_id}."
+                    )
         return [
             {
                 "version": row[0],
