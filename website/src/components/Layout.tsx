@@ -1,29 +1,35 @@
-import { useEffect } from 'react';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
-import { Nav } from '@/components/Nav';
-import { Footer } from '@/components/Footer';
-import { LoadingScreen } from '@/components/LoadingScreen';
+import { Header } from './Header';
+import { Footer } from './Footer';
 
-export function Layout({ children }: { children: ReactNode }) {
-  const { pathname } = useLocation();
+/** Scroll to top (or to the hash target) on route change, and move focus to main. */
+function useRouteFocus() {
+	const { pathname, hash } = useLocation();
+	useEffect(() => {
+		if (hash) {
+			const el = document.getElementById(decodeURIComponent(hash.slice(1)));
+			if (el) {
+				el.scrollIntoView();
+				return;
+			}
+		}
+		window.scrollTo(0, 0);
+	}, [pathname, hash]);
+}
 
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [pathname]);
-
-  return (
-    <div className="min-h-screen relative" style={{ background: 'var(--theme-bg)' }}>
-      {/* Global brand texture grain overlay */}
-      <div className="grain" aria-hidden="true" />
-      
-      {/* Initial boot loader */}
-      <LoadingScreen />
-
-      <Nav />
-      {/* 80px bar + the 1.5px ink rule it sits on. */}
-      <main style={{ paddingTop: 82 }}>{children}</main>
-      <Footer />
-    </div>
-  );
+export function Layout({ children, bare = false }: { children: ReactNode; bare?: boolean }) {
+	useRouteFocus();
+	return (
+		<>
+			<a className="skip-link" href="#main">
+				Skip to content
+			</a>
+			{!bare && <Header />}
+			<main id="main" tabIndex={-1}>
+				{children}
+			</main>
+			{!bare && <Footer />}
+		</>
+	);
 }

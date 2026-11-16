@@ -1,16 +1,22 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
-import { AppProviders } from './providers';
+import '@fontsource/instrument-serif/400.css';
+import '@fontsource/instrument-serif/400-italic.css';
+import '@fontsource/space-mono/400.css';
+import '@fontsource/space-mono/700.css';
+import './styles/tokens.css';
+import './styles/base.css';
+import './styles/components.css';
+import './styles/docs.css';
+import './styles/journey.css';
+import './styles/demo.css';
 import App from './App';
-import './index.css';
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <BrowserRouter basename={import.meta.env.BASE_URL}>
-      <AppProviders>
-        <App />
-      </AppProviders>
-    </BrowserRouter>
-  </StrictMode>,
+	<StrictMode>
+		<BrowserRouter basename={import.meta.env.BASE_URL}>
+			<App />
+		</BrowserRouter>
+	</StrictMode>,
 );

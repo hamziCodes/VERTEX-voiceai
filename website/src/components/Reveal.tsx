@@ -1,22 +1,48 @@
-import type { ReactNode } from 'react';
-import { motion } from 'motion/react';
+import { useEffect, useRef, useState, type ElementType, type ReactNode } from 'react';
 
-interface RevealProps {
-  children: ReactNode;
-  delay?: number;
-  className?: string;
-}
+/**
+ * One-shot reveal on entering the viewport (opacity + transform only).
+ * Content is visible by default if IntersectionObserver is missing, and the
+ * CSS disables the offset under prefers-reduced-motion.
+ */
+export function Reveal({
+	as: Tag = 'div',
+	children,
+	className = '',
+	delay = 0,
+}: {
+	as?: ElementType;
+	children: ReactNode;
+	className?: string;
+	delay?: number;
+}) {
+	const ref = useRef<HTMLElement>(null);
+	const [shown, setShown] = useState(typeof IntersectionObserver === 'undefined');
 
-export function Reveal({ children, delay = 0, className = '' }: RevealProps) {
-  return (
-    <motion.div data-ev-id="ev_a030fc3530"
-    className={className}
-    initial={{ opacity: 0, y: 30 }}
-    whileInView={{ opacity: 1, y: 0 }}
-    viewport={{ once: true, margin: '-80px' }}
-    transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay }}>
+	useEffect(() => {
+		const el = ref.current;
+		if (!el || shown) return;
+		const io = new IntersectionObserver(
+			([entry]) => {
+				if (entry.isIntersecting) {
+					setShown(true);
+					io.disconnect();
+				}
+			},
+			{ rootMargin: '0px 0px -10% 0px' },
+		);
+		io.observe(el);
+		return () => io.disconnect();
+	}, [shown]);
 
+	return (
+		<Tag
+			ref={ref}
+			className={`reveal ${className}`}
+			data-shown={shown}
+			style={delay ? { transitionDelay: `${delay}ms` } : undefined}
+		>
 			{children}
-		</motion.div>);
-
+		</Tag>
+	);
 }

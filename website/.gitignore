@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Full screenshot set from scripts/check-routes.mjs (key screens are committed)
+docs/design/stage4-screens/all/
