@@ -15,7 +15,7 @@
         "language": "en",
         "routes": [
           { "provider_id": "gladia", "priority": 1, "enabled": true },
-          { "provider_id": "whisper", "priority": 2, "enabled": true }
+          { "provider_id": "deepgram", "model": "nova-3", "priority": 2, "enabled": true }
         ]
       }
     ],
