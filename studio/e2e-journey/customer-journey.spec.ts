@@ -90,6 +90,12 @@ test.describe.serial("self-serve customer journey (real engine)", () => {
     await page.screenshot({ path: `${shots}/conversations.png`, fullPage: true });
     await page.getByRole("row").nth(1).getByRole("link").first().click();
     await expect(page.getByText("What are your opening hours?").first()).toBeVisible();
+    // The jobs runner processes the post-call queue (mock provider mode: the
+    // labelled mock provider, quoting the real transcript).
+    await expect.poll(async () => {
+      await page.reload();
+      return page.getByText(/Mock summary \(no model was called\)/).count();
+    }, { timeout: 90_000, intervals: [3_000] }).toBeGreaterThan(0);
     await page.screenshot({ path: `${shots}/conversation-detail.png`, fullPage: true });
     await page.goto("/dashboard");
     await expect(page.getByRole("heading").first()).toBeVisible();

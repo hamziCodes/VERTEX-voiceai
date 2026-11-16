@@ -225,7 +225,7 @@ function resetState() {
       result_id: "92222222-2222-4222-8222-222222222222",
       call_id: alphaCallId,
       extraction: null,
-      summary: { text: "Customer requested help with an order." },
+      summary: { executive_summary: "Customer requested help with an order.", key_takeaways: [], sentiment_trajectory: [], source_turn_ids: [0], provider_id: "groq", model_id: "openai/gpt-oss-120b" },
       verification_issue_codes: ["sensitive_field"],
       created_at: "2026-11-04T09:03:00Z",
     },
