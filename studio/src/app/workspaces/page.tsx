@@ -4,10 +4,11 @@ import Link from "next/link";
 import { INVITATION_COOKIE_NAME } from "@/auth/invitation";
 import { requireSession } from "@/auth/session";
 import { listCurrentWorkspaces } from "@/auth/workspace";
+import { FormField } from "@/components/studio/form-field";
 import { PageHeader } from "@/components/studio/page-header";
 import { StatePanel } from "@/components/studio/state-panel";
 import { StatusBadge } from "@/components/studio/status-badge";
-import { acceptPendingInvitationAction, selectWorkspaceAction, signOutAction } from "@/features/workspaces/actions";
+import { acceptPendingInvitationAction, createWorkspaceAction, selectWorkspaceAction, signOutAction } from "@/features/workspaces/actions";
 
 interface WorkspacesPageProps {
   searchParams: Promise<{ error?: string }>;
@@ -20,7 +21,25 @@ const ERROR_MESSAGES: Record<string, string> = {
   "invitation-mismatch": "This invitation was sent to a different email address. Sign in with the invited address.",
   "invitation-used": "This invitation has already been used. If that was not you, tell your workspace administrator.",
   "invalid-workspace": "That workspace is not available to your account.",
+  "invalid-workspace-name": "Enter a workspace name of up to 120 characters.",
 };
+
+function CreateWorkspaceForm({ first }: { first: boolean }) {
+  return (
+    <form action={createWorkspaceAction} className="invitation-panel create-workspace">
+      <div>
+        <h2>{first ? "Create your workspace" : "Create another workspace"}</h2>
+        <p>{first
+          ? "A workspace holds your agents, knowledge, numbers and conversations. You become its administrator and can invite your team."
+          : "Each workspace keeps its own agents, data, members and usage."}</p>
+      </div>
+      <FormField hint="Shown to everyone you invite." label="Workspace name" name={first ? "workspace-name" : "workspace-name-another"}>
+        <input autoComplete="organization" maxLength={120} name="name" placeholder="Acme Clinics" required type="text" />
+      </FormField>
+      <button className="button button--primary" type="submit">Create workspace</button>
+    </form>
+  );
+}
 
 const ROLE_LABELS: Record<string, string> = {
   tenant_admin: "Administrator",
@@ -70,10 +89,13 @@ export default async function WorkspacesPage({ searchParams }: WorkspacesPagePro
           </form>
         ) : null}
         {identity.memberships.length === 0 ? (
-          <StatePanel
-            description="Ask a workspace administrator to invite this account. If you already have an invitation, open its original link and sign in again."
-            title="No workspace access yet"
-          />
+          <>
+            <StatePanel
+              description="Create a workspace to start building, or ask a workspace administrator to invite this account. If you already have an invitation, open its original link and sign in again."
+              title="No workspace access yet"
+            />
+            <CreateWorkspaceForm first />
+          </>
         ) : (
           <ul aria-label="Available workspaces" className="workspace-list">
             {identity.memberships.map((membership) => (
@@ -93,6 +115,12 @@ export default async function WorkspacesPage({ searchParams }: WorkspacesPagePro
             ))}
           </ul>
         )}
+        {identity.memberships.length > 0 ? (
+          <details className="create-workspace-disclosure">
+            <summary>Create another workspace</summary>
+            <CreateWorkspaceForm first={false} />
+          </details>
+        ) : null}
       </div>
     </main>
   );

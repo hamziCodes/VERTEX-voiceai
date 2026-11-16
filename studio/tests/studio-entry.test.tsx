@@ -17,15 +17,18 @@ vi.mock("@/auth/session", () => ({ requireSession }));
 vi.mock("@/auth/workspace", () => ({ listCurrentWorkspaces }));
 vi.mock("@/features/workspaces/actions", () => ({
   acceptPendingInvitationAction: vi.fn(),
+  createWorkspaceAction: vi.fn(),
   selectWorkspaceAction: vi.fn(),
   signOutAction: vi.fn(),
   startSignInAction: vi.fn(),
+  startSignUpAction: vi.fn(),
 }));
 
 import StudioError from "@/app/error";
 import NotFoundPage from "@/app/not-found";
 import StudioHomePage from "@/app/page";
 import SignInPage from "@/app/sign-in/page";
+import SignUpPage from "@/app/sign-up/page";
 import WorkspacesPage from "@/app/workspaces/page";
 import { FormField } from "@/components/studio/form-field";
 import { PageHeader } from "@/components/studio/page-header";
@@ -81,6 +84,16 @@ describe("public Studio entry", () => {
     expect(screen.getByRole("heading", { name: "Sign in to Wavia Studio" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Continue securely" })).toBeVisible();
     expect(document.querySelector<HTMLInputElement>('input[name="invitation"]')?.value).toBe("invite-safe-test-value");
+    expect(screen.getByRole("button", { name: "Create an account" })).toBeVisible();
+  });
+
+  it("offers hosted sign-up and keeps the invitation through it", async () => {
+    render(await SignUpPage({ searchParams: Promise.resolve({ invitation: "invite-safe-test-value" }) }));
+
+    expect(screen.getByRole("heading", { name: "Start building with Wavia" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Create an account" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/sign-in?invitation=invite-safe-test-value");
+    expect(document.querySelector<HTMLInputElement>('input[name="invitation"]')?.value).toBe("invite-safe-test-value");
   });
 });
 
@@ -115,6 +128,31 @@ describe("workspace selection", () => {
     expect(screen.getByText("Invitation ready")).toBeVisible();
     expect(screen.getByRole("button", { name: "Accept invitation" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "No workspace access yet" })).toBeVisible();
+  });
+
+  it("lets a new account create its first workspace (self-serve)", async () => {
+    requireSession.mockResolvedValue({ displayName: "Dana" });
+    listCurrentWorkspaces.mockResolvedValue({ platform_capabilities: [], memberships: [] });
+
+    render(await WorkspacesPage({ searchParams: Promise.resolve({}) }));
+
+    expect(screen.getByRole("heading", { name: "Create your workspace" })).toBeVisible();
+    expect(screen.getByLabelText("Workspace name")).toBeRequired();
+    expect(screen.getByRole("button", { name: "Create workspace" })).toBeVisible();
+  });
+
+  it("offers members another workspace without hiding their list", async () => {
+    requireSession.mockResolvedValue({ displayName: "Hamzi" });
+    listCurrentWorkspaces.mockResolvedValue({
+      platform_capabilities: [],
+      memberships: [membership("11111111-1111-4111-8111-111111111111", "Alpha workspace", "tenant_admin")],
+    });
+
+    render(await WorkspacesPage({ searchParams: Promise.resolve({ error: "invalid-workspace-name" }) }));
+
+    expect(screen.getByRole("button", { name: /Alpha workspace/ })).toBeVisible();
+    expect(screen.getByText("Create another workspace", { selector: "summary" })).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter a workspace name of up to 120 characters.");
   });
 
   it.each([

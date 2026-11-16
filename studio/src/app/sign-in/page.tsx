@@ -1,4 +1,4 @@
-import { startSignInAction } from "@/features/workspaces/actions";
+import { startSignInAction, startSignUpAction } from "@/features/workspaces/actions";
 
 interface SignInPageProps {
   searchParams: Promise<{ invitation?: string }>;
@@ -18,6 +18,11 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
           <form action={startSignInAction}>
             {invitation ? <input name="invitation" type="hidden" value={invitation} /> : null}
             <button className="button button--primary button--wide" type="submit">Continue securely</button>
+          </form>
+          <form action={startSignUpAction} className="entry-alt-action">
+            {invitation ? <input name="invitation" type="hidden" value={invitation} /> : null}
+            <span>New to Wavia?</span>{" "}
+            <button className="button button--secondary" type="submit">Create an account</button>
           </form>
         </div>
         <p className="entry-footnote">Wavia does not place a call or contact a voice provider when you sign in.</p>
