@@ -529,7 +529,7 @@ The agents router is mounted at `/v1/agents` (`control_plane/routes/agents.py:18
 | POST | `/v1/telephony/calls` | Authenticated, policy-gated single outbound call | `control_plane/routes/telephony.py` |
 | POST | `/v1/extraction-schemas` | Create extraction schema | `control_plane/routes/extraction_schemas.py:12` |
 | GET | `/v1/knowledge-bases/status/{tenant_id}` | Placeholder KB status | `control_plane/routes/knowledge_bases.py:10` |
-| POST | `/v1/alerts/config/{tenant_id}` | Update alert email/webhook config | `control_plane/routes/alerts.py:10` |
+| GET | `/v1/alerts/{tenant_id}` | List the tenant's operational alerts (quota, capacity, provider chain) | `control_plane/routes/alerts.py` |
 
 Usage currently returns quota and zeroed usage totals (`control_plane/routes/usage.py:8`). Audit queries are tenant-scoped unless role is `platform_admin` (`control_plane/audit_routes.py:10`). Secret rotation endpoint returns a success message after RBAC checks (`control_plane/secrets_routes.py:12`).
 

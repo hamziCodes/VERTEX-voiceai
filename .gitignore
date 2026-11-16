@@ -49,3 +49,7 @@ Desktop.ini
 .worktrees/
 agent-transcripts/
 hamza_local/
+
+# Downloaded corpora and generated reports (latency corpus, release runs)
+external/
+artifacts/

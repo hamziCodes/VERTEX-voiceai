@@ -204,8 +204,7 @@ Routes under `/v1/alerts/` (from `control_plane/routes/alerts.py`):
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/v1/alerts` | List active latency/SLA alerts |
-| `POST` | `/v1/alerts` | Create alert rule |
+| `GET` | `/v1/alerts/{tenant_id}` | List the tenant's operational alerts (quota, capacity, provider-chain exhaustion). Rules are defined by the platform, not per tenant. |
 
 ---
 

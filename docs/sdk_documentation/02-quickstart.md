@@ -1,152 +1,122 @@
-﻿# Quickstart
+# Quickstart
 
-Get Wavia running locally end-to-end in under 5 minutes.
+Run Wavia locally end to end: control plane, voice worker, PostgreSQL and
+Redis, with **mock providers** (no provider keys, no network calls, no cost).
 
 ---
 
-## Prerequisites
+## What you need
 
-| Requirement | Version |
+| Requirement | Why |
 |---|---|
-| Python | 3.12+ |
-| uv | Latest (`pip install uv`) |
-| Redis | 6+ (local or Docker) |
-| PostgreSQL | 14+ with pgvector (optional for RAG) |
+| Docker | Runs PostgreSQL, Redis and the Wavia images |
+| Python 3.12 + [uv](https://docs.astral.sh/uv/) | Only for running services from source |
+| Node 22+ | Only for the TypeScript SDK |
 
-> **Note:** For local demo use, Redis and PostgreSQL are not strictly required — the system uses in-memory stubs when not configured.
-
----
-
-## 1. Clone & Install
-
-```bash
-git clone https://github.com/your-org/VERTEX_voiceai.git
-cd VERTEX_voiceai
-
-# Install all packages in editable mode
-pip install -e .
-```
+PostgreSQL is **required** whenever the control plane and worker run as
+separate processes: the worker loads the session plan that the control plane
+pinned in the database at mint time. In-memory repositories exist only for
+tests inside a single process.
 
 ---
 
-## 2. Configure Environment
-
-Copy the example env file and fill in your API keys:
+## 1. Start the stack (recommended: release images)
 
 ```bash
-cp .env.example .env
+git clone <your Wavia repository> && cd VERTEX-voiceai
+for s in control-plane worker-raw worker-jobs telephony-gateway; do
+  docker build -f infra/docker/$s.Dockerfile -t wavia-$s:p15 .
+done
+bash scripts/release/container_stack.sh up
 ```
 
-Minimum required variables for local development:
+The script starts PostgreSQL (pgvector) and Redis, applies every migration
+from the control-plane image, and waits until each service reports ready:
 
-```env
-# STT — Gladia (default)
-GLADIA_API_KEY=your_gladia_key
+| Service | URL |
+|---|---|
+| Control plane | `http://127.0.0.1:28080` (`/docs`, `/health/ready`, `/demo/`) |
+| Voice worker | `ws://127.0.0.1:28081/ws/audio` |
+| Jobs runner | `http://127.0.0.1:28084/health/ready` |
+| Telephony gateway | `http://127.0.0.1:28083/health/ready` |
 
-# LLM — Groq (default)
-GROQ_API_KEY=your_groq_key
+Stop and remove everything with `bash scripts/release/container_stack.sh down`.
 
-# TTS — Uplift (default)
-UPLIFT_API_KEY=your_uplift_key
+### From source instead (Linux or macOS)
 
-# Session JWT signing secret
-UCVE_MINT_HMAC_SECRET=dev-mint-secret
-
-# Environment (enables unauthenticated /mint in demo mode)
-UCVE_ENV=development
-
-# Enables local-only prompt/provider overrides. Never enable in production.
-UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES=1
+```bash
+uv sync --frozen
+export DATABASE_URL=postgresql://...      # a migrated database
+python -m infra.db.migrate --database-url "$DATABASE_URL"
+export UCVE_ENV=development UCVE_DEMO_MODE=1 UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES=1
+uv run uvicorn control_plane.app:app --port 8080 &
+uv run python -m worker_raw.main            # port 8081
 ```
 
-Optional (ElevenLabs TTS, Cartesia TTS, Deepgram STT, Gemini LLM):
-
-```env
-ELEVENLABS_API_KEY=...
-CARTESIA_API_KEY=...
-DEEPGRAM_API_KEY=...
-GEMINI_API_KEY=...
-```
-
-> **Twilio/telephony is not required** for the core voice pipeline and is currently flagged as optional infrastructure.
+On Windows run the services in Docker: psycopg's async driver cannot use the
+default Windows event loop that uvicorn starts.
 
 ---
 
-## 3. Start the Control Plane
+## 2. Providers
 
-```bash
-python -m uvicorn control_plane.app:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Verify:
-```bash
-curl http://127.0.0.1:8000/health
-# {"status":"ok","service":"control-plane"}
-```
+`UCVE_ENV=development` uses mock speech, LLM and TTS providers, so no keys are
+needed to try the pipeline. Live providers are opt-in (`RUN_LIVE_PROVIDERS=1`
+or a production environment) and then require the matching credentials, which
+tenants add as encrypted provider credentials in Studio
+(`/v1/provider-credentials`). Never put provider keys in client code.
 
 ---
 
-## 4. Start the Worker Node
+## 3. Open the demo console
 
-In a second terminal:
-
-```bash
-python -m uvicorn worker_raw.main:app --host 127.0.0.1 --port 8081 --reload
-```
-
-Verify:
-```bash
-curl http://127.0.0.1:8081/health
-# {"status":"ok","service":"worker-raw"}
-```
+`http://127.0.0.1:28080/demo/` mints a session, connects to the worker,
+streams microphone audio and plays the reply.
 
 ---
 
-## 5. Open the Demo Console
+## 4. Mint a session
 
-Navigate to:
-```
-http://127.0.0.1:8000/demo/
-```
-
-The demo console is served directly by the control plane from `examples/web-client/index.html`. It allows you to:
-
-1. Mint a session JWT automatically
-2. Connect a WebSocket to the worker node
-3. Stream microphone audio
-4. Hear real-time TTS responses
-5. View live latency waterfall metrics
-
----
-
-## 6. Mint a Session via API
-
-For programmatic access:
+Development demo mode (`UCVE_DEMO_MODE=1`) allows an unauthenticated mint for
+a demo tenant and agent; they are created on first use:
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/mint \
-  -H "Content-Type: application/json" \
-  -d '{"tenant_id":"00000000-0000-0000-0000-000000000001","agent_id":"00000000-0000-0000-0000-0000000000a1"}'
+curl -s -X POST http://127.0.0.1:28080/v1/session/mint   -H "Content-Type: application/json"   -d '{"tenant_id":"00000000-0000-0000-0000-000000000001","agent_id":"00000000-0000-0000-0000-0000000000a1"}'
 ```
 
-Response:
-```json
-{
-  "status": "success",
-  "session_id": "e5333b60-...",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-}
-```
+The response carries `status`, `session_id`, `token` (single use),
+`ttl_sec`, `ws_url`, `agent_config_version` and `session_plan_ref`.
 
-> `/mint` is only available in `UCVE_ENV=development`. In production, use the HMAC-signed `/v1/session` endpoint.
+Outside demo mode, mint from your backend with a tenant API key that has the
+`session:mint` scope (`Authorization: Bearer <key>` on `/v1/session/mint`), or
+with the HMAC-signed `POST /v1/session`. `/mint` is a legacy alias of
+`/v1/session/mint`.
 
 ---
 
-## 7. Connect a WebSocket
+## 5. Use an SDK
+
+Runnable quickstarts that mint, connect, send a text turn and receive agent
+audio:
+
+- Python: [`sdk/python/examples/quickstart.py`](../../sdk/python/examples/quickstart.py)
+- TypeScript: [`sdk/typescript/examples/quickstart.mjs`](../../sdk/typescript/examples/quickstart.mjs)
+
+```bash
+python sdk/python/examples/quickstart.py --control-plane http://127.0.0.1:28080
+```
+
+A session token is spent when the WebSocket opens. If the worker rejects the
+session the SDKs raise `SessionRejectedError` with the close code; mint a new
+session to try again.
+
+---
+
+## 6. Connect a WebSocket directly
 
 ```javascript
-const token = "<JWT from /mint>";
-const ws = new WebSocket(`ws://127.0.0.1:8081/ws/audio?token=${token}`);
+const token = "<token from /v1/session/mint>";
+const ws = new WebSocket(`ws://127.0.0.1:28081/ws/audio?token=${token}&protocol_version=1.0.0`);
 ws.onopen = () => ws.send(JSON.stringify({
   protocol_version: '1.0.0',
   event_id: crypto.randomUUID(),
