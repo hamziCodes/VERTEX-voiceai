@@ -18,7 +18,7 @@ The executor records dated answers here. No secret values belong in this file.
 | H12 | 12 | First carrier; inbound-only or outbound too; later sandbox/test number | Telephony scope/cost | RESOLVED 2026-10-26 — Telnyx first; inbound implemented first, then controlled single-call outbound; campaigns excluded; H15 retains the live number/destination/spend approval |
 | H13 | 13 | Self-serve onboarding fields, billing boundary, design process | Product scope | RESOLVED 2026-10-29 — standalone Next.js Studio with a thin server-only BFF/DAL; guided plus advanced modes; FastAPI remains authoritative; usage/entitlements only with no payment; telephony readiness only until H15; Hamzi will supply visual references before 13G and must choose/provision the OIDC provider before 13B |
 | H14 | 14 | Launch compliance claims and first hosting target | Operational requirements | RESOLVED 2026-11-16 — no compliance labels at launch (no HIPAA/GDPR/SOC claims; only factual descriptions of retention, redaction, consented recording, erasure, audit and data region; GDPR readiness stays roadmap); first hosting target AWS me-central-1 (UAE): containers on ECS/EC2, RDS PostgreSQL + pgvector, ElastiCache Redis, S3 recordings, AWS KMS. Nothing deployed or purchased; deploy/spend remain H15 |
-| H15 | 15 | Approve publishing/deploy/live tests/calls, spend cap, destination allowlist | External and paid actions | OPEN |
+| H15 | 15 | Approve publishing/deploy/live tests/calls, spend cap, destination allowlist | External and paid actions | OPEN — asked 2026-11-16 with the offline release candidate (`fb40fc6`); steps L1-L8, proposed ceilings and pre-publish decisions in `evidence/phase-15/LIVE_CERTIFICATION_PLAN.md`; nothing live has run |
 
 ## Safe information exchange
 
