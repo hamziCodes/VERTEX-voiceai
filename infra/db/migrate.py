@@ -190,6 +190,12 @@ async def apply_migrations_async(
 def apply_migrations(database_url: str | None = None) -> list[str]:
     """Synchronous CLI compatibility wrapper."""
 
+    if sys.platform == "win32":
+        # psycopg's async mode cannot run on Windows' default Proactor loop.
+        return asyncio.run(
+            apply_migrations_async(database_url),
+            loop_factory=asyncio.SelectorEventLoop,
+        )
     return asyncio.run(apply_migrations_async(database_url))
 
 
