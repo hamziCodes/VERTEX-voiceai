@@ -58,11 +58,12 @@ class NonceStore:
                     )
                 )
             except Exception as exc:
-                if is_protected_environment():
-                    raise ReplayStoreUnavailableError(
-                        "Replay protection is unavailable in this environment."
-                    ) from exc
-                return False
+                # A configured store that fails is unavailable, never "used"
+                # or "not revoked": guessing would report a fake replay or
+                # silently drop a revocation.
+                raise ReplayStoreUnavailableError(
+                    "Replay protection is unavailable in this environment."
+                ) from exc
 
         key = f"{tenant_id}:{nonce}"
         now = time.time()
@@ -84,11 +85,12 @@ class NonceStore:
             try:
                 return bool(await self._redis.exists(self._key(tenant_id, nonce)))
             except Exception as exc:
-                if is_protected_environment():
-                    raise ReplayStoreUnavailableError(
-                        "Replay protection is unavailable in this environment."
-                    ) from exc
-                return False
+                # A configured store that fails is unavailable, never "used"
+                # or "not revoked": guessing would report a fake replay or
+                # silently drop a revocation.
+                raise ReplayStoreUnavailableError(
+                    "Replay protection is unavailable in this environment."
+                ) from exc
         key = f"{tenant_id}:{nonce}"
         now = time.time()
         async with self._lock:

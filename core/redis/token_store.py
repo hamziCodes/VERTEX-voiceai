@@ -61,11 +61,12 @@ class SessionTokenStore:
                     )
                 )
             except Exception as exc:
-                if is_protected_environment():
-                    raise ReplayStoreUnavailableError(
-                        "Session token state is unavailable in this environment."
-                    ) from exc
-                return False
+                # A configured store that fails is unavailable, never "used"
+                # or "not revoked": guessing would report a fake replay or
+                # silently drop a revocation.
+                raise ReplayStoreUnavailableError(
+                    "Session token state is unavailable in this environment."
+                ) from exc
         now = time.time()
         async with self._lock:
             self._purge(now)
@@ -92,11 +93,12 @@ class SessionTokenStore:
                     await self._redis.eval(script, 2, refresh_key, revoked_key, ttl_sec)
                 )
             except Exception as exc:
-                if is_protected_environment():
-                    raise ReplayStoreUnavailableError(
-                        "Session token state is unavailable in this environment."
-                    ) from exc
-                return False
+                # A configured store that fails is unavailable, never "used"
+                # or "not revoked": guessing would report a fake replay or
+                # silently drop a revocation.
+                raise ReplayStoreUnavailableError(
+                    "Session token state is unavailable in this environment."
+                ) from exc
         now = time.time()
         async with self._lock:
             self._purge(now)
@@ -115,11 +117,12 @@ class SessionTokenStore:
                 await self._redis.set(key, "1", ex=ttl_sec)
                 return
             except Exception as exc:
-                if is_protected_environment():
-                    raise ReplayStoreUnavailableError(
-                        "Session token state is unavailable in this environment."
-                    ) from exc
-                return
+                # A configured store that fails is unavailable, never "used"
+                # or "not revoked": guessing would report a fake replay or
+                # silently drop a revocation.
+                raise ReplayStoreUnavailableError(
+                    "Session token state is unavailable in this environment."
+                ) from exc
         async with self._lock:
             self._memory[key] = time.time() + ttl_sec
 
@@ -130,11 +133,12 @@ class SessionTokenStore:
             try:
                 return bool(await self._redis.exists(key))
             except Exception as exc:
-                if is_protected_environment():
-                    raise ReplayStoreUnavailableError(
-                        "Session token state is unavailable in this environment."
-                    ) from exc
-                return True
+                # A configured store that fails is unavailable, never "used"
+                # or "not revoked": guessing would report a fake replay or
+                # silently drop a revocation.
+                raise ReplayStoreUnavailableError(
+                    "Session token state is unavailable in this environment."
+                ) from exc
         now = time.time()
         async with self._lock:
             self._purge(now)

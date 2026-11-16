@@ -296,7 +296,13 @@ async def ws_audio(websocket: WebSocket) -> None:
     except ProviderModeConstraintError:
         await websocket.close(code=4403, reason="provider mode mismatch")
         return
-    except (KeyError, ReplayStoreUnavailableError, TypeError, ValueError):
+    except ReplayStoreUnavailableError:
+        # An outage, not a bad token: accept so the client sees the
+        # retryable 1013 instead of an HTTP 403 or an auth failure.
+        await websocket.accept()
+        await websocket.close(code=1013, reason="session store unavailable")
+        return
+    except (KeyError, TypeError, ValueError):
         await websocket.close(code=4401, reason="invalid token")
         return
     if not claimed:

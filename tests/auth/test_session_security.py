@@ -288,3 +288,60 @@ def test_auth_rate_limit_ignores_forwarded_identity(
             app.state.auth_endpoint_limiter = original_limiter
     assert first.status_code == 401
     assert second.status_code == 429
+
+
+class _BrokenRedis:
+    """A configured Redis whose connection just dropped (e.g. a restart)."""
+
+    async def set(self, *_args: object, **_kwargs: object) -> bool:
+        raise ConnectionError("Connection closed by server.")
+
+    async def eval(self, *_args: object, **_kwargs: object) -> int:
+        raise ConnectionError("Connection closed by server.")
+
+    async def exists(self, *_args: object, **_kwargs: object) -> int:
+        raise ConnectionError("Connection closed by server.")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("environment", ["development", "test", "production"])
+async def test_redis_outage_is_unavailable_not_a_replay_or_lost_revocation(
+    monkeypatch: pytest.MonkeyPatch, environment: str
+) -> None:
+    """Regression (Phase 15 Redis-restart drill): outside protected
+    environments a dropped connection reported 'nonce replay' (401) and a
+    revocation was silently discarded."""
+    monkeypatch.setenv("UCVE_ENV", environment)
+    nonces = NonceStore(redis_client=_BrokenRedis())
+    tokens = SessionTokenStore(redis_client=_BrokenRedis())
+
+    with pytest.raises(ReplayStoreUnavailableError):
+        await nonces.consume_once("tenant-a", "nonce-a", ttl_sec=60)
+    with pytest.raises(ReplayStoreUnavailableError):
+        await nonces.is_used("tenant-a", "nonce-a")
+    with pytest.raises(ReplayStoreUnavailableError):
+        await tokens.claim_connection("tenant-a", "jti-a", 60)
+    with pytest.raises(ReplayStoreUnavailableError):
+        await tokens.consume_refresh("tenant-a", "jti-a", 60)
+    with pytest.raises(ReplayStoreUnavailableError):
+        await tokens.revoke("tenant-a", "jti-a", 60)
+    with pytest.raises(ReplayStoreUnavailableError):
+        await tokens.is_revoked("tenant-a", "jti-a")
+
+
+@pytest.mark.asyncio
+async def test_refresh_during_store_outage_is_503_not_invalid_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UCVE_ENV", "test")
+    ctx = MintContext(token_store=SessionTokenStore(redis_client=_BrokenRedis()))
+    await ctx.session_repo.create_session(
+        "tenant-a",
+        Session(id="session-a", tenant_id="tenant-a", agent_id="agent-a"),
+    )
+    token = issue_session_jwt("tenant-a", "session-a", "agent-a")
+
+    status, body = await handle_session_refresh(token, ctx=ctx)
+
+    assert status == 503
+    assert body == {"error": "Session token state is temporarily unavailable."}

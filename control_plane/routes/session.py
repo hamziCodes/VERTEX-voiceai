@@ -391,5 +391,7 @@ async def handle_session_refresh(
             unsafe_demo=bool(payload.get("unsafe_demo", False)),
         )
         return 200, {"status": "success", "token": new_token, "ttl_sec": 120}
-    except (KeyError, PermissionError, ReplayStoreUnavailableError, ValueError):
+    except ReplayStoreUnavailableError:
+        return 503, {"error": "Session token state is temporarily unavailable."}
+    except (KeyError, PermissionError, ValueError):
         return 401, {"error": "Invalid or unavailable session token."}

@@ -73,3 +73,26 @@ def test_websocket_rejects_mode_mismatch_before_claiming_connection(
 
     assert caught.value.code == 4403
     assert store.calls == 0
+
+
+def test_session_store_outage_closes_with_retryable_1013_not_auth_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression (Phase 15 Redis-restart drill): a store outage was reported
+    to the client as 4401 'invalid token'."""
+    from core.redis.nonce_store import ReplayStoreUnavailableError
+
+    monkeypatch.setenv("UCVE_ENV", "test")
+    token = issue_session_jwt("tenant-a", "session-a", "agent-a")
+
+    class DownStore:
+        async def claim_connection(self, *_args: object) -> bool:
+            raise ReplayStoreUnavailableError("down")
+
+    with TestClient(worker_main.app) as client:
+        worker_main.app.state.token_store = DownStore()
+        with pytest.raises(WebSocketDisconnect) as caught:
+            with client.websocket_connect(f"/ws/audio?token={token}") as ws:
+                ws.receive_text()
+
+    assert caught.value.code == 1013
