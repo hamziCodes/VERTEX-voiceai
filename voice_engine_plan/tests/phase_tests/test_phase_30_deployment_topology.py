@@ -58,10 +58,15 @@ def test_compose_services_defined() -> None:
         assert service in compose_text, f"Missing service {service} in docker-compose.yml"
 
 
-def test_worker_raw_installs_torch_explicitly() -> None:
+def test_worker_raw_installs_the_locked_onnx_runtime_not_torch() -> None:
+    # Phase 15: the worker runs Silero VAD on onnxruntime; torch was only a
+    # fallback when onnxruntime is absent and added gigabytes to the image.
+    # Every image installs exactly the hash-pinned export of uv.lock.
     worker_df = (REPO_ROOT / "infra" / "docker" / "worker-raw.Dockerfile").read_text(encoding="utf-8")
-    assert "torch" in worker_df.lower(), "worker-raw.Dockerfile must explicitly install torch"
-    assert "numpy" in worker_df.lower(), "worker-raw.Dockerfile must explicitly install numpy"
+    assert "--require-hashes -r /app/requirements/runtime.txt" in worker_df
+    runtime = (REPO_ROOT / "requirements" / "runtime.txt").read_text(encoding="utf-8").lower()
+    assert "\nonnxruntime==" in runtime and "\nnumpy==" in runtime
+    assert "\ntorch==" not in runtime
 
 
 def test_environment_matrix_covers_tiers() -> None:
