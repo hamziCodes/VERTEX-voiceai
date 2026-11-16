@@ -1,0 +1,55 @@
+# Build context for every image in infra/docker/. Only runtime sources,
+# manifests and runtime assets go in; secrets, legacy reference code, local
+# evidence, other apps and caches stay out (Phase 15).
+
+# Secrets — never in an image layer
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+API KEYS*
+*.txt.keys
+**/*.pem
+**/*.key
+
+# Version control, tooling, caches
+.git
+.github
+.cursor
+.qoder
+.worktrees
+.claude
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+.venv
+venv
+**/node_modules
+**/.next
+**/dist
+**/build
+**/*.egg-info
+
+# Not part of any backend image
+legacy_codebases
+hamza_local
+voice_engine_plan
+agent-studio
+worker-raw
+control-plane
+studio
+website
+sdk
+docs
+costing
+schemas
+Codex Fix
+AUDIT.md
+CHANGELOG.md
+tests
+scripts
+external
+examples/host-backend

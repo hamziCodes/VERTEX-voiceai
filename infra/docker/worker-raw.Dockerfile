@@ -1,45 +1,61 @@
-# worker-raw image — builds from underscore package dir worker_raw/ (includes torch / onnxruntime)
+# worker-raw image — native WebSocket voice worker (port 8081).
+#
+# Every Wavia image has the same layout (Phase 15): third-party dependencies
+# come only from requirements/runtime.txt, the hash-pinned export of uv.lock
+# (regenerate with scripts/release/export_requirements.sh;
+# this file is rendered by scripts/release/render_dockerfiles.py), and the image holds
+# every first-party package plus the runtime assets the services read
+# (scaling profiles, migrations, OpenAPI document, browser demo client).
+# Build from the repository root: docker build -f infra/docker/worker-raw.Dockerfile .
 
-FROM python:3.12-slim
+# Base pinned by digest (python:3.12-slim, resolved 2026-11-16); bump deliberately.
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    UCVE_ENV=development \
-    OMP_NUM_THREADS=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UCVE_ENV=development
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl build-essential \
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY core/pyproject.toml /app/core/pyproject.toml
+COPY requirements/runtime.txt /app/requirements/runtime.txt
+RUN pip install --no-deps --require-hashes -r /app/requirements/runtime.txt
+
+ENV OMP_NUM_THREADS=1
+
+COPY pyproject.toml uv.lock README.md openapi.yaml /app/
 COPY core/ /app/core/
+COPY control_plane/ /app/control_plane/
 COPY post_call/ /app/post_call/
 COPY telephony_gateway/ /app/telephony_gateway/
-COPY control_plane/ /app/control_plane/
-COPY worker_raw/pyproject.toml /app/worker_raw/pyproject.toml
 COPY worker_raw/ /app/worker_raw/
+COPY worker_jobs/ /app/worker_jobs/
+COPY worker_managed/ /app/worker_managed/
+COPY infra/__init__.py /app/infra/__init__.py
+COPY infra/scaling/ /app/infra/scaling/
+COPY infra/db/ /app/infra/db/
+COPY examples/web-client/ /app/examples/web-client/
 
-RUN pip install --no-cache-dir \
-    "fastapi>=0.115.0" \
-    "uvicorn[standard]>=0.32.0" \
-    "websockets>=13.0" \
-    "httpx>=0.27.0" \
-    "redis>=5.0.0" \
-    "psycopg[binary]>=3.2.0" \
-    "pydantic>=2.9.0" \
-    "cryptography>=43.0.0" \
-    "PyJWT>=2.9.0" \
-    "PyYAML>=6.0.2" \
-    "torch>=2.2.0" \
-    "numpy>=2.0.0" \
-    "onnxruntime>=1.19.0"
+# The Silero VAD model ships in the repository; refuse to build an image whose
+# copy is not the pinned release.
+RUN python -m core.vad.download_silero --check \
+    && python -c "import worker_raw.main" \
+    && useradd --system --uid 10001 --home-dir /app wavia \
+    && mkdir -p /app/hamza_local \
+    && chown wavia /app/hamza_local
+
+USER wavia
 
 EXPOSE 8081
 
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8081/health/live || exit 1
 
+# SIGTERM drains live sessions (WAVIA_DRAIN_TIMEOUT_S, default 120 s).
+STOPSIGNAL SIGTERM
 CMD ["python", "-m", "worker_raw.main"]
