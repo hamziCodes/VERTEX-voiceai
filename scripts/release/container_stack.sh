@@ -43,7 +43,7 @@ wait_ready() {  # name url seconds
 }
 
 down() {
-  docker rm -f "${PREFIX}-control-plane" "${PREFIX}-worker-raw" "${PREFIX}-worker-jobs" \
+  docker rm -f "${PREFIX}-idp" "${PREFIX}-control-plane" "${PREFIX}-worker-raw" "${PREFIX}-worker-jobs" \
     "${PREFIX}-telephony-gateway" "${PREFIX}-postgres" "${PREFIX}-redis" >/dev/null 2>&1 || true
   docker network rm "$NET" >/dev/null 2>&1 || true
 }
@@ -69,8 +69,34 @@ up() {
   echo "== migrations (control-plane image)"
   docker run --rm --network "$NET" "wavia-control-plane:$TAG" \
     python -m infra.db.migrate --database-url "$DB_URL" | tail -c 300; echo
-  service control-plane 8080
-  service worker-raw 8081
+  local cp_extra=()
+  if [[ "${WAVIA_STACK_IDP:-0}" == "1" ]]; then
+    # Offline identity provider for the customer-journey checkup: Studio's own
+    # WorkOS test double, run as a sidecar in the control plane's network so
+    # both Studio (host) and the control plane see it at 127.0.0.1:3211, the
+    # only plain-HTTP JWKS origin the control plane accepts. Identity is the
+    # only external service doubled; the control plane, worker and database
+    # are the release images.
+    cp_extra=(-p 127.0.0.1:3211:3211
+      -e OIDC_ISSUER=http://127.0.0.1:3211/ -e OIDC_JWKS_URL=http://127.0.0.1:3211/jwks
+      -e OIDC_AUDIENCE=client_offline_test -e UCVE_ALLOWED_ORIGINS=http://127.0.0.1:3100
+      -e UCVE_DEMO_MODE=0)  # the journey must not rely on unauthenticated demo mints
+  fi
+  service control-plane 8080 "${cp_extra[@]}"
+  if [[ "${WAVIA_STACK_IDP:-0}" == "1" ]]; then
+    local fixture; fixture="$(cygpath -w "$PWD/studio/e2e/fixtures" 2>/dev/null || echo "$PWD/studio/e2e/fixtures")"
+    MSYS_NO_PATHCONV=1 docker run -d --name "${PREFIX}-idp" --network "container:${PREFIX}-control-plane" \
+      -v "${fixture}:/fixtures:ro" -e WAVIA_E2E_FIXTURE_BIND=0.0.0.0 -e WAVIA_E2E_FIXTURE_PORT=3211 \
+      -e WAVIA_E2E_APP_PORT=3100 node:22-alpine node /fixtures/offline-auth-server.mjs >/dev/null
+    wait_ready idp http://127.0.0.1:3211/health 60
+  fi
+  local worker_extra=()
+  if [[ "${WAVIA_STACK_IDP:-0}" == "1" ]]; then
+    # Studio's "mock" voice test signs a fixed-mock-transcript constraint;
+    # the worker must run in that mode (real VAD, mock STT/LLM/TTS).
+    worker_extra=(-e "UCVE_STT_MOCK_TEXT=What are your opening hours?")
+  fi
+  service worker-raw 8081 "${worker_extra[@]}"
   service worker-jobs 8084
   # A throwaway Ed25519 public key (the gateway rejects malformed keys at
   # startup); no Telnyx account is involved.

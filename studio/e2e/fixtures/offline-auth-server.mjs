@@ -1,4 +1,4 @@
-import { createSign, generateKeyPairSync, randomBytes } from "node:crypto";
+import { createHash, createSign, generateKeyPairSync, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 
 const host = "127.0.0.1";
@@ -7,6 +7,8 @@ const appPort = Number(process.env.WAVIA_E2E_APP_PORT ?? "3100");
 const issuer = `http://${host}:${port}/`;
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const publicJwk = publicKey.export({ format: "jwk" });
+// Key ID tied to this process's key, so a restarted double never reuses a cached key.
+const signingKeyId = `offline-${createHash("sha256").update(publicJwk.n).digest("hex").slice(0, 16)}`;
 const workspaceA = "11111111-1111-4111-8111-111111111111";
 const workspaceB = "22222222-2222-4222-8222-222222222222";
 const roleCapabilities = {
@@ -285,15 +287,41 @@ function encode(value) {
   return Buffer.from(JSON.stringify(value)).toString("base64url");
 }
 
-function token(subject, expired = false) {
+// Hosted-sign-in double (customer-journey checkup): authorization codes and
+// refresh tokens issued by /user_management/authorize for real browser
+// sign-in through Studio's own AuthKit callback.
+const authCodes = new Map();
+const refreshTokens = new Map();
+
+function identityFor(email) {
+  const normalized = email.trim().toLowerCase();
+  const id = `user_${createHash("sha256").update(normalized).digest("hex").slice(0, 20)}`;
+  const [local] = normalized.split("@");
+  return { id, email: normalized, firstName: local.charAt(0).toUpperCase() + local.slice(1), lastName: "Customer" };
+}
+
+function workosUser(identity) {
+  const now = new Date().toISOString();
+  return {
+    object: "user", id: identity.id, email: identity.email, email_verified: true,
+    first_name: identity.firstName, last_name: identity.lastName,
+    profile_picture_url: null, created_at: now, updated_at: now, last_sign_in_at: now, metadata: {},
+  };
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+function token(subject, expired = false, email = `${subject}@example.test`) {
   const now = Math.floor(Date.now() / 1000);
-  const header = encode({ alg: "RS256", kid: "offline-test-key", typ: "JWT" });
+  const header = encode({ alg: "RS256", kid: signingKeyId, typ: "JWT" });
   const payload = encode({
     sub: subject,
     sid: `session-${subject}`,
     iss: issuer,
     aud: "client_offline_test",
-    email: `${subject}@example.test`,
+    email,
     iat: now - 5,
     exp: expired ? now - 1 : now + 600,
   });
@@ -692,8 +720,52 @@ async function handle(request, response) {
     const subject = url.searchParams.get("sub") || "user-two";
     return json(response, 200, { accessToken: token(subject, url.searchParams.get("expired") === "1") });
   }
+  if (url.pathname === "/user_management/authorize" && request.method === "GET") {
+    const redirectUri = url.searchParams.get("redirect_uri") ?? "";
+    const state = url.searchParams.get("state") ?? "";
+    const email = url.searchParams.get("email");
+    if (!/^http:\/\/(127\.0\.0\.1|localhost):\d+\//.test(redirectUri)) return json(response, 400, { detail: "redirect_uri must be local." });
+    if (email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      const code = randomBytes(16).toString("hex");
+      authCodes.set(code, identityFor(email));
+      const target = new URL(redirectUri);
+      target.searchParams.set("code", code);
+      if (state) target.searchParams.set("state", state);
+      response.writeHead(302, { location: target.toString() });
+      return response.end();
+    }
+    const signUp = url.searchParams.get("screen_hint") === "sign-up";
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+    return response.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Offline identity provider</title></head>
+<body style="font-family:system-ui;max-width:28rem;margin:4rem auto">
+<p><strong>Offline identity provider — test double.</strong> Stands in for WorkOS hosted sign-in on this machine only.</p>
+<h1>${signUp ? "Create your account" : "Sign in"}</h1>
+<form method="get" action="/user_management/authorize">
+<input type="hidden" name="redirect_uri" value="${escapeHtml(redirectUri)}"><input type="hidden" name="state" value="${escapeHtml(state)}">
+<label>Email <input type="email" name="email" required autocomplete="email"></label>
+<button type="submit">${signUp ? "Create account" : "Continue"}</button></form></body></html>`);
+  }
+  if (url.pathname === "/user_management/authenticate" && request.method === "POST") {
+    const body = await bodyFromRequest(request);
+    let identity = null;
+    if (body.grant_type === "authorization_code") {
+      identity = authCodes.get(body.code) ?? null;
+      authCodes.delete(body.code);
+    } else if (body.grant_type === "refresh_token") {
+      identity = refreshTokens.get(body.refresh_token) ?? null;
+    }
+    if (!identity) return json(response, 400, { error: "invalid_grant", error_description: "Unknown or used code." });
+    const refreshToken = randomBytes(24).toString("hex");
+    refreshTokens.set(refreshToken, identity);
+    return json(response, 200, {
+      user: workosUser(identity),
+      access_token: token(identity.id, false, identity.email),
+      refresh_token: refreshToken,
+      authentication_method: "Password",
+    });
+  }
   if (url.pathname.toLowerCase().includes("jwks")) {
-    return json(response, 200, { keys: [{ ...publicJwk, kid: "offline-test-key", alg: "RS256", use: "sig" }] });
+    return json(response, 200, { keys: [{ ...publicJwk, kid: signingKeyId, alg: "RS256", use: "sig" }] });
   }
   if (url.pathname === "/user_management/sessions/logout") {
     const returnTo = url.searchParams.get("return_to") || "/sign-in";
@@ -1054,7 +1126,7 @@ async function handle(request, response) {
 
 const server = createServer((request, response) => {
   void handle(request, response).catch(() => json(response, 500, { detail: "Offline fixture failure." }));
-}).listen(port, host);
+}).listen(port, process.env.WAVIA_E2E_FIXTURE_BIND ?? host);
 
 function shutdown() {
   server.closeAllConnections?.();
