@@ -3869,7 +3869,7 @@ paths:
   /v1/session/mint:
     post:
       summary: Quick Mint Session
-      description: Mint a demo session using local demo mode or API-key authentication.
+      description: Mint a session with a tenant API key, or in local demo mode.
       operationId: quick_mint_session_v1_session_mint_post
       parameters:
       - name: Authorization
@@ -3901,7 +3901,7 @@ paths:
   /mint:
     post:
       summary: Quick Mint Session
-      description: Mint a demo session using local demo mode or API-key authentication.
+      description: Mint a session with a tenant API key, or in local demo mode.
       operationId: quick_mint_session_mint_post
       parameters:
       - name: Authorization
@@ -4635,17 +4635,19 @@ components:
     QuickMintBody:
       properties:
         tenant_id:
-          type: string
-          maxLength: 128
-          minLength: 1
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+          - type: 'null'
           title: Tenant Id
-          default: 00000000-0000-0000-0000-000000000001
         agent_id:
-          type: string
-          maxLength: 128
-          minLength: 1
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+          - type: 'null'
           title: Agent Id
-          default: 00000000-0000-0000-0000-0000000000a1
         language:
           anyOf:
           - type: string

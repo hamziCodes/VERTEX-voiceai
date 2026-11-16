@@ -12,13 +12,18 @@ import { UCVEVoiceClient } from '@ucve/voice-sdk';
 const controlPlane = process.argv[2] || 'http://127.0.0.1:8000';
 const wsOverride = process.argv[3];
 
+// With an API key (WAVIA_API_KEY) the key selects the workspace; pass the
+// agent ID shown in Studio > API keys > Integration details. Without a key
+// this targets a local development engine's demo tenant and agent.
+const apiKey = process.env.WAVIA_API_KEY;
+const agentId = process.env.WAVIA_AGENT_ID || '00000000-0000-0000-0000-0000000000a1';
 const minted = await fetch(`${controlPlane.replace(/\/$/, '')}/v1/session/mint`, {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    tenant_id: '00000000-0000-0000-0000-000000000001',
-    agent_id: '00000000-0000-0000-0000-0000000000a1',
-  }),
+  headers: {
+    'Content-Type': 'application/json',
+    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+  },
+  body: JSON.stringify(apiKey ? { agent_id: agentId } : { tenant_id: '00000000-0000-0000-0000-000000000001', agent_id: agentId }),
 });
 if (!minted.ok) throw new Error(`mint failed: HTTP ${minted.status}`);
 const session = await minted.json();

@@ -87,17 +87,16 @@ from post_call.jobs.repository import (
 )
 
 
+_DEMO_TENANT_ID = "00000000-0000-0000-0000-000000000001"
+_DEMO_AGENT_ID = "00000000-0000-0000-0000-0000000000a1"
+
+
 class QuickMintBody(BaseModel):
-    tenant_id: str = Field(
-        default="00000000-0000-0000-0000-000000000001",
-        min_length=1,
-        max_length=128,
-    )
-    agent_id: str = Field(
-        default="00000000-0000-0000-0000-0000000000a1",
-        min_length=1,
-        max_length=128,
-    )
+    # With a tenant API key the key decides the workspace: tenant_id may be
+    # omitted (and must match when sent). The demo IDs apply only to
+    # unauthenticated development demo mints.
+    tenant_id: str | None = Field(default=None, min_length=1, max_length=128)
+    agent_id: str | None = Field(default=None, min_length=1, max_length=128)
     language: str | None = Field(default=None, max_length=32)
     voice_id: str | None = Field(default=None, max_length=255)
 
@@ -428,37 +427,43 @@ async def quick_mint_session(
     request: Request,
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> JSONResponse:
-    """Mint a demo session using local demo mode or API-key authentication."""
+    """Mint a session with a tenant API key, or in local demo mode."""
     api_key_mint = False
-    if _demo_mode():
-        api_key_mint = True
-    elif authorization and authorization.lower().startswith("bearer "):
+    if authorization and authorization.lower().startswith("bearer "):
         raw = authorization.split(" ", 1)[1].strip()
         try:
             verified = request.app.state.api_keys.verify_api_key(
                 raw, required_scope="session:mint"
             )
             record = await verified if isawaitable(verified) else verified
-            if str(record["tenant_id"]) != body.tenant_id:
-                raise HTTPException(status_code=403, detail="Tenant context mismatch.")
-            api_key_mint = True
         except PermissionError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
+        key_tenant = str(record["tenant_id"])
+        if body.tenant_id is not None and body.tenant_id != key_tenant:
+            raise HTTPException(status_code=403, detail="Tenant context mismatch.")
+        if body.agent_id is None:
+            raise HTTPException(status_code=422, detail="agent_id is required.")
+        tenant_id, agent_id = key_tenant, body.agent_id
+        api_key_mint = True
+    elif _demo_mode():
+        tenant_id = body.tenant_id or _DEMO_TENANT_ID
+        agent_id = body.agent_id or _DEMO_AGENT_ID
+        api_key_mint = True
     else:
         raise HTTPException(status_code=401, detail="Authentication required for /mint")
 
     ts = str(int(time.time()))
     nonce = uuid.uuid4().hex
     secret = _mint_secret()
-    sig = expected_signature(secret, body.tenant_id, ts, nonce, body.agent_id)
+    sig = expected_signature(secret, tenant_id, ts, nonce, agent_id)
     ctx: MintContext = (
         getattr(request.app.state, "mint_ctx", None) or get_default_mint_context()
     )
     status, res_body = await handle_session_mint(
-        body.tenant_id,
+        tenant_id,
         ts,
         nonce,
-        body.agent_id,
+        agent_id,
         sig,
         secret=secret,
         api_key_mint=api_key_mint,

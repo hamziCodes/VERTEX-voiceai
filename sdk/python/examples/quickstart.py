@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 import urllib.request
 
@@ -25,13 +26,17 @@ DEMO_TENANT = "00000000-0000-0000-0000-000000000001"
 DEMO_AGENT = "00000000-0000-0000-0000-0000000000a1"
 
 
-def mint_session(control_plane: str, tenant: str, agent: str, api_key: str | None) -> dict:
+def mint_session(control_plane: str, tenant: str | None, agent: str, api_key: str | None) -> dict:
     headers = {"Content-Type": "application/json"}
+    body: dict[str, str] = {"agent_id": agent}
     if api_key:
+        # The key selects the workspace; no tenant identifier is needed.
         headers["Authorization"] = f"Bearer {api_key}"
+    elif tenant:
+        body["tenant_id"] = tenant
     request = urllib.request.Request(
         f"{control_plane.rstrip('/')}/v1/session/mint",
-        data=json.dumps({"tenant_id": tenant, "agent_id": agent}).encode(),
+        data=json.dumps(body).encode(),
         headers=headers,
         method="POST",
     )
@@ -83,9 +88,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--control-plane", default="http://127.0.0.1:8000")
     parser.add_argument("--ws-url", help="override the worker URL returned by mint")
-    parser.add_argument("--tenant", default=DEMO_TENANT)
-    parser.add_argument("--agent", default=DEMO_AGENT)
-    parser.add_argument("--api-key", help="tenant API key with session:mint scope")
+    parser.add_argument("--tenant", default=DEMO_TENANT, help="demo mode only; ignored with --api-key")
+    parser.add_argument("--agent", default=DEMO_AGENT, help="agent ID from Studio > API keys > Integration details")
+    parser.add_argument("--api-key", default=os.environ.get("WAVIA_API_KEY"), help="tenant API key with session:mint scope (or WAVIA_API_KEY)")
     parser.add_argument("--timeout", type=float, default=20.0)
     sys.exit(asyncio.run(run(parser.parse_args())))
 

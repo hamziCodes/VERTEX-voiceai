@@ -189,6 +189,45 @@ def test_api_key_cannot_mint_for_another_tenant(
     assert response.status_code == 403
 
 
+@pytest.mark.parametrize("demo_mode", ["0", "1"])
+def test_api_key_mint_uses_the_key_workspace_without_tenant_id(
+    monkeypatch: pytest.MonkeyPatch, demo_mode: str
+) -> None:
+    """Stage 3: Studio never shows a workspace ID, and the request body used
+    to default tenant_id to the demo tenant, so a customer's API key could
+    not mint without guessing an internal identifier."""
+    monkeypatch.setenv("UCVE_ENV", "test")
+    monkeypatch.setenv("UCVE_DEMO_MODE", demo_mode)
+    monkeypatch.setenv("UCVE_MINT_HMAC_SECRET", "test-mint-secret-value")
+    monkeypatch.setenv("UCVE_JWT_SECRET", "test-jwt-secret-value-32-bytes-ok")
+    monkeypatch.setenv("UCVE_METRICS_BEARER", "test-metrics-value")
+    monkeypatch.setenv("UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES", "1")
+    from control_plane.app import app
+
+    with TestClient(app) as client:
+        raw, _ = app.state.api_keys.generate_api_key(
+            "tenant-key", "mint-test", scopes=["session:mint"], role="tenant_editor"
+        )
+        minted = client.post(
+            "/v1/session/mint",
+            headers={"Authorization": f"Bearer {raw}"},
+            json={"agent_id": "agent-key"},
+        )
+        missing_agent = client.post(
+            "/v1/session/mint", headers={"Authorization": f"Bearer {raw}"}, json={}
+        )
+        bad_key = client.post(
+            "/v1/session/mint",
+            headers={"Authorization": "Bearer not-a-real-key"},
+            json={"agent_id": "agent-key"},
+        )
+
+    assert minted.status_code == 200, minted.text
+    assert verify_session_jwt(minted.json()["token"])["tenant_id"] == "tenant-key"
+    assert missing_agent.status_code == 422
+    assert bad_key.status_code == 401
+
+
 def test_api_key_cannot_use_signed_mint_for_another_tenant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
