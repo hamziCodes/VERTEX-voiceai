@@ -16,6 +16,39 @@ class DatabaseConfigurationError(RuntimeError):
     """Raised when durable database configuration is unavailable."""
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = (os.environ.get(name) or "").strip()
+    try:
+        value = float(raw) if raw else default
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def pool_wait_timeout_s() -> float:
+    """How long a request waits for a pooled connection before failing."""
+    return _env_float("UCVE_DB_POOL_TIMEOUT_S", 5.0)
+
+
+def connection_kwargs() -> dict[str, Any]:
+    """libpq settings that turn a lost database into a fast, clean failure.
+
+    Without them a dropped network leaves connections blocked on a dead TCP
+    link: the Phase 15 network drill froze the whole control plane (even
+    liveness) for ~15 s and mint took 30 s to fail.
+    """
+    connect_timeout = max(1, int(_env_float("UCVE_DB_CONNECT_TIMEOUT_S", 3.0)))
+    user_timeout_ms = int(_env_float("UCVE_DB_TCP_USER_TIMEOUT_S", 5.0) * 1000)
+    return {
+        "connect_timeout": connect_timeout,
+        "tcp_user_timeout": user_timeout_ms,
+        "keepalives": 1,
+        "keepalives_idle": 10,
+        "keepalives_interval": 5,
+        "keepalives_count": 2,
+    }
+
+
 class AsyncDatabase:
     """Own one async connection pool and tenant-scoped transaction boundary."""
 
@@ -60,6 +93,12 @@ class AsyncDatabase:
             conninfo=self.database_url,
             min_size=self.min_size,
             max_size=self.max_size,
+            timeout=pool_wait_timeout_s(),
+            kwargs=connection_kwargs(),
+            # Verify each connection before handing it out: after a network
+            # outage idle connections are dead, and the first request on each
+            # would fail even though the database is back.
+            check=AsyncConnectionPool.check_connection,
             open=False,
         )
         await self._pool.open()

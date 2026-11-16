@@ -96,3 +96,74 @@ def test_session_store_outage_closes_with_retryable_1013_not_auth_failure(
                 ws.receive_text()
 
     assert caught.value.code == 1013
+
+
+def test_database_outage_while_loading_the_session_is_retryable_1013(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression (Phase 15 network drill): a dead pooled connection while
+    loading the pinned plan was reported as 4401 'invalid session'."""
+    from psycopg_pool import PoolTimeout
+
+    monkeypatch.setenv("UCVE_ENV", "test")
+    token = issue_session_jwt("tenant-a", "session-a", "agent-a")
+
+    class Claims:
+        async def claim_connection(self, *_args: object) -> bool:
+            return True
+
+    async def database_down(*_args: object, **_kwargs: object) -> None:
+        raise PoolTimeout("couldn't get a connection")
+
+    monkeypatch.setattr(worker_main, "_load_session_config", database_down)
+    with TestClient(worker_main.app) as client:
+        worker_main.app.state.token_store = Claims()
+        with pytest.raises(WebSocketDisconnect) as caught:
+            with client.websocket_connect(f"/ws/audio?token={token}") as ws:
+                ws.receive_text()
+
+    assert caught.value.code == 1013
+
+
+@pytest.mark.parametrize(
+    ("error_name", "reason"),
+    [
+        ("AdmissionStoreUnavailableError", "session admission unavailable"),
+        ("CapacityExceededError", "cluster at capacity"),
+    ],
+)
+def test_admission_failure_is_a_retryable_1013_not_a_normal_close(
+    monkeypatch: pytest.MonkeyPatch, error_name: str, reason: str
+) -> None:
+    """Regression (Phase 15 Redis-restart drill): an unavailable admission
+    store ended the socket with 1000 'session ended', like a finished call."""
+    import core.runtime.admission as admission
+
+    monkeypatch.setenv("UCVE_ENV", "test")
+    token = issue_session_jwt("tenant-a", "session-a", "agent-a")
+    error = getattr(admission, error_name)
+
+    class Claims:
+        async def claim_connection(self, *_args: object) -> bool:
+            return True
+
+    async def loaded_config(*_args: object, **_kwargs: object) -> object:
+        class Config:
+            session_id = "session-a"
+            tenant_id = "tenant-a"
+
+        return Config()
+
+    async def refuse(*_args: object, **_kwargs: object) -> None:
+        raise error("refused")
+
+    monkeypatch.setattr(worker_main, "_load_session_config", loaded_config)
+    monkeypatch.setattr(worker_main.session_admission, "acquire", refuse)
+    with TestClient(worker_main.app) as client:
+        worker_main.app.state.token_store = Claims()
+        with pytest.raises(WebSocketDisconnect) as caught:
+            with client.websocket_connect(f"/ws/audio?token={token}") as ws:
+                ws.receive_text()
+
+    assert caught.value.code == 1013
+    assert caught.value.reason == reason

@@ -19,6 +19,7 @@ from control_plane.routes.session import (
 )
 from core.alerts.service import build_alert_service, set_process_alert_service
 from core.db.async_pg import get_default_database
+from core.db.http_errors import database_outage_types, install_database_error_handlers
 from core.db.pg import use_memory_repos
 from core.observability.context import ObservabilityContext
 from core.observability.http import install_observability, observability_runtime
@@ -123,6 +124,7 @@ def _enforce_provider_mode_constraint(
 
 
 install_observability(app, SERVICE_NAME)
+install_database_error_handlers(app)
 
 
 class _LocalSessions:
@@ -343,7 +345,11 @@ async def ws_audio(websocket: WebSocket) -> None:
         )
         await websocket.close(code=4403, reason="provider override forbidden")
         return
-    except Exception:
+    except Exception as exc:
+        if isinstance(exc, database_outage_types()):
+            # The session may be fine; the database is not. Retryable.
+            await websocket.close(code=1013, reason="session store unavailable")
+            return
         await websocket.close(code=4401, reason="invalid session")
         return
 
@@ -370,8 +376,12 @@ async def ws_audio(websocket: WebSocket) -> None:
     )
     try:
         await session_admission.acquire(config.session_id, config.tenant_id)
-    except (AdmissionStoreUnavailableError, CapacityExceededError):
-        await transport.close(websocket)
+    except AdmissionStoreUnavailableError:
+        # Not a normal end of session: a retryable server-side condition.
+        await websocket.close(code=1013, reason="session admission unavailable")
+        return
+    except CapacityExceededError:
+        await websocket.close(code=1013, reason="cluster at capacity")
         return
 
     raw_rate = websocket.query_params.get("sample_rate") or websocket.query_params.get(

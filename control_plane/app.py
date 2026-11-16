@@ -27,13 +27,13 @@ from control_plane.middleware.security_headers import SecurityHeadersMiddleware
 from control_plane.openapi_serve import register_self_hosted_docs
 from control_plane.routes.agents import router as agents_router
 from control_plane.routes.alerts import router as alerts_router
-from control_plane.routes.privacy import router as privacy_router
 from control_plane.routes.api_keys import router as api_keys_router
 from control_plane.routes.conversations import router as conversations_router
 from control_plane.routes.extraction_schemas import router as extraction_router
 from control_plane.routes.identity import router as identity_router
 from control_plane.routes.knowledge_bases import router as kb_router
 from control_plane.routes.platform import router as platform_router
+from control_plane.routes.privacy import router as privacy_router
 from control_plane.routes.provider_credentials import router as credentials_router
 from control_plane.routes.session import (
     MintContext,
@@ -51,10 +51,25 @@ from control_plane.telephony_settings import (
     InMemoryTelephonySettingsRepository,
     PostgresTelephonySettingsRepository,
 )
-from core.db.async_pg import get_default_database
 from core.alerts.service import build_alert_service, set_process_alert_service
-from core.db.repos.privacy_repo import PostgresPrivacyJobRepository
+from core.db.async_pg import get_default_database
+from core.db.http_errors import install_database_error_handlers
 from core.db.pg import use_memory_repos
+from core.db.repos.post_call_repo import (
+    InMemoryPostCallRepository,
+    PostgresPostCallRepository,
+)
+from core.db.repos.privacy_repo import PostgresPrivacyJobRepository
+from core.observability.http import (
+    install_observability,
+    observability_runtime,
+    render_metrics,
+)
+from core.runtime.env import (
+    get_ucve_env,
+    is_protected_environment,
+    require_production_secrets,
+)
 from core.runtime.health import (
     CheckResult,
     ReadinessProbe,
@@ -63,20 +78,6 @@ from core.runtime.health import (
     profile_check,
     provider_configuration_check,
     redis_check,
-)
-from core.observability.http import (
-    install_observability,
-    observability_runtime,
-    render_metrics,
-)
-from core.db.repos.post_call_repo import (
-    InMemoryPostCallRepository,
-    PostgresPostCallRepository,
-)
-from core.runtime.env import (
-    get_ucve_env,
-    is_protected_environment,
-    require_production_secrets,
 )
 from core.secrets.repository import PostgresSecretRepository
 from core.secrets.vault import SecretVault, build_secret_vault
@@ -318,6 +319,7 @@ async def request_id_and_tenant_middleware(request: Request, call_next):  # type
 
 
 install_observability(app, "control-plane")
+install_database_error_handlers(app)
 
 
 async def _identity_check() -> CheckResult:

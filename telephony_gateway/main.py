@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 
+from core.db.http_errors import install_database_error_handlers
 from core.observability.http import install_observability, observability_runtime
 from core.runtime.health import (
     CheckResult,
@@ -69,6 +70,7 @@ app.state.database = None
 
 
 install_observability(app, "telephony-gateway")
+install_database_error_handlers(app)
 
 
 async def _webhook_verifier_check() -> CheckResult:

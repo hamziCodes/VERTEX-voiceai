@@ -19,6 +19,7 @@ from fastapi import FastAPI, Header
 
 from core.alerts.service import build_alert_service, set_process_alert_service
 from core.db.async_pg import get_default_database
+from core.db.http_errors import install_database_error_handlers
 from core.db.pg import use_memory_repos
 from core.observability.http import (
     install_observability,
@@ -73,6 +74,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(title="Wavia Jobs Runner", version="0.1.0", lifespan=lifespan)
 install_observability(app, SERVICE_NAME)
+install_database_error_handlers(app)
 
 
 async def _scheduler_check() -> CheckResult:
