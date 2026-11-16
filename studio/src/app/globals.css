@@ -339,6 +339,13 @@ a { color: inherit; }
 .field-help { color: var(--studio-ink-muted); }
 .field-error { color: var(--studio-danger); font-weight: 700; }
 .form-panel--disclosure { padding: 0; }
+.integration-details { display: grid; gap: 12px; margin-top: 24px; }
+.integration-details h2 { margin: 0; }
+.integration-details__agents { display: grid; gap: 8px; margin: 0; }
+.integration-details__agents > div { align-items: baseline; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.integration-details__agents dt { font-weight: 600; min-width: 12ch; }
+.integration-details__agents dd { margin: 0; overflow-wrap: anywhere; }
+.integration-details__snippet { background: var(--studio-ink, #1a120b); border-radius: 12px; color: var(--studio-surface); font-family: var(--font-space-mono), monospace; font-size: 12px; margin: 0; max-width: 100%; overflow-x: auto; padding: 14px 16px; }
 .disclosure-button { align-items: center; background: transparent; border: 0; border-radius: var(--studio-radius-panel); cursor: pointer; display: flex; font-weight: 700; justify-content: space-between; min-height: 58px; padding: 14px 20px; text-align: left; width: 100%; }
 .disclosure-button:hover { background: var(--studio-paper); }
 .disclosure-content { border-top: 1px solid var(--studio-border); padding: 20px; }
