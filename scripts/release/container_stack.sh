@@ -22,7 +22,14 @@ DB_URL="postgresql://wavia:${DB_PASSWORD}@${PREFIX}-postgres:5432/wavia"
 # sets WAVIA_STACK_LIVE_PROVIDERS=1 and WAVIA_STACK_ENV_FILE after an explicit
 # per-step approval. The env file is passed to Docker, never read here.
 COMMON_ENV=()
-if [[ -n "${WAVIA_STACK_ENV_FILE:-}" ]]; then COMMON_ENV+=(--env-file "$WAVIA_STACK_ENV_FILE"); fi
+if [[ -n "${WAVIA_STACK_ENV_FILE:-}" ]]; then
+  # docker.exe on Windows cannot open a Git-Bash path (/d/...) once
+  # MSYS_NO_PATHCONV=1 disables conversion, so hand it a native path.
+  env_file="$WAVIA_STACK_ENV_FILE"
+  if command -v cygpath >/dev/null 2>&1; then env_file="$(cygpath -w "$env_file")"; fi
+  [[ -f "$WAVIA_STACK_ENV_FILE" ]] || { echo "WAVIA_STACK_ENV_FILE not found" >&2; exit 2; }
+  COMMON_ENV+=(--env-file "$env_file")
+fi
 COMMON_ENV+=(
   -e UCVE_ENV=development -e UCVE_DEMO_MODE=1 -e UCVE_ALLOW_UNSAFE_SESSION_OVERRIDES=1
   -e RUN_LIVE_PROVIDERS="${WAVIA_STACK_LIVE_PROVIDERS:-0}" -e RUN_LIVE_TELEPHONY=0
@@ -99,7 +106,7 @@ up() {
     wait_ready idp http://127.0.0.1:3211/health 60
   fi
   local worker_extra=()
-  if [[ "${WAVIA_STACK_IDP:-0}" == "1" ]]; then
+  if [[ "${WAVIA_STACK_IDP:-0}" == "1" && "${WAVIA_STACK_LIVE_PROVIDERS:-0}" != "1" ]]; then
     # Studio's "mock" voice test signs a fixed-mock-transcript constraint;
     # the worker must run in that mode (real VAD, mock STT/LLM/TTS).
     worker_extra=(-e "UCVE_STT_MOCK_TEXT=What are your opening hours?")

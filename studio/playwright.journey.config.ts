@@ -51,7 +51,7 @@ export default defineConfig({
       WORKOS_API_PORT: "3211",
       WORKOS_ISSUER: "http://127.0.0.1:3211/",
       WAVIA_CONTROL_PLANE_URL: "http://127.0.0.1:28080",
-      WAVIA_VOICE_TEST_MODE: "mock",
+      WAVIA_VOICE_TEST_MODE: process.env.WAVIA_JOURNEY_LIVE === "1" ? "live" : "mock",
     },
   },
 });

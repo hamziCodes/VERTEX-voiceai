@@ -9,8 +9,10 @@
 #   WAVIA_LIVE_APPROVED=L2 bash scripts/release/live_certification.sh L2
 #
 # L1  Provider reachability: read-only list/metadata calls, no generation.
-# L2  Live pipeline: the release-image stack with live providers and the root
-#     .env passed to Docker; at most L2_SESSIONS sessions of one text turn.
+# L2  Live pipeline: the real customer journey (sign-up, published agent,
+#     browser voice test, post-call summary, API key + SDK quickstart) on the
+#     release-image stack with live providers and the root .env passed to
+#     Docker. Two short voice sessions plus one post-call summary.
 #
 # Telephony (L4), AWS (L5), publishing (L6) and staging deploy (L7) are
 # operator runbooks in the plan document, not automated here.
@@ -20,8 +22,6 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 STEP="${1:-}"
 OUT="$ROOT/hamza_local/phase15/live/$STEP-$(date -u +%Y%m%dT%H%M%SZ)"
-L2_SESSIONS="${L2_SESSIONS:-5}"
-(( L2_SESSIONS <= 10 )) || { echo "L2_SESSIONS is capped at 10" >&2; exit 2; }
 
 if [[ -z "$STEP" || "${WAVIA_LIVE_APPROVED:-}" != "$STEP" ]]; then
   echo "Refusing: step '$STEP' is not approved (set WAVIA_LIVE_APPROVED=$STEP only after Hamzi approves it)." >&2
@@ -36,16 +36,17 @@ case "$STEP" in
     ;;
   L2)
     [[ -f .env ]] || { echo "root .env with provider keys is required" >&2; exit 2; }
-    export WAVIA_STACK_LIVE_PROVIDERS=1 WAVIA_STACK_ENV_FILE="$ROOT/.env"
+    # Published-agent sessions resolve platform keys through the vault; the
+    # demo tenant never runs live, so L2 exercises the real customer path.
+    if curl -s -o /dev/null --max-time 2 http://127.0.0.1:3100/; then
+      echo "stop the Studio dev server on :3100 first (it must start in live mode)" >&2; exit 2
+    fi
+    export WAVIA_STACK_LIVE_PROVIDERS=1 WAVIA_STACK_ENV_FILE="$ROOT/.env" WAVIA_STACK_IDP=1
     bash scripts/release/container_stack.sh run bash -c '
-      set -e
-      for i in $(seq 1 '"$L2_SESSIONS"'); do
-        PYTHONPATH=sdk/python '"$VPY"' sdk/python/examples/quickstart.py \
-          --control-plane http://127.0.0.1:28080 --ws-url ws://127.0.0.1:28081/ws/audio \
-          --timeout 30 > "'"$OUT"'/session-$i.log" 2>&1 && echo "session $i: agent audio received" \
-          || { echo "session $i: FAILED"; tail -3 "'"$OUT"'/session-$i.log"; }
-      done
-      docker logs wavia-qual-worker-raw > "'"$OUT"'/worker.log" 2>&1 || true
+      cd studio && WAVIA_JOURNEY_LIVE=1 npx playwright test -c playwright.journey.config.ts         --output "'"$OUT"'/journey" ; status=$?
+      cd .. && docker logs wavia-qual-worker-raw > "'"$OUT"'/worker.log" 2>&1 || true
+      docker logs wavia-qual-worker-jobs > "'"$OUT"'/jobs.log" 2>&1 || true
+      exit $status
     ' | tee "$OUT/summary.log"
     ;;
   *)
