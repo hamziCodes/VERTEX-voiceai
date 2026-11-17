@@ -61,9 +61,12 @@ function extractedFields(extraction: Record<string, unknown> | null | undefined)
 export function ConversationDetailView({
   conversation,
   intelligence,
+  reviewAction,
 }: {
   conversation: ConversationDetailDto;
   intelligence: ConversationIntelligenceDto;
+  /** Present only for members who may decide reviews (extraction:write). */
+  reviewAction?: (formData: FormData) => Promise<void>;
 }) {
   const summary = summaryView(intelligence.result?.summary ?? null);
   const fields = extractedFields(intelligence.result?.extraction as Record<string, unknown> | null | undefined);
@@ -153,7 +156,24 @@ export function ConversationDetailView({
                   <p className="field-help">Verification issues: <span className="technical-value">{intelligence.result.verification_issue_codes.join(", ")}</span></p>
                 ) : null}
                 {intelligence.review?.state === "pending" ? (
-                  <p className="inline-notice inline-notice--warning" role="status">Review required: a decision is pending.</p>
+                  <>
+                    <p className="inline-notice inline-notice--warning" role="status">
+                      Review required: a decision is pending. Webhooks for this call are held until it is approved.
+                    </p>
+                    {reviewAction ? (
+                      <form action={reviewAction} className="review-decision">
+                        <input name="callId" type="hidden" value={conversation.call_id} />
+                        <label className="review-decision__note">
+                          <span>Decision note (optional)</span>
+                          <input maxLength={1000} name="note" type="text" />
+                        </label>
+                        <div className="review-decision__actions">
+                          <button className="button button--primary" name="decision" type="submit" value="approve">Approve and deliver</button>
+                          <button className="button button--secondary" name="decision" type="submit" value="reject">Reject</button>
+                        </div>
+                      </form>
+                    ) : null}
+                  </>
                 ) : null}
                 {intelligence.review && intelligence.review.state !== "pending" ? (
                   <p className="field-help">Review state: {humanize(intelligence.review.state)}</p>

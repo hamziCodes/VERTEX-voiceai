@@ -565,3 +565,26 @@ export function parseControlPlaneDto<T>(
 ): T {
   return schema.parse(payload);
 }
+
+/** FastAPI `/v1/webhook-targets` (control_plane/routes/webhooks.py). */
+export const webhookTargetSchema = z.object({
+  target_id: z.string().uuid(),
+  name: z.string(),
+  url: z.string(),
+  state: z.enum(["pending", "active", "disabled"]),
+  created_at: z.string(),
+  updated_at: z.string(),
+  signature_header: z.string(),
+});
+export type WebhookTargetDto = z.infer<typeof webhookTargetSchema>;
+export const webhookTargetListSchema = z.array(webhookTargetSchema);
+/** Creation response: the signing secret is returned exactly once. */
+export const createdWebhookTargetSchema = webhookTargetSchema.extend({ signing_secret: z.string().min(16) });
+export type CreatedWebhookTargetDto = z.infer<typeof createdWebhookTargetSchema>;
+
+export const reviewDecisionResponseSchema = z.object({
+  review_id: z.string().uuid(),
+  state: z.string(),
+  decided_at: z.string().nullable(),
+  webhook_deliveries_enqueued: z.number().int(),
+});

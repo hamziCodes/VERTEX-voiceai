@@ -24,6 +24,8 @@ export const WORKSPACE_CAPABILITIES = [
   "api_key:write",
   "provider_credential:read",
   "provider_credential:write",
+  "webhook:read",
+  "webhook:write",
   "erasure:execute",
   "legal_hold:manage",
   "compliance:write",

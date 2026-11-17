@@ -32,7 +32,7 @@ const CUSTOMER_ROLES: ReadonlyArray<{ subject: string; role: string; navigation:
   {
     subject: "user-two",
     role: "tenant_admin",
-    navigation: ["Setup", "Build", "Knowledge", "Test", "Connect", "Conversations", "API keys", "Providers", "Settings"],
+    navigation: ["Setup", "Build", "Knowledge", "Test", "Connect", "Conversations", "API keys", "Webhooks", "Providers", "Settings"],
     allowed: ["/agents", "/knowledge", "/channels/telephony", "/developers/api-keys", "/settings/providers", "/settings/members", "/settings/audit"],
     forbidden: [],
   },
@@ -41,13 +41,13 @@ const CUSTOMER_ROLES: ReadonlyArray<{ subject: string; role: string; navigation:
     role: "tenant_editor",
     navigation: ["Setup", "Build", "Knowledge", "Test", "Connect", "Conversations", "Settings"],
     allowed: ["/agents", "/knowledge", "/conversations", "/settings/members", "/settings/audit"],
-    forbidden: ["/developers/api-keys", "/settings/providers"],
+    forbidden: ["/developers/api-keys", "/developers/webhooks", "/settings/providers"],
   },
   {
     subject: "user-developer",
     role: "tenant_developer",
-    navigation: ["Build", "Test", "Connect", "API keys", "Providers"],
-    allowed: ["/agents", "/test", "/developers/api-keys", "/settings/providers", "/settings/usage"],
+    navigation: ["Build", "Test", "Connect", "API keys", "Webhooks", "Providers"],
+    allowed: ["/agents", "/test", "/developers/api-keys", "/developers/webhooks", "/settings/providers", "/settings/usage"],
     forbidden: ["/knowledge", "/onboarding", "/conversations", "/settings/audit", "/settings/members"],
   },
   {

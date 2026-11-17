@@ -17,6 +17,7 @@ const roleCapabilities = {
     "conversation:read", "entitlement:read", "extraction:read", "extraction:write", "knowledge:read", "knowledge:write",
     "member:read", "member:write", "onboarding:read", "onboarding:write", "provider_credential:read",
     "provider_credential:write", "secret:rotate", "session:mint", "session:read", "telephony:read", "telephony:write", "usage:read",
+    "webhook:read", "webhook:write",
   ],
   tenant_editor: [
     "agent:read", "agent:write", "alert:read", "alert:write", "audit:read", "conversation:read", "entitlement:read",
@@ -25,7 +26,7 @@ const roleCapabilities = {
   ],
   tenant_developer: [
     "agent:read", "api_key:read", "api_key:write", "entitlement:read", "provider_credential:read", "session:mint",
-    "session:read", "telephony:read", "usage:read",
+    "session:read", "telephony:read", "usage:read", "webhook:read", "webhook:write",
   ],
   tenant_viewer: [
     "agent:read", "alert:read", "conversation:read", "entitlement:read", "extraction:read", "knowledge:read",
@@ -113,7 +114,10 @@ let nextPlatformEvent;
 let supportSessions;
 let nextSupportSession;
 
+const webhookTargets = new Map();
+
 function resetState() {
+  webhookTargets.clear();
   platformStaff = new Map([
     [subjectUsers["user-platform-admin"], { role: "platform_admin", granted_by: null, granted_at: "2026-01-01T00:00:00Z", reason: "Initial operator bootstrap" }],
     [subjectUsers["user-platform-support"], { role: "platform_support", granted_by: subjectUsers["user-platform-admin"], granted_at: "2026-01-02T00:00:00Z", reason: "Support rota for launch" }],
@@ -1048,6 +1052,28 @@ async function handle(request, response) {
   }
 
   // ── API Keys ──────────────────────────────────────────────────────────────
+  if (url.pathname === "/v1/webhook-targets" && request.method === "GET") {
+    return json(response, 200, webhookTargets.get(tenant) ?? []);
+  }
+  if (url.pathname === "/v1/webhook-targets" && request.method === "POST") {
+    const input = await bodyFromRequest(request);
+    if (!String(input.url ?? "").startsWith("https://")) return json(response, 422, { detail: "Webhook endpoint must use HTTPS." });
+    const now = new Date().toISOString();
+    const target = {
+      target_id: fixtureId("8", (webhookTargets.get(tenant) ?? []).length + 1),
+      name: String(input.name), url: String(input.url), state: "active", created_at: now, updated_at: now,
+      signature_header: "X-Wavia-Signature",
+    };
+    webhookTargets.set(tenant, [...(webhookTargets.get(tenant) ?? []), target]);
+    return json(response, 201, { ...target, signing_secret: "whsec_offline_fixture_secret_value" });
+  }
+  const disableMatch = url.pathname.match(/^\/v1\/webhook-targets\/([^/]+)\/disable$/);
+  if (disableMatch && request.method === "POST") {
+    const target = (webhookTargets.get(tenant) ?? []).find((item) => item.target_id === disableMatch[1]);
+    if (!target) return json(response, 404, { detail: "Webhook target not found." });
+    Object.assign(target, { state: "disabled", updated_at: new Date().toISOString() });
+    return json(response, 200, target);
+  }
   if (url.pathname === "/v1/api-keys" && request.method === "GET") {
     return json(response, 200, { keys: apiKeys.get(tenant) ?? [] });
   }

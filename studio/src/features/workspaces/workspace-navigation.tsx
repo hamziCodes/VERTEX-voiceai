@@ -28,6 +28,7 @@ const GROUPS: ReadonlyArray<NavigationGroup> = [
     label: "Developer",
     items: [
       { label: "API keys", shortLabel: "A", href: "/developers/api-keys", permission: "api_key:read", active: startsWith("/developers/api-keys") },
+      { label: "Webhooks", shortLabel: "H", href: "/developers/webhooks", permission: "webhook:read", active: startsWith("/developers/webhooks") },
       { label: "Providers", shortLabel: "P", href: "/settings/providers", permission: "provider_credential:read", active: startsWith("/settings/providers") },
     ],
   },

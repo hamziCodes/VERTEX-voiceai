@@ -339,6 +339,16 @@ a { color: inherit; }
 .field-help { color: var(--studio-ink-muted); }
 .field-error { color: var(--studio-danger); font-weight: 700; }
 .form-panel--disclosure { padding: 0; }
+.webhook-manager { display: grid; gap: 18px; }
+.webhook-manager__create { display: grid; gap: 12px; }
+.webhook-manager__create h2 { margin: 0; }
+.webhook-manager__list { display: grid; gap: 12px; list-style: none; margin: 0; padding: 0; }
+.webhook-manager__item { align-items: center; display: grid; gap: 12px; grid-template-columns: 1fr auto auto; }
+.webhook-manager__item p { margin: 4px 0 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .webhook-manager__item { grid-template-columns: 1fr; } }
+.review-decision { display: grid; gap: 10px; margin-top: 12px; }
+.review-decision__note { display: grid; gap: 4px; }
+.review-decision__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .integration-details { display: grid; gap: 12px; margin-top: 24px; }
 .integration-details h2 { margin: 0; }
 .integration-details__agents { display: grid; gap: 8px; margin: 0; }

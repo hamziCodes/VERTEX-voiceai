@@ -2,13 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { requireWorkspace } from "@/auth/workspace";
+import { hasWorkspaceCapability, requireWorkspace } from "@/auth/workspace";
 import { PageHeader } from "@/components/studio/page-header";
 import { ControlPlaneError } from "@/data/control-plane";
 import { ConversationDetailView } from "@/features/conversations/conversation-detail-view";
 import { getConversation, getConversationIntelligence } from "@/features/conversations/data";
 import { transportLabel } from "@/features/operations/labels";
 import { OperationsNavigation } from "@/features/operations/operations-navigation";
+import { decideReviewAction } from "@/features/webhooks/actions";
 import { formatDateTime } from "@/lib/format";
 
 async function loadConversationDetail(
@@ -42,7 +43,11 @@ export default async function ConversationDetailPage({ params }: { params: Promi
         title="Conversation detail"
       />
       <OperationsNavigation capabilities={membership.capabilities} />
-      <ConversationDetailView conversation={conversation} intelligence={intelligence} />
+      <ConversationDetailView
+        conversation={conversation}
+        intelligence={intelligence}
+        reviewAction={hasWorkspaceCapability(membership.capabilities, "extraction:write") ? decideReviewAction : undefined}
+      />
     </section>
   );
 }

@@ -12,7 +12,10 @@ const { requireWorkspace, conversationsData, getUsage, getAuditEvents } = vi.hoi
   getAuditEvents: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn(), usePathname: () => "/conversations" }));
-vi.mock("@/auth/workspace", () => ({ requireWorkspace }));
+vi.mock("@/auth/workspace", () => ({
+  requireWorkspace,
+  hasWorkspaceCapability: (capabilities: readonly string[], required: string) => capabilities.includes(required),
+}));
 vi.mock("@/features/conversations/data", () => conversationsData);
 vi.mock("@/features/usage/data", () => ({ getUsage }));
 vi.mock("@/features/audit/data", () => ({ getAuditEvents }));
