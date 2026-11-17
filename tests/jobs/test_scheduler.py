@@ -149,12 +149,24 @@ def test_without_database_every_job_is_disabled_not_faked() -> None:
     assert {s.name for s in specs} == {
         "post_call_intelligence",
         "webhook_delivery",
+        "knowledge_parsing",
         "knowledge_embedding",
         "privacy_deletion",
         "retention_enqueue",
         "queue_observer",
     }
     assert all(not s.enabled and s.disabled_reason for s in specs)
+
+
+def test_knowledge_parsing_is_scheduled_with_a_database() -> None:
+    """Regression (Stage 3): nothing ran the parse/chunk stage, so every
+    uploaded document and FAQ stayed 'queued' forever."""
+
+    class FakeDatabase:
+        pass
+
+    by_name = {s.name: s for s in build_job_specs(FakeDatabase(), runner_id="r")}
+    assert by_name["knowledge_parsing"].enabled
 
 
 def test_catalogue_never_schedules_known_no_op_jobs() -> None:

@@ -86,6 +86,7 @@ def build_job_specs(
             for name in (
                 "post_call_intelligence",
                 "webhook_delivery",
+                "knowledge_parsing",
                 "knowledge_embedding",
                 "privacy_deletion",
                 "retention_enqueue",
@@ -155,7 +156,35 @@ def build_job_specs(
 
     specs.append(JobSpec("webhook_delivery", 2.0, _webhooks))
 
-    # 3. Knowledge embedding (local ONNX model only; no paid embedding API).
+    # 3a. Knowledge parsing and chunking: uploaded documents and FAQs are read
+    #     from the shared knowledge object store, parsed with bounded parsers
+    #     and chunked; the embedding stage below then vectorises the chunks.
+    #     (Before Stage 3 nothing ran this stage, so sources stayed queued.)
+    from core.db.repos.knowledge_repo import PostgresKnowledgeRepository
+    from core.rag.ingestion.worker import IngestionWorker
+    from core.storage.knowledge_objects import get_default_knowledge_object_store
+
+    parse_workers: list[IngestionWorker] = []
+
+    async def _parse_once() -> bool:
+        # The object store is resolved on first use, so a misconfigured store
+        # fails this job (reported by the runner) rather than process start.
+        if not parse_workers:
+            parse_workers.append(
+                IngestionWorker(
+                    PostgresKnowledgeRepository(database),
+                    get_default_knowledge_object_store(),
+                    worker_id=runner_id,
+                )
+            )
+        return await parse_workers[0].process_next() is not None
+
+    async def _parsing() -> int:
+        return await drain(_parse_once, DRAIN_BATCH)
+
+    specs.append(JobSpec("knowledge_parsing", 3.0, _parsing))
+
+    # 3b. Knowledge embedding (local ONNX model only; no paid embedding API).
     model_path = (os.environ.get("UCVE_EMBEDDING_MODEL_PATH") or "").strip()
     if not model_path:
         specs.append(

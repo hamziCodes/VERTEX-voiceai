@@ -28,6 +28,13 @@ COMMON_ENV+=(
   -e RUN_LIVE_PROVIDERS="${WAVIA_STACK_LIVE_PROVIDERS:-0}" -e RUN_LIVE_TELEPHONY=0
   -e DATABASE_URL="$DB_URL" -e REDIS_URL="redis://${PREFIX}-redis:6379/0"
   -e UCVE_WS_PUBLIC_URL="ws://127.0.0.1:28081/ws/audio"
+  # Shared S3-compatible object storage (Adobe S3Mock) so the control plane,
+  # worker and jobs runner see the same knowledge files and recordings, as
+  # they would on S3. Dummy credentials; nothing leaves the Docker network.
+  -e UCVE_KNOWLEDGE_S3_BUCKET=wavia-knowledge -e UCVE_KNOWLEDGE_S3_ENDPOINT="http://${PREFIX}-s3:9090"
+  -e UCVE_RECORDING_S3_BUCKET=wavia-recordings -e UCVE_RECORDING_S3_ENDPOINT="http://${PREFIX}-s3:9090"
+  -e UCVE_RECORDING_STORAGE_REGION=me-central-1 -e AWS_REGION=me-central-1 -e AWS_DEFAULT_REGION=me-central-1
+  -e AWS_ACCESS_KEY_ID=qualification -e AWS_SECRET_ACCESS_KEY=qualification
 )
 
 wait_ready() {  # name url seconds
@@ -44,7 +51,7 @@ wait_ready() {  # name url seconds
 
 down() {
   docker rm -f "${PREFIX}-idp" "${PREFIX}-control-plane" "${PREFIX}-worker-raw" "${PREFIX}-worker-jobs" \
-    "${PREFIX}-telephony-gateway" "${PREFIX}-postgres" "${PREFIX}-redis" >/dev/null 2>&1 || true
+    "${PREFIX}-telephony-gateway" "${PREFIX}-postgres" "${PREFIX}-redis" "${PREFIX}-s3" >/dev/null 2>&1 || true
   docker network rm "$NET" >/dev/null 2>&1 || true
 }
 
@@ -63,6 +70,7 @@ up() {
     -e POSTGRES_DB=wavia -e POSTGRES_USER=wavia -e POSTGRES_PASSWORD="$DB_PASSWORD" \
     pgvector/pgvector:pg16 >/dev/null
   docker run -d --name "${PREFIX}-redis" --network "$NET" redis:7-alpine >/dev/null
+  docker run -d --name "${PREFIX}-s3" --network "$NET"     -e initialBuckets=wavia-knowledge,wavia-recordings adobe/s3mock:3.11.0 >/dev/null
   until docker exec "${PREFIX}-postgres" pg_isready -U wavia -d wavia >/dev/null 2>&1; do sleep 1; done
   sleep 2  # the image restarts postgres once after initdb
   until docker exec "${PREFIX}-postgres" pg_isready -U wavia -d wavia >/dev/null 2>&1; do sleep 1; done
