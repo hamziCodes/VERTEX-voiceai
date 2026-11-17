@@ -28,6 +28,9 @@ if [[ -z "$STEP" || "${WAVIA_LIVE_APPROVED:-}" != "$STEP" ]]; then
   exit 3
 fi
 mkdir -p "$OUT"
+# Node (Playwright) reads a Git-Bash path like /d/WAVIA as D:\d\WAVIA.
+OUT_NATIVE="$OUT"
+if command -v cygpath >/dev/null 2>&1; then OUT_NATIVE="$(cygpath -w "$OUT")"; fi
 if [[ -x .venv/Scripts/python.exe ]]; then VPY=.venv/Scripts/python.exe; else VPY=.venv/bin/python; fi
 
 case "$STEP" in
@@ -43,7 +46,7 @@ case "$STEP" in
     fi
     export WAVIA_STACK_LIVE_PROVIDERS=1 WAVIA_STACK_ENV_FILE="$ROOT/.env" WAVIA_STACK_IDP=1
     bash scripts/release/container_stack.sh run bash -c '
-      cd studio && WAVIA_JOURNEY_LIVE=1 npx playwright test -c playwright.journey.config.ts         --output "'"$OUT"'/journey" ; status=$?
+      cd studio && WAVIA_JOURNEY_LIVE=1 npx playwright test -c playwright.journey.config.ts         --output "'"$OUT_NATIVE"'/journey" ; status=$?
       cd .. && docker logs wavia-qual-worker-raw > "'"$OUT"'/worker.log" 2>&1 || true
       docker logs wavia-qual-worker-jobs > "'"$OUT"'/jobs.log" 2>&1 || true
       exit $status
