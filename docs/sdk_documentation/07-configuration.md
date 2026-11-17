@@ -19,25 +19,27 @@ Wavia is configured exclusively via **environment variables**. Copy `.env.exampl
 
 ## Provider API Keys
 
+Platform keys are read only as `PLATFORM_<PROVIDER>_API_KEY`; bare names such as `GROQ_API_KEY` or `GOOGLE_API_KEY` are ignored by the engine. Tenants can instead bring their own keys in Studio → Providers (stored encrypted in the vault).
+
 ### STT
 | Variable | Provider |
 |---|---|
-| `GLADIA_API_KEY` | Gladia (batch + live streaming) |
-| `DEEPGRAM_API_KEY` | Deepgram (batch) |
+| `PLATFORM_GLADIA_API_KEY` | Gladia (batch + live streaming) |
+| `PLATFORM_DEEPGRAM_API_KEY` | Deepgram (batch) |
 
 ### LLM
 | Variable | Provider |
 |---|---|
-| `GROQ_API_KEY` | Groq |
-| `GEMINI_API_KEY` | Google Gemini |
-| `OPENAI_API_KEY` | OpenAI |
+| `PLATFORM_GROQ_API_KEY` | Groq |
+| `PLATFORM_GEMINI_API_KEY` | Google Gemini |
+| `PLATFORM_OPENAI_API_KEY` | OpenAI |
 
 ### TTS
 | Variable | Provider |
 |---|---|
-| `UPLIFT_API_KEY` | Uplift (default) |
-| `ELEVENLABS_API_KEY` | ElevenLabs |
-| `CARTESIA_API_KEY` | Cartesia |
+| `PLATFORM_UPLIFT_API_KEY` | Uplift (default) |
+| `PLATFORM_ELEVENLABS_API_KEY` | ElevenLabs |
+| `PLATFORM_CARTESIA_API_KEY` | Cartesia |
 
 ---
 

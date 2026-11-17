@@ -105,7 +105,7 @@ Sends buffered post-VAD audio to the Gladia REST API for batch transcription.
 
 **Env vars:**
 ```env
-GLADIA_API_KEY=your_key
+PLATFORM_GLADIA_API_KEY=your_key
 ```
 
 ### Gladia Live — `GladiaLiveSTTSession` (Streaming)
@@ -127,7 +127,7 @@ Batch transcription via Deepgram pre-recorded API.
 
 **Env vars:**
 ```env
-DEEPGRAM_API_KEY=your_key
+PLATFORM_DEEPGRAM_API_KEY=your_key
 ```
 
 ---
@@ -141,7 +141,7 @@ Default LLM provider. Uses Groq's OpenAI-compatible API for ultra-low TTFT.
 
 **Env vars:**
 ```env
-GROQ_API_KEY=your_key
+PLATFORM_GROQ_API_KEY=your_key
 ```
 
 **Default model:** `openai/gpt-oss-120b` (overridable per session)
@@ -153,7 +153,7 @@ Google Gemini via the Generative AI SDK.
 
 **Env vars:**
 ```env
-GEMINI_API_KEY=your_key
+PLATFORM_GEMINI_API_KEY=your_key
 ```
 
 **Default model when selected:** `gemini-2.5-flash`
@@ -165,7 +165,7 @@ Standard OpenAI chat completions (streaming).
 
 **Env vars:**
 ```env
-OPENAI_API_KEY=your_key
+PLATFORM_OPENAI_API_KEY=your_key
 ```
 
 **Default model when selected:** `gpt-4o-mini`
@@ -181,7 +181,7 @@ Default TTS provider. Native 16 kHz PCM output; no resampling needed.
 
 **Env vars:**
 ```env
-UPLIFT_API_KEY=your_key
+PLATFORM_UPLIFT_API_KEY=your_key
 ```
 
 ### ElevenLabs — `elevenlabs`
@@ -191,7 +191,7 @@ High-quality voice synthesis. Audio is resampled to 16 kHz by `EgressResampler`.
 
 **Env vars:**
 ```env
-ELEVENLABS_API_KEY=your_key
+PLATFORM_ELEVENLABS_API_KEY=your_key
 ```
 
 **Voice selection:** Pass `tts_voice_id=<elevenlabs_voice_id>` in the WebSocket query.
@@ -203,7 +203,7 @@ Low-latency streaming TTS.
 
 **Env vars:**
 ```env
-CARTESIA_API_KEY=your_key
+PLATFORM_CARTESIA_API_KEY=your_key
 ```
 
 ---
