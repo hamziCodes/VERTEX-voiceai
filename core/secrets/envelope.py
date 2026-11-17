@@ -5,14 +5,14 @@ from __future__ import annotations
 import base64
 
 from core.secrets.kms import KMSBackend
-from core.secrets.kms.local_dev import LocalDevKMSBackend
+from core.secrets.kms.select import kms_backend_from_environment
 
 
 class EnvelopeEncryption:
     """Envelope encryption helper utilizing pluggable KMS backend."""
 
     def __init__(self, kms_backend: KMSBackend | None = None) -> None:
-        self.kms = kms_backend or LocalDevKMSBackend()
+        self.kms = kms_backend or kms_backend_from_environment()
 
     def encrypt_secret(self, secret: str) -> tuple[str, int]:
         """Encrypt secret string and return (base64_encrypted_blob, key_version)."""
@@ -23,6 +23,6 @@ class EnvelopeEncryption:
 
     def decrypt_secret(self, encrypted_blob: str, key_version: int = 1) -> str:
         """Decrypt base64_encrypted_blob and return plaintext secret string."""
-        ciphertext_bytes = base64.b64bytes if hasattr(base64, 'b64bytes') else base64.b64decode(encrypted_blob.encode("ascii"))
+        ciphertext_bytes = base64.b64decode(encrypted_blob.encode("ascii"))
         plaintext = self.kms.decrypt(ciphertext_bytes, key_version=key_version)
         return plaintext.decode("utf-8")

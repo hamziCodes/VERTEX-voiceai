@@ -10,7 +10,7 @@ from core.secrets.cache import CredentialCacheKey, SecretCache
 from core.secrets.envelope import EnvelopeEncryption
 from core.secrets.exceptions import DecryptionError, SecretNotFoundError
 from core.secrets.kms import KMSBackend
-from core.secrets.kms.local_dev import LocalDevKMSBackend
+from core.secrets.kms.select import kms_backend_from_environment
 from core.secrets.platform import (
     EnvironmentPlatformSecretProvider,
     PlatformSecretProvider,
@@ -61,7 +61,7 @@ class SecretVault:
         """Create KMS-backed encryption only when a tenant secret needs it."""
         if self._envelope is None:
             self._envelope = EnvelopeEncryption(
-                kms_backend=self._kms_backend or LocalDevKMSBackend()
+                kms_backend=self._kms_backend or kms_backend_from_environment()
             )
         return self._envelope
 
