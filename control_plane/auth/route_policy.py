@@ -153,6 +153,14 @@ ROUTE_POLICIES: tuple[RoutePolicy, ...] = (
     ),
     RoutePolicy("POST", "/v1/workspace/erasure", "management", "erasure:execute"),
     RoutePolicy("GET", "/v1/privacy-jobs/{job_id}", "management", "erasure:execute"),
+    RoutePolicy("GET", "/v1/webhook-targets", "management", "webhook:read"),
+    RoutePolicy("POST", "/v1/webhook-targets", "management", "webhook:write"),
+    RoutePolicy(
+        "POST", "/v1/webhook-targets/{target_id}/disable", "management", "webhook:write"
+    ),
+    RoutePolicy(
+        "POST", "/v1/conversations/{call_id}/review", "management", "extraction:write"
+    ),
     RoutePolicy("GET", "/v1/usage", "management", "usage:read"),
     RoutePolicy("GET", "/v1/audit", "management", "audit:read"),
     RoutePolicy("POST", "/v1/secrets/rotate", "management", "secret:rotate"),

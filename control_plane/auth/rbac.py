@@ -37,6 +37,8 @@ class RBACManager:
             "api_key:write",
             "provider_credential:read",
             "provider_credential:write",
+            "webhook:read",
+            "webhook:write",
         },
         "tenant_editor": {
             "agent:read",
@@ -68,6 +70,8 @@ class RBACManager:
             "api_key:read",
             "api_key:write",
             "provider_credential:read",
+            "webhook:read",
+            "webhook:write",
         },
         "tenant_viewer": {
             "agent:read",

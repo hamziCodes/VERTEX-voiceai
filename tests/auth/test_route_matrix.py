@@ -55,6 +55,10 @@ def test_tenant_developer_has_the_exact_launch_permission_bundle() -> None:
             "api_key:read",
             "api_key:write",
             "provider_credential:read",
+            # Stage 3: developers manage the post-call webhook targets their
+            # integrations receive.
+            "webhook:read",
+            "webhook:write",
         }
     )
     assert RBACManager.permissions_for_role("UNKNOWN") == frozenset()

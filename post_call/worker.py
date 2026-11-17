@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from pydantic import ValidationError
@@ -18,6 +19,9 @@ from post_call.models.policy import PostCallPolicy
 from post_call.review.policy import ReviewPolicy
 from post_call.summarization.service import SummarizationService
 from post_call.verification.service import VerificationService
+from post_call.webhook.fanout import enqueue_for_result
+
+logger = logging.getLogger("ucve.post_call.worker")
 
 
 class PostCallConfigurationError(ValueError):
@@ -37,6 +41,7 @@ class PostCallJobWorker:
         worker_id: str,
         review_policy: ReviewPolicy | None = None,
         verification_service: VerificationService | None = None,
+        webhook_repository: Any | None = None,
     ) -> None:
         if not worker_id.strip():
             raise ValueError("worker_id is required.")
@@ -47,6 +52,7 @@ class PostCallJobWorker:
         self.worker_id = worker_id
         self.review_policy = review_policy or ReviewPolicy()
         self.verification_service = verification_service or VerificationService()
+        self.webhook_repository = webhook_repository
 
     @staticmethod
     def _schema(job: Any) -> TenantExtractionSchema | None:
@@ -127,6 +133,18 @@ class PostCallJobWorker:
                 result=result,
                 review_reasons=review_reasons,
             )
+            if not review_reasons and self.webhook_repository is not None:
+                # Unflagged: deliver automatically. Flagged results are
+                # delivered when a person approves the review.
+                try:
+                    await enqueue_for_result(
+                        self.webhook_repository,
+                        tenant_id=job.tenant_id,
+                        call_id=job.call_id,
+                        result_id=result.result_id,
+                    )
+                except Exception:  # noqa: BLE001 - the job itself already completed
+                    logger.exception("webhook fan-out failed after intelligence completed")
             return True
         except PostCallConfigurationError:
             await self.job_repository.fail_job(

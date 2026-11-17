@@ -110,6 +110,7 @@ def build_job_specs(
         from post_call.extraction.service import ExtractionService
         from post_call.jobs.repository import PostgresPostCallJobRepository
         from post_call.summarization.service import SummarizationService
+        from post_call.webhook.repository import PostgresWebhookRepository
         from post_call.worker import PostCallJobWorker
 
         extraction, summary = post_call_providers
@@ -119,6 +120,7 @@ def build_job_specs(
             extraction_service=ExtractionService(provider=extraction),
             summarization_service=SummarizationService(provider=summary),
             worker_id=runner_id,
+            webhook_repository=PostgresWebhookRepository(database),
         )
 
         async def _post_call() -> int:

@@ -68,7 +68,8 @@ class WebhookDelivery(BaseModel):
     target_id: UUID
     call_id: UUID
     result_id: UUID
-    review_id: UUID
+    # None: the result was not flagged for review, so no approval is needed.
+    review_id: UUID | None = None
     event_type: str = Field(min_length=1, max_length=128)
     idempotency_key: str = Field(min_length=64, max_length=64)
     payload: dict[str, Any]

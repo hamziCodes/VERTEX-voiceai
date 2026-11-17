@@ -143,6 +143,23 @@ class InMemoryWebhookRepository:
             raise WebhookNotFoundError("Webhook target not found.")
         return target.model_copy(deep=True)
 
+    async def list_targets(self, tenant_id: UUID) -> list[TenantWebhookTarget]:
+        return sorted(
+            (t.model_copy(deep=True) for t in self._targets.values() if t.tenant_id == tenant_id),
+            key=lambda item: item.created_at,
+        )
+
+    async def disable_target(
+        self, *, tenant_id: UUID, target_id: UUID, auth: AuthContext, now: datetime | None = None
+    ) -> TenantWebhookTarget:
+        _authorize(tenant_id, auth)
+        target = await self.get_target(tenant_id, target_id)
+        disabled = target.model_copy(
+            update={"state": WebhookTargetState.DISABLED, "updated_at": now or datetime.now(UTC)}
+        )
+        self._targets[target_id] = disabled
+        return disabled.model_copy(deep=True)
+
     async def enqueue_delivery(
         self,
         *,
@@ -150,7 +167,7 @@ class InMemoryWebhookRepository:
         target_id: UUID,
         call_id: UUID,
         result_id: UUID,
-        review_id: UUID,
+        review_id: UUID | None = None,
         event_type: str,
         max_attempts: int = 3,
         now: datetime | None = None,
@@ -160,7 +177,14 @@ class InMemoryWebhookRepository:
         if target.state is not WebhookTargetState.ACTIVE:
             raise WebhookTargetInactiveError("Webhook target is not active.")
         review = await self.review_repository.get_for_result(tenant_id, result_id)
-        if (
+        if review_id is None:
+            # Unflagged result: delivers automatically; a flagged one must be
+            # approved first and enqueued with its review.
+            if review is not None:
+                raise WebhookReviewRequiredError(
+                    "This result was flagged; an approved review is required."
+                )
+        elif (
             review is None
             or review.review_id != review_id
             or review.call_id != call_id
@@ -458,6 +482,35 @@ class PostgresWebhookRepository:
             raise WebhookNotFoundError("Webhook target not found.")
         return self._target_from_row(row)
 
+    async def list_targets(self, tenant_id: UUID) -> list[TenantWebhookTarget]:
+        async with self.database.tenant_transaction(str(tenant_id)) as connection:
+            cursor = await connection.execute(
+                "SELECT "
+                + self._target_select()
+                + " FROM post_call_webhook_targets WHERE tenant_id = %s::uuid "
+                "ORDER BY created_at",
+                (str(tenant_id),),
+            )
+            rows = await cursor.fetchall()
+        return [self._target_from_row(row) for row in rows]
+
+    async def disable_target(
+        self, *, tenant_id: UUID, target_id: UUID, auth: AuthContext, now: datetime | None = None
+    ) -> TenantWebhookTarget:
+        _authorize(tenant_id, auth)
+        timestamp = now or datetime.now(UTC)
+        async with self.database.tenant_transaction(str(tenant_id)) as connection:
+            cursor = await connection.execute(
+                "UPDATE post_call_webhook_targets SET state = 'disabled', updated_at = %s "
+                "WHERE tenant_id = %s::uuid AND target_id = %s::uuid "
+                "RETURNING " + self._target_select(),
+                (timestamp, str(tenant_id), str(target_id)),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            raise WebhookNotFoundError("Webhook target not found.")
+        return self._target_from_row(row)
+
     async def enqueue_delivery(
         self,
         *,
@@ -465,7 +518,7 @@ class PostgresWebhookRepository:
         target_id: UUID,
         call_id: UUID,
         result_id: UUID,
-        review_id: UUID,
+        review_id: UUID | None = None,
         event_type: str,
         max_attempts: int = 3,
         now: datetime | None = None,
@@ -474,23 +527,34 @@ class PostgresWebhookRepository:
         timestamp = now or datetime.now(UTC)
         key = logical_idempotency_key(tenant_id, target_id, call_id, event_type)
         async with self.database.tenant_transaction(str(tenant_id)) as connection:
-            gate = await connection.execute(
-                "SELECT t.state, r.state, r.call_id, r.result_id "
-                "FROM post_call_webhook_targets t JOIN post_call_review_requests r "
-                "ON r.tenant_id = t.tenant_id "
-                "WHERE t.tenant_id = %s::uuid AND t.target_id = %s::uuid "
-                "AND r.review_id = %s::uuid",
-                (str(tenant_id), str(target_id), str(review_id)),
+            target_cursor = await connection.execute(
+                "SELECT state FROM post_call_webhook_targets "
+                "WHERE tenant_id = %s::uuid AND target_id = %s::uuid",
+                (str(tenant_id), str(target_id)),
             )
-            gate_row = await gate.fetchone()
-            if gate_row is None:
-                raise WebhookNotFoundError("Webhook target or review not found.")
-            if gate_row[0] != WebhookTargetState.ACTIVE.value:
+            target_row = await target_cursor.fetchone()
+            if target_row is None:
+                raise WebhookNotFoundError("Webhook target not found.")
+            if target_row[0] != WebhookTargetState.ACTIVE.value:
                 raise WebhookTargetInactiveError("Webhook target is not active.")
-            if (
-                gate_row[1] != ReviewState.APPROVED.value
-                or gate_row[2] != call_id
-                or gate_row[3] != result_id
+            review_cursor = await connection.execute(
+                "SELECT review_id, state, call_id FROM post_call_review_requests "
+                "WHERE tenant_id = %s::uuid AND result_id = %s::uuid",
+                (str(tenant_id), str(result_id)),
+            )
+            review_row = await review_cursor.fetchone()
+            if review_id is None:
+                # Unflagged result: delivers automatically. A flagged result
+                # must be approved first and enqueued with its review.
+                if review_row is not None:
+                    raise WebhookReviewRequiredError(
+                        "This result was flagged; an approved review is required."
+                    )
+            elif (
+                review_row is None
+                or review_row[0] != review_id
+                or review_row[1] != ReviewState.APPROVED.value
+                or review_row[2] != call_id
             ):
                 raise WebhookReviewRequiredError(
                     "Approved review is required before webhook delivery."
@@ -533,7 +597,7 @@ class PostgresWebhookRepository:
                     str(target_id),
                     str(call_id),
                     str(result_id),
-                    str(review_id),
+                    str(review_id) if review_id is not None else None,
                     event_type,
                     key,
                     json.dumps(payload),

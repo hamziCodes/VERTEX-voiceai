@@ -68,6 +68,8 @@ def test_first_workspace_creation_and_me_are_identity_scoped(studio_api) -> None
                 "telephony:read",
                 "telephony:write",
                 "usage:read",
+                "webhook:read",
+                "webhook:write",
             ],
             "created_at": after.json()["memberships"][0]["created_at"],
         }
@@ -196,4 +198,6 @@ def test_developer_invitation_exposes_backend_derived_capabilities(studio_api) -
         "session:read",
         "telephony:read",
         "usage:read",
+        "webhook:read",
+        "webhook:write",
     ]

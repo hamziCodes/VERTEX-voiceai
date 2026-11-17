@@ -34,6 +34,7 @@ from control_plane.routes.identity import router as identity_router
 from control_plane.routes.knowledge_bases import router as kb_router
 from control_plane.routes.platform import router as platform_router
 from control_plane.routes.privacy import router as privacy_router
+from control_plane.routes.webhooks import router as webhooks_router
 from control_plane.routes.provider_credentials import router as credentials_router
 from control_plane.routes.session import (
     MintContext,
@@ -55,6 +56,14 @@ from core.alerts.service import build_alert_service, set_process_alert_service
 from core.db.async_pg import get_default_database
 from core.db.http_errors import install_database_error_handlers
 from core.db.pg import use_memory_repos
+from post_call.review.repository import (
+    InMemoryReviewRepository,
+    PostgresReviewRepository,
+)
+from post_call.webhook.repository import (
+    InMemoryWebhookRepository,
+    PostgresWebhookRepository,
+)
 from core.db.repos.post_call_repo import (
     InMemoryPostCallRepository,
     PostgresPostCallRepository,
@@ -192,6 +201,8 @@ async def _control_plane_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if database is not None:
         app.state.post_call_repository = PostgresPostCallRepository(database)
         app.state.post_call_job_repository = PostgresPostCallJobRepository(database)
+        app.state.review_repository = PostgresReviewRepository(database)
+        app.state.webhook_repository = PostgresWebhookRepository(database)
         app.state.telephony_settings_repository = (
             PostgresTelephonySettingsRepository(database)
         )
@@ -203,6 +214,13 @@ async def _control_plane_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.post_call_repository = call_repository
         app.state.post_call_job_repository = InMemoryPostCallJobRepository(
             call_repository
+        )
+        app.state.review_repository = InMemoryReviewRepository(
+            backing=call_repository._post_call_reviews
+        )
+        app.state.webhook_repository = InMemoryWebhookRepository(
+            review_repository=app.state.review_repository,
+            intelligence_repository=app.state.post_call_job_repository,
         )
         app.state.telephony_settings_repository = (
             InMemoryTelephonySettingsRepository()
@@ -263,6 +281,7 @@ app.include_router(conversations_router)
 app.include_router(api_keys_router)
 app.include_router(credentials_router)
 app.include_router(privacy_router)
+app.include_router(webhooks_router)
 
 register_self_hosted_docs(app)
 
