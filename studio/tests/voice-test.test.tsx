@@ -17,7 +17,7 @@ vi.mock("@/auth/workspace", async () => {
 
 import AgentTestPage from "@/app/(studio)/agents/[agentId]/test/page";
 import { VoiceTestConsole } from "@/features/voice-test/voice-test-console";
-import { validateWorkerMode } from "@/features/voice-test/sdk-runtime";
+import { readyTimeoutMs, validateWorkerMode, workerSetupMessage } from "@/features/voice-test/sdk-runtime";
 import type { VoiceRuntime, VoiceRuntimeFactory } from "@/features/voice-test/types";
 
 const session = {
@@ -51,6 +51,18 @@ describe("browser voice test", () => {
     expect(validateWorkerMode("live", { kind: "session_ready", provider_mode: "live", stt_transcript_mode: "live" })).toBeNull();
     expect(validateWorkerMode("mock", { kind: "session_ready", provider_mode: "live", stt_transcript_mode: "live" })).toMatch(/does not match Mock mode/);
     expect(validateWorkerMode("mock", { kind: "session_ready", provider_mode: "mock", stt_transcript_mode: "disabled" })).toMatch(/fixed mock transcript/);
+  });
+
+  it("explains a worker setup refusal instead of calling the worker unavailable", () => {
+    expect(workerSetupMessage({ code: "PROVIDER_CREDENTIAL_MISSING" }, "x")).toMatch(/no API key configured/);
+    expect(workerSetupMessage({ code: "PROVIDER_SETUP_FAILED" }, "x")).toMatch(/could not be prepared/);
+    expect(workerSetupMessage({ code: "SOMETHING_ELSE" }, "Worker said no.")).toBe("Worker said no.");
+  });
+
+  it("gives live sessions time to bind real providers before session_ready", () => {
+    expect(readyTimeoutMs("live")).toBeGreaterThanOrEqual(10_000);
+    expect(readyTimeoutMs("mock")).toBe(3_000);
+    expect(readyTimeoutMs("offline")).toBe(3_000);
   });
 
   it("shows the environment before start and renders mock transcript, audio, and latency", async () => {

@@ -165,6 +165,33 @@ export function browserVoiceSupported(): boolean {
   return typeof window !== "undefined" && typeof WebSocket !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia) && typeof AudioContext !== "undefined";
 }
 
+/** A setup refusal the worker reported before the session became ready. */
+export class VoiceWorkerSetupError extends Error {
+  constructor(message: string, readonly code: string | null) {
+    super(message);
+    this.name = "VoiceWorkerSetupError";
+  }
+}
+
+/** Studio copy for the worker's typed setup errors (worker_raw/ws_session.py). */
+export function workerSetupMessage(event: Record<string, unknown> | undefined, fallback: string): string {
+  const code = typeof event?.code === "string" ? event.code : null;
+  if (code === "PROVIDER_CREDENTIAL_MISSING") {
+    return "A provider in this agent's chain has no API key configured. Add the key under Providers, or remove that provider from the agent, then test again.";
+  }
+  if (code === "PROVIDER_SETUP_FAILED") return "This agent's providers could not be prepared. Check its provider settings, then test again.";
+  return fallback || "The voice session could not start.";
+}
+
+/**
+ * How long to wait for the worker's session_ready. In live mode the worker
+ * binds real provider chains and opens the streaming STT connection first,
+ * which are network handshakes; mock and offline sessions are local.
+ */
+export function readyTimeoutMs(mode: ReadyVoiceSession["mode"]): number {
+  return mode === "live" ? 15_000 : 3_000;
+}
+
 export function validateWorkerMode(mode: ReadyVoiceSession["mode"], metric: Record<string, unknown>): string | null {
   if (metric.kind !== "session_ready") return null;
   const providerMode = metric.provider_mode;
@@ -189,6 +216,7 @@ async function createRuntime(session: ReadyVoiceSession, callbacks: VoiceCallbac
     rejectRuntimeStatus = reject;
   });
   let shutdown = () => undefined;
+  let setupError: VoiceWorkerSetupError | null = null;
   const client = new UCVEVoiceClient(session.token, {
     wsUrl: session.wsUrl,
     maxConnectAttempts: 1,
@@ -222,11 +250,19 @@ async function createRuntime(session: ReadyVoiceSession, callbacks: VoiceCallbac
     onAudioEnd: (event) => audio.drain(event.turn_id, (playedAudioMs) => client.emitPlaybackDrained(event.turn_id, playedAudioMs)),
     onClearAudio: () => { callbacks.onInterruption(); return audio.clear(); },
     onTokenExpiring: callbacks.onTokenExpiring,
-    onError: (error) => callbacks.onError(error.message),
+    onError: (error, event) => {
+      if (!runtimeStatusSettled && typeof event?.code === "string") {
+        // Reported before session_ready: the worker refused to start this
+        // session. Keep the reason so the close below does not hide it.
+        setupError = new VoiceWorkerSetupError(workerSetupMessage(event, error.message), event.code);
+        return;
+      }
+      callbacks.onError(error.message);
+    },
     onClose: () => {
       if (!runtimeStatusSettled) {
         runtimeStatusSettled = true;
-        rejectRuntimeStatus(new Error("The voice worker disconnected before reporting its runtime mode."));
+        rejectRuntimeStatus(setupError ?? new Error("The voice worker disconnected before reporting its runtime mode."));
       } else if (!stopped) {
         callbacks.onError("The voice worker disconnected. Start a new session to continue.");
       }
@@ -257,7 +293,7 @@ async function createRuntime(session: ReadyVoiceSession, callbacks: VoiceCallbac
       await client.connect();
       await Promise.race([
         runtimeStatus,
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("The voice worker did not report its runtime mode.")), 3_000)),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("The voice worker did not report its runtime mode.")), readyTimeoutMs(session.mode))),
       ]);
       if (stopped) return;
       audioSendEnabled = true;

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { StatusBadge } from "@/components/studio/status-badge";
 
-import { browserVoiceSupported, createBrowserVoiceRuntime } from "./sdk-runtime";
+import { browserVoiceSupported, createBrowserVoiceRuntime, VoiceWorkerSetupError } from "./sdk-runtime";
 import type { ConnectionState, MintVoiceSession, VoiceRuntime, VoiceRuntimeFactory, VoiceTestMode } from "./types";
 
 interface TranscriptLine {
@@ -145,7 +145,7 @@ export function VoiceTestConsole({
       if (!mountedRef.current || operation !== operationRef.current) return;
       const failureMessage = caught instanceof DOMException && caught.name === "NotAllowedError"
         ? "Microphone permission was denied. Allow microphone access and try again."
-        : caught instanceof Error && (/worker mode|fixed mock transcript/i.test(caught.message))
+        : caught instanceof VoiceWorkerSetupError || (caught instanceof Error && /worker mode|fixed mock transcript/i.test(caught.message))
           ? caught.message
           : "The voice worker is unavailable. Try again shortly.";
       stop();
