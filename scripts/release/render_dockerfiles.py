@@ -55,13 +55,13 @@ COPY examples/web-client/ /app/examples/web-client/
 # The Silero VAD model ships in the repository; refuse to build an image whose
 # copy is not the pinned release.
 RUN python -m core.vad.download_silero --check \\
-{model_check}    && python -c "import {module}" \\
+    && python -c "import {module}" \\
     && useradd --system --uid 10001 --home-dir /app wavia \\
     && mkdir -p /app/hamza_local \\
     && chown wavia /app/hamza_local
 
 USER wavia
-
+{model_user_check}
 EXPOSE {port}
 
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 \\
@@ -135,11 +135,14 @@ MODEL_LAYER = """\
 # Pinned local embedding bundle for knowledge ingestion and retrieval.
 COPY core/rag/embedders/download_model.py /tmp/wavia/download_model.py
 RUN python /tmp/wavia/download_model.py --dest /opt/wavia/models/multilingual-e5-small \\
+    && chmod -R a+rX /opt/wavia \\
     && rm -rf /tmp/wavia
 ENV UCVE_EMBEDDING_MODEL_PATH=/opt/wavia/models/multilingual-e5-small
 
 """
 MODEL_CHECK = '    && python -m core.rag.embedders.download_model --check --dest "$UCVE_EMBEDDING_MODEL_PATH" \\\n'
+# Verify as the runtime user: a root check cannot see unreadable files.
+MODEL_USER_CHECK = 'RUN python -m core.rag.embedders.download_model --check --dest "$UCVE_EMBEDDING_MODEL_PATH"\n'
 EMBEDDING_IMAGES = {"control-plane", "worker-jobs"}
 
 for service in SERVICES:
@@ -149,7 +152,7 @@ for service in SERVICES:
         TEMPLATE.format(
             service_env=service["extra_env"],
             model_layer=MODEL_LAYER if embeds else "",
-            model_check=MODEL_CHECK if embeds else "",
+            model_user_check=MODEL_USER_CHECK if embeds else "",
             **service,
         ),
         encoding="utf-8",

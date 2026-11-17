@@ -94,6 +94,9 @@ def _download(upstream: str, target: Path, size: int, sha256: str) -> None:
             raise SystemExit(
                 f"{upstream}: size or SHA-256 does not match revision {REVISION}; refusing it."
             )
+        # NamedTemporaryFile creates files 0600; the services run as a
+        # non-root user, so the bundle must be world-readable.
+        temporary.chmod(0o644)
         temporary.replace(target)
     finally:
         temporary.unlink(missing_ok=True)
@@ -108,6 +111,8 @@ def fetch(dest: Path) -> Path:
     (dest / "embedding_model.json").write_text(
         json.dumps(METADATA, indent=2) + "\n", encoding="utf-8"
     )
+    for path in (dest, *dest.iterdir()):
+        path.chmod(0o755 if path.is_dir() else 0o644)
     if not bundle_is_valid(dest):
         raise SystemExit("Embedding bundle failed verification after download.")
     return dest
