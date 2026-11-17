@@ -39,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \\
 COPY requirements/runtime.txt /app/requirements/runtime.txt
 RUN pip install --no-deps --require-hashes -r /app/requirements/runtime.txt
 
-{service_env}COPY pyproject.toml uv.lock README.md openapi.yaml /app/
+{model_layer}{service_env}COPY pyproject.toml uv.lock README.md openapi.yaml /app/
 COPY core/ /app/core/
 COPY control_plane/ /app/control_plane/
 COPY post_call/ /app/post_call/
@@ -55,7 +55,7 @@ COPY examples/web-client/ /app/examples/web-client/
 # The Silero VAD model ships in the repository; refuse to build an image whose
 # copy is not the pinned release.
 RUN python -m core.vad.download_silero --check \\
-    && python -c "import {module}" \\
+{model_check}    && python -c "import {module}" \\
     && useradd --system --uid 10001 --home-dir /app wavia \\
     && mkdir -p /app/hamza_local \\
     && chown wavia /app/hamza_local
@@ -128,7 +128,31 @@ SERVICES = [
     ),
 ]
 
+# Knowledge embedding bundle (pinned revision + SHA-256, MIT): only the images
+# that embed (control plane for preview queries, jobs runner for ingestion).
+# Identical layers, so both images share one copy on disk and in a registry.
+MODEL_LAYER = """\
+# Pinned local embedding bundle for knowledge ingestion and retrieval.
+COPY core/rag/embedders/download_model.py /tmp/wavia/download_model.py
+RUN python /tmp/wavia/download_model.py --dest /opt/wavia/models/multilingual-e5-small \\
+    && rm -rf /tmp/wavia
+ENV UCVE_EMBEDDING_MODEL_PATH=/opt/wavia/models/multilingual-e5-small
+
+"""
+MODEL_CHECK = '    && python -m core.rag.embedders.download_model --check --dest "$UCVE_EMBEDDING_MODEL_PATH" \\\n'
+EMBEDDING_IMAGES = {"control-plane", "worker-jobs"}
+
 for service in SERVICES:
     path = ROOT / "infra" / "docker" / service["file"]
-    path.write_text(TEMPLATE.format(service_env=service["extra_env"], **service), encoding="utf-8", newline="\n")
+    embeds = service["name"] in EMBEDDING_IMAGES
+    path.write_text(
+        TEMPLATE.format(
+            service_env=service["extra_env"],
+            model_layer=MODEL_LAYER if embeds else "",
+            model_check=MODEL_CHECK if embeds else "",
+            **service,
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
     print("wrote", path.name)

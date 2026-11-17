@@ -26,6 +26,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 COPY requirements/runtime.txt /app/requirements/runtime.txt
 RUN pip install --no-deps --require-hashes -r /app/requirements/runtime.txt
 
+# Pinned local embedding bundle for knowledge ingestion and retrieval.
+COPY core/rag/embedders/download_model.py /tmp/wavia/download_model.py
+RUN python /tmp/wavia/download_model.py --dest /opt/wavia/models/multilingual-e5-small \
+    && rm -rf /tmp/wavia
+ENV UCVE_EMBEDDING_MODEL_PATH=/opt/wavia/models/multilingual-e5-small
+
 COPY pyproject.toml uv.lock README.md openapi.yaml /app/
 COPY core/ /app/core/
 COPY control_plane/ /app/control_plane/
@@ -42,6 +48,7 @@ COPY examples/web-client/ /app/examples/web-client/
 # The Silero VAD model ships in the repository; refuse to build an image whose
 # copy is not the pinned release.
 RUN python -m core.vad.download_silero --check \
+    && python -m core.rag.embedders.download_model --check --dest "$UCVE_EMBEDDING_MODEL_PATH" \
     && python -c "import worker_jobs.main" \
     && useradd --system --uid 10001 --home-dir /app wavia \
     && mkdir -p /app/hamza_local \
