@@ -160,4 +160,24 @@ test.describe.serial("self-serve customer journey (real engine)", () => {
     await page.getByRole("button", { name: "Connect to agent" }).click();
     await expect(page.getByText(/Connected to Front desk/)).toBeVisible();
   });
+
+  test("registers a signed webhook endpoint, sees the secret once, and disables it", async () => {
+    await page.goto("/developers/webhooks");
+    await expect(page.getByRole("heading", { name: "Webhooks", level: 1 })).toBeVisible();
+    await page.getByLabel("Endpoint name").fill("CRM sync");
+    await page.getByLabel("Endpoint URL").fill("https://example.com/wavia-hook");
+    await page.getByRole("button", { name: "Add endpoint" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText(/^whsec_/)).toBeVisible();
+    await dialog.getByLabel("I have saved this signing secret").check();
+    await dialog.getByRole("button", { name: "Done" }).click();
+    await expect(dialog).toBeHidden();
+    const endpoint = page.getByRole("listitem", { name: "CRM sync" });
+    await expect(endpoint.getByText("Active")).toBeVisible();
+    await endpoint.getByRole("button", { name: "Disable" }).click();
+    await expect(endpoint.getByText("Disabled")).toBeVisible();
+    // The secret is never shown again after the dialog closes.
+    await page.reload();
+    await expect(page.getByText(/whsec_/)).toHaveCount(0);
+  });
 });
