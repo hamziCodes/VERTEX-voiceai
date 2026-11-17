@@ -9,7 +9,7 @@ from typing import Annotated
 from fastapi import Header, HTTPException, Request
 
 from control_plane.auth.context import AuthContext
-from control_plane.auth.rbac import RBACManager
+from control_plane.auth.rbac import RBACManager, actor_has_permission
 from control_plane.studio.dependencies import resolve_identity_context
 from control_plane.studio.repository import (
     MembershipNotFoundError,
@@ -107,7 +107,8 @@ async def resolve_auth_context(
 
 
 def require_permission(permission: str) -> Callable[..., Awaitable[AuthContext]]:
-    resource, action = permission.split(":", 1)
+    if ":" not in permission:
+        raise ValueError("Permission must be resource:action.")
 
     async def dependency(
         request: Request,
@@ -118,12 +119,7 @@ def require_permission(permission: str) -> Callable[..., Awaitable[AuthContext]]
         context = await resolve_auth_context(
             request, authorization, x_tenant_id, x_actor_role
         )
-        role_allowed = any(
-            RBACManager.check_permission(role, resource, action)
-            for role in context.roles
-        )
-        scope_allowed = "*" in context.scopes or permission in context.scopes
-        if not role_allowed or (context.auth_method == "api_key" and not scope_allowed):
+        if not actor_has_permission(context, permission):
             raise HTTPException(status_code=403, detail="Permission denied.")
         return context
 

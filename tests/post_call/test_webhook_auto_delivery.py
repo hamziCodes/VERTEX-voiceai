@@ -22,11 +22,14 @@ PUBLIC = WebhookEndpointPolicy(resolver=lambda _host: ("93.184.216.34",))
 
 
 def _auth(tenant_id: str) -> AuthContext:
+    # Exactly what a signed-in Studio admin presents: OIDC sessions carry no
+    # scopes, so the role must be enough (Stage 3 found the repositories
+    # refusing every signed-in member).
     return AuthContext(
         subject_id="operator-1",
         tenant_id=tenant_id,
         roles=("tenant_admin",),
-        scopes=frozenset({"webhook:write", "extraction:write"}),
+        scopes=frozenset(),
         auth_method="oidc",
     )
 

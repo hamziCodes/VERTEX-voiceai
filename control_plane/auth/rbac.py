@@ -6,6 +6,11 @@ matrix in ``control_plane.auth.platform_rbac`` and never grant tenant access.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from control_plane.auth.context import AuthContext
+
 
 class RBACManager:
     """Permission matrix for tenant and compliance roles; no wildcard grants."""
@@ -108,3 +113,21 @@ class RBACManager:
     def check_permission(cls, role: str, resource: str, action: str) -> bool:
         """Return True only if the role explicitly holds ``resource:action``."""
         return f"{resource}:{action}" in cls.permissions_for_role(role)
+
+
+def actor_has_permission(context: AuthContext, permission: str) -> bool:
+    """The single authorization rule for an authenticated actor.
+
+    A role must grant the permission; an API key must also carry it as a
+    scope. Signed-in (OIDC) members carry no scopes, so their role decides.
+    """
+
+    resource, _, action = permission.partition(":")
+    role_allowed = any(
+        RBACManager.check_permission(role, resource, action) for role in context.roles
+    )
+    if not role_allowed:
+        return False
+    if context.auth_method == "api_key":
+        return "*" in context.scopes or permission in context.scopes
+    return True

@@ -17,14 +17,25 @@ from post_call.review.repository import (
 )
 
 
-def _auth(tenant_id: str, *scopes: str) -> AuthContext:
+def _auth(
+    tenant_id: str,
+    *scopes: str,
+    role: str = "tenant_admin",
+    method: str = "api_key",
+) -> AuthContext:
     return AuthContext(
         subject_id="reviewer-1",
         tenant_id=tenant_id,
-        roles=("tenant_admin",),
+        roles=(role,),
         scopes=frozenset(scopes),
-        auth_method="oidc",
+        auth_method=method,  # type: ignore[arg-type]
     )
+
+
+def _member(tenant_id: str, role: str) -> AuthContext:
+    """A signed-in Studio member: OIDC sessions carry no scopes, the role decides."""
+
+    return _auth(tenant_id, role=role, method="oidc")
 
 
 def test_review_policy_blocks_sensitive_uncertain_and_configured_actions() -> None:
@@ -104,6 +115,14 @@ async def test_review_decision_requires_tenant_scope_and_is_idempotent() -> None
             review_id=request.review_id,
             decision=ReviewDecision.APPROVE,
             auth=_auth(str(tenant_id), "extraction:read"),
+            note="reviewed",
+        )
+    with pytest.raises(ReviewAuthorizationError):
+        await repo.decide(
+            tenant_id=tenant_id,
+            review_id=request.review_id,
+            decision=ReviewDecision.APPROVE,
+            auth=_member(str(tenant_id), "tenant_viewer"),
             note="reviewed",
         )
 

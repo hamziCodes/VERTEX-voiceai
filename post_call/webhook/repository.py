@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 from control_plane.auth.context import AuthContext
+from control_plane.auth.rbac import actor_has_permission
 from core.db.async_pg import AsyncDatabase, get_default_database
 from post_call.jobs.models import PostCallIntelligenceResult
 from post_call.review.models import ReviewState
@@ -68,7 +69,7 @@ def build_delivery_payload(result: PostCallIntelligenceResult) -> dict[str, Any]
 def _authorize(tenant_id: UUID, auth: AuthContext) -> None:
     if auth.tenant_id != str(tenant_id):
         raise WebhookAuthorizationError("Webhook tenant does not match actor.")
-    if not ("*" in auth.scopes or "webhook:write" in auth.scopes):
+    if not actor_has_permission(auth, "webhook:write"):
         raise WebhookAuthorizationError("Actor cannot manage webhook targets.")
 
 

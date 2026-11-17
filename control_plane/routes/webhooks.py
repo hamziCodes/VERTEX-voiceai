@@ -56,7 +56,9 @@ def _tenant(auth: AuthContext) -> UUID:
     try:
         return UUID(auth.tenant_id)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Invalid tenant identifier.") from exc
+        raise HTTPException(
+            status_code=422, detail="Invalid tenant identifier."
+        ) from exc
 
 
 def _state(request: Request, name: str) -> Any:
@@ -79,7 +81,9 @@ def _target_view(target: TenantWebhookTarget) -> dict[str, Any]:
 
 
 @router.get("/v1/webhook-targets")
-async def list_webhook_targets(request: Request, auth: WebhookReader) -> list[dict[str, Any]]:
+async def list_webhook_targets(
+    request: Request, auth: WebhookReader
+) -> list[dict[str, Any]]:
     repository = _state(request, "webhook_repository")
     return [_target_view(item) for item in await repository.list_targets(_tenant(auth))]
 
@@ -91,7 +95,10 @@ async def create_webhook_target(
     tenant_id = _tenant(auth)
     repository = _state(request, "webhook_repository")
     vault = _state(request, "secret_vault")
-    policy = getattr(request.app.state, "webhook_endpoint_policy", None) or WebhookEndpointPolicy()
+    policy = (
+        getattr(request.app.state, "webhook_endpoint_policy", None)
+        or WebhookEndpointPolicy()
+    )
     manager = WebhookTargetManager(repository=repository, endpoint_policy=policy)
     signing_secret = f"whsec_{secrets.token_urlsafe(32)}"
     credential_ref = f"webhook-{secrets.token_hex(8)}"
@@ -99,7 +106,11 @@ async def create_webhook_target(
         # Validates HTTPS/public addresses and pins them before anything is stored.
         await policy.validate(body.url.strip())
         await vault.astore(
-            str(tenant_id), "webhook", signing_secret, "hmac_secret", credential_ref=credential_ref
+            str(tenant_id),
+            "webhook",
+            signing_secret,
+            "hmac_secret",
+            credential_ref=credential_ref,
         )
         target = await manager.create_and_approve(
             tenant_id=tenant_id,
@@ -110,10 +121,13 @@ async def create_webhook_target(
         )
     except WebhookSecurityError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except OSError as exc:
-        raise HTTPException(status_code=422, detail="Webhook endpoint did not resolve.") from exc
     except WebhookAuthorizationError as exc:
+        # PermissionError is an OSError: this must be matched before the DNS branch.
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=422, detail="Webhook endpoint did not resolve."
+        ) from exc
     return {**_target_view(target), "signing_secret": signing_secret}
 
 
@@ -142,15 +156,21 @@ async def decide_conversation_review(
     reviews = _state(request, "review_repository")
     result = await jobs.get_result(tenant_id, call_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="No intelligence result for this conversation.")
+        raise HTTPException(
+            status_code=404, detail="No intelligence result for this conversation."
+        )
     review = await jobs.get_review_for_result(tenant_id, result.result_id)
     if review is None:
-        raise HTTPException(status_code=404, detail="This conversation needs no review.")
+        raise HTTPException(
+            status_code=404, detail="This conversation needs no review."
+        )
     try:
         decided = await reviews.decide(
             tenant_id=tenant_id,
             review_id=review.review_id,
-            decision=ReviewDecision.APPROVE if body.decision == "approve" else ReviewDecision.REJECT,
+            decision=ReviewDecision.APPROVE
+            if body.decision == "approve"
+            else ReviewDecision.REJECT,
             auth=auth,
             note=body.note.strip(),
         )
