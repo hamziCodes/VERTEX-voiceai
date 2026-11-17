@@ -14,6 +14,7 @@ from control_plane.agents import (
     AgentNotFoundError,
     SessionConfigPin,
 )
+from control_plane.agents.credential_readiness import missing_route_credentials
 from control_plane.agents.repo import (
     AgentRevisionConflictError,
     get_default_agent_config_repo,
@@ -198,6 +199,7 @@ async def publish_agent(
 @router.post("/{agent_id}/validate")
 async def validate_agent_draft(
     agent_id: UUID,
+    request: Request,
     auth: AgentReader,
 ) -> dict[str, Any]:
     tenant_uuid = UUID(auth.tenant_id)
@@ -205,7 +207,16 @@ async def validate_agent_draft(
         draft = await _resolve(_agent_repo.get_draft(tenant_uuid, agent_id))
     except AgentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _agent_repo.validator.validate(draft).to_dict()
+    result = _agent_repo.validator.validate(draft).to_dict()
+    vault = getattr(request.app.state, "secret_vault", None)
+    if vault is not None:
+        missing = await missing_route_credentials(
+            vault, auth.tenant_id, draft.providers
+        )
+        if missing:
+            result["is_valid"] = False
+            result["errors"].extend(item.to_dict() for item in missing)
+    return result
 
 
 @router.post("/{agent_id}/versions/{version}/restore")

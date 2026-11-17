@@ -327,6 +327,36 @@ class SecretVault:
         )
         return record
 
+    async def has_credential(
+        self,
+        tenant_id: str,
+        provider_id: str,
+        *,
+        credential_ref: str | None,
+        credential_type: str = "api_key",
+        tier: CredentialTier | str = CredentialTier.PLATFORM,
+    ) -> bool:
+        """Whether a route could resolve a credential, without decrypting it.
+
+        Mirrors :meth:`aresolve_credential`'s tier rules: BYOK needs the tenant
+        record, PLATFORM needs the platform key, BOTH accepts either.
+        """
+
+        requested_tier = CredentialTier(tier)
+        normalized_provider = provider_id.strip().lower()
+        byok_allowed = requested_tier in {CredentialTier.BYOK, CredentialTier.BOTH}
+        if byok_allowed and credential_ref:
+            pending = self.repository.get(
+                tenant_id, normalized_provider, credential_type, credential_ref
+            )
+            record = await pending if isawaitable(pending) else pending
+            if record is not None:
+                return True
+        if requested_tier is CredentialTier.BYOK:
+            return False
+        platform = self.platform_secrets.resolve(normalized_provider, credential_type)
+        return platform is not None
+
     async def aresolve_credential(
         self,
         tenant_id: str,
