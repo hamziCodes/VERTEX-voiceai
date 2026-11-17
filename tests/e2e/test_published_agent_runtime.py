@@ -276,3 +276,51 @@ async def test_tool_handler_rejects_tools_outside_published_allowlist() -> None:
 
     assert result["is_error"] is True
     assert "not enabled" in str(result["content"])
+
+
+@pytest.mark.asyncio
+async def test_missing_chain_credential_is_typed_logged_and_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stage 3: a fallback route without a key refused every live session
+    while the worker logged nothing and Studio said "worker unavailable"."""
+    from core.secrets.exceptions import SecretNotFoundError
+    from worker_raw import ws_session
+    from worker_raw.ws_session import ProtocolSessionError
+
+    warnings: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        ws_session.logger,
+        "warning",
+        lambda event, **fields: warnings.append((event, fields)),
+    )
+
+    class _Orchestrator:
+        async def apply_provider_selection(self, _config: object) -> None:
+            raise SecretNotFoundError(
+                "No platform credential found for provider 'gemini' and type 'api_key'."
+            )
+
+    class _Socket:
+        closed: tuple[int, str] | None = None
+
+        async def close(self, code: int, reason: str) -> None:
+            self.closed = (code, reason)
+
+    transport = _RecordingTransport()
+    socket = _Socket()
+    runner = object.__new__(WebSocketSessionRunner)
+    runner.transport = transport
+    runner.websocket = socket
+    runner.orchestrator = _Orchestrator()
+    runner.config = PipelineSessionConfig(
+        session_id="session", tenant_id="tenant", agent_id="agent", plan_authoritative=True
+    )
+
+    with pytest.raises(ProtocolSessionError):
+        await runner._bind_providers()
+
+    assert transport.events[-1][1]["code"] == "PROVIDER_CREDENTIAL_MISSING"
+    assert socket.closed == (1011, "provider setup failed")
+    assert warnings and warnings[0][0] == "Session provider setup refused"
+    assert "gemini" in str(warnings[0][1]["reason"])

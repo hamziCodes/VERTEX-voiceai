@@ -14,6 +14,7 @@ from core.buffers.typed_queue import TypedAsyncQueue
 from core.fsm.events import SessionEvent
 from core.fsm.states import SessionState
 from core.listening.frame_slicer import FrameSlicer
+from core.observability.logging import get_logger
 from core.protocol.realtime import (
     PROTOCOL_VERSION,
     SUPPORTED_PROTOCOL_RANGE,
@@ -34,6 +35,8 @@ from worker_raw.ws_constants import (
     PING_INTERVAL_SEC,
     PONG_DEADLINE_MULTIPLIER,
 )
+
+logger = get_logger("ucve.session")
 
 
 class ProtocolSessionError(RuntimeError):
@@ -206,6 +209,15 @@ class WebSocketSessionRunner:
             from core.secrets.exceptions import SecretNotFoundError
 
             missing = isinstance(exc, SecretNotFoundError)
+            # Operators must see why a session was refused; the reason names
+            # the provider, never a credential value.
+            logger.warning(
+                "Session provider setup refused",
+                session_id=self.config.session_id,
+                tenant_id=getattr(self.config, "tenant_id", None),
+                error_type=type(exc).__name__,
+                reason=str(exc)[:300],
+            )
             await self.transport.send_control_event(
                 "error",
                 {
