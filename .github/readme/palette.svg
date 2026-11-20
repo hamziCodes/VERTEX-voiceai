@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="150" viewBox="0 0 1200 150">
+  <rect x="0" y="0" width="300" height="150" fill="#F4EFE6"/>
+  <rect x="300" y="0" width="300" height="150" fill="#1A0B2E"/>
+  <rect x="600" y="0" width="300" height="150" fill="#C8F169"/>
+  <rect x="900" y="0" width="300" height="150" fill="#B8A4FF"/>
+  <text x="24" y="118" font-family="monospace" font-size="17" fill="#1A0B2E">BONE #F4EFE6</text>
+  <text x="324" y="118" font-family="monospace" font-size="17" fill="#F4EFE6">AUBERGINE #1A0B2E</text>
+  <text x="624" y="118" font-family="monospace" font-size="17" fill="#1A0B2E">LIME #C8F169</text>
+  <text x="924" y="118" font-family="monospace" font-size="17" fill="#1A0B2E">LILAC #B8A4FF</text>
+</svg>
