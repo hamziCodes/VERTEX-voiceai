@@ -50,3 +50,5 @@ When scaling down:
 - The worker signals readiness probe failure upon SIGTERM.
 - Active WebSocket sessions complete naturally.
 - Worker process terminates once active session count reaches zero or grace period expires.
+
+Implemented in Phase 14 by `core/runtime/drain.py` (`WAVIA_DRAIN_TIMEOUT_S`, default 120 s; new sessions are refused with 1013 while draining) and verified by `tests/scaling/drain_drill.py`. When the replica count changes, keep `UCVE_WORKER_REPLICAS` (or `UCVE_CLUSTER_MAX_SESSIONS`) in step so shared admission matches real fleet capacity; see `docs/runbooks/RUNBOOK_WORKER_OOM.md`.

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -11,7 +10,14 @@ import httpx
 
 from core.buffers.cancellation import CancellationToken
 from core.observability.logging import get_logger
+from core.providers.exceptions import (
+    ProviderInvocationError,
+    classify_http_failure,
+    provider_invocation_error,
+)
 from core.providers.interfaces.llm import BaseLLMProvider, LLMConfig, LLMStreamChunk
+from core.providers.mode import provider_is_locally_ready, should_use_mock_provider
+from core.providers.tool_calls import ToolCallAccumulator, serialize_tool_definitions
 
 logger = get_logger("ucve.providers.gemini")
 
@@ -32,36 +38,11 @@ def resolve_gemini_model(model: str | None) -> str:
     return _MODEL_ALIASES.get(raw, raw)
 
 
-def _finalize_tool_calls(tool_acc: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
-    """Build finalized tool-call dicts from accumulated stream fragments."""
-    calls: list[dict[str, Any]] = []
-    for _idx in sorted(tool_acc):
-        slot = tool_acc[_idx]
-        raw_args = slot.get("arguments") or ""
-        try:
-            parsed = json.loads(raw_args) if raw_args else {}
-        except json.JSONDecodeError:
-            parsed = {"_raw": raw_args}
-        calls.append(
-            {
-                "id": slot.get("id"),
-                "name": slot.get("name", ""),
-                "arguments": parsed,
-            }
-        )
-    return calls
-
-
 class GeminiLLMProvider(BaseLLMProvider):
     """Google Gemini LLM provider via OpenAI-compatible endpoint."""
 
     def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
-        self.api_key = (
-            api_key
-            or os.environ.get("GEMINI_API_KEY")
-            or os.environ.get("GOOGLE_API_KEY")
-            or ""
-        ).strip()
+        self.api_key = (api_key or "").strip()
         self.default_model = resolve_gemini_model(model or _DEFAULT_MODEL)
         self._base = "https://generativelanguage.googleapis.com/v1beta/openai"
         self._client: httpx.AsyncClient | None = None
@@ -77,7 +58,7 @@ class GeminiLLMProvider(BaseLLMProvider):
             self._client = None
 
     def health_check(self) -> bool:
-        return True
+        return provider_is_locally_ready(api_key=self.api_key)
 
     async def generate_stream(
         self,
@@ -88,10 +69,8 @@ class GeminiLLMProvider(BaseLLMProvider):
         if cancellation_token and cancellation_token.is_cancelled:
             return
 
-        use_mock = (
-            not self.api_key
-            or os.environ.get("RUN_MOCK_PROVIDERS") == "1"
-            or os.environ.get("RUN_LIVE_PROVIDERS") != "1"
+        use_mock = should_use_mock_provider(
+            provider_id="gemini", api_key=self.api_key
         )
         if use_mock:
             if not self.api_key:
@@ -118,20 +97,10 @@ class GeminiLLMProvider(BaseLLMProvider):
             "stream": True,
         }
         if config.tools:
-            request_body["tools"] = [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.parameters or {"type": "object", "properties": {}},
-                    },
-                }
-                for t in config.tools
-            ]
+            request_body["tools"] = serialize_tool_definitions(config.tools)
             request_body["tool_choice"] = "auto"
 
-        tool_acc: dict[int, dict[str, Any]] = {}
+        tool_acc = ToolCallAccumulator("gemini")
         try:
             logger.info("Initiating Gemini LLM completion stream", model=model_name)
             async with client.stream(
@@ -141,13 +110,14 @@ class GeminiLLMProvider(BaseLLMProvider):
                 json=request_body,
             ) as resp:
                 if resp.status_code != 200:
-                    err_body = await resp.aread()
+                    await resp.aread()
                     logger.error(
                         "Gemini API call failed",
                         status_code=resp.status_code,
-                        error=err_body.decode(errors="ignore"),
                     )
-                    resp.raise_for_status()
+                    raise ProviderInvocationError(
+                        classify_http_failure("gemini", resp.status_code)
+                    )
                 first = True
                 async for line in resp.aiter_lines():
                     if cancellation_token and cancellation_token.is_cancelled:
@@ -159,22 +129,24 @@ class GeminiLLMProvider(BaseLLMProvider):
                     if payload == "[DONE]":
                         break
                     data = json.loads(payload)
-                    choice = data.get("choices", [{}])[0]
+                    usage = data.get("usage") or {}
+                    if usage:
+                        yield LLMStreamChunk(
+                            prompt_tokens=usage.get("prompt_tokens"),
+                            completion_tokens=usage.get("completion_tokens"),
+                            total_tokens=usage.get("total_tokens"),
+                            provider_id="gemini",
+                            provider_request_id=data.get("id"),
+                        )
+                    choices = data.get("choices") or []
+                    if not choices:
+                        continue
+                    choice = choices[0]
                     delta = choice.get("delta", {})
                     finish_reason = choice.get("finish_reason")
 
                     for frag in delta.get("tool_calls", []) or []:
-                        idx = frag.get("index", 0)
-                        slot = tool_acc.setdefault(
-                            idx, {"id": None, "name": "", "arguments": ""}
-                        )
-                        if frag.get("id"):
-                            slot["id"] = frag["id"]
-                        fn = frag.get("function", {}) or {}
-                        if fn.get("name"):
-                            slot["name"] = fn["name"]
-                        if fn.get("arguments"):
-                            slot["arguments"] += fn["arguments"]
+                        tool_acc.add(frag)
 
                     text = delta.get("content") or ""
                     if text:
@@ -185,17 +157,21 @@ class GeminiLLMProvider(BaseLLMProvider):
                         )
                         first = False
 
-                    if finish_reason == "tool_calls" and tool_acc:
+                    if finish_reason and tool_acc:
                         yield LLMStreamChunk(
-                            tool_calls=_finalize_tool_calls(tool_acc),
-                            finish_reason="tool_calls",
+                            tool_calls=tool_acc.finalize(),
+                            finish_reason=finish_reason,
                         )
                         tool_acc.clear()
-        except httpx.HTTPStatusError as exc:
-            logger.error(f"Gemini HTTP Error: {exc}", error=str(exc))
+                if tool_acc:
+                    yield LLMStreamChunk(
+                        tool_calls=tool_acc.finalize(),
+                        finish_reason="tool_calls",
+                    )
+        except ProviderInvocationError:
             await self.aclose()
             raise
         except Exception as exc:
-            logger.error(f"Gemini Stream Exception: {exc}", error=str(exc))
+            logger.error("Gemini stream exception", error_type=type(exc).__name__)
             await self.aclose()
-            raise
+            raise provider_invocation_error("gemini", exc) from exc

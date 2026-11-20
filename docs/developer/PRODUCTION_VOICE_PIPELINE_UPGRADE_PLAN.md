@@ -1,6 +1,6 @@
 # UCVE Production Voice Pipeline — Master Implementation Plan
 
-**Status:** Planning document (not yet executed)  
+**Status:** Phases 00–04 implemented offline; later production phases remain planned
 **Scope:** Full real-time voice agent loop — listening, thinking, speaking, interruption, latency, and client playback  
 **Target modules:** `core/`, `worker_raw/`, `examples/web-client/`, `tests/`  
 **Legacy references:** `legacy_codebases/Multilingual_AI_Voice_Agent_gittracked`, `habiba-sdk-agent`, `AI_voice_agent_v3 - gemini`
@@ -891,9 +891,10 @@ UCVE_STT_MOCK_TEXT=          # empty = no mock text on false triggers
 
 ```bash
 UCVE_TTS_CHUNK_SIZE_BYTES=8192
-UCVE_TTS_POP_SKIP_BYTES=2048
 UCVE_EGRESS_PREBUFFER_MS=35
-UCVE_CLIENT_PREBUFFER_CHUNKS=3
+UCVE_TTS_FIRST_CHUNK_TIMEOUT_MS=3000
+UCVE_TTS_INTER_CHUNK_TIMEOUT_MS=3000
+UCVE_TTS_OVERALL_TIMEOUT_MS=30000
 ```
 
 ### 8.6 LLM / chunking tuning

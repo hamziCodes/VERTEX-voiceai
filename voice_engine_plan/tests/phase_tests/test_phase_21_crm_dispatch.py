@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from post_call.channels.whatsapp import WhatsAppDispatcher
 from post_call.extraction.schema import ExtractionField, TenantExtractionSchema
@@ -14,6 +15,7 @@ from post_call.extraction.service import ExtractionService
 from post_call.models.call_record import CallRecord
 from post_call.models.diarized_turn import DiarizedTurn
 from post_call.review.queue import HumanReviewQueue
+from post_call.summarization.service import SummarizationService
 from post_call.verification.datetime import parse_and_verify_datetime
 from post_call.verification.phone import normalize_phone_e164
 from post_call.verification.service import VerificationService
@@ -22,6 +24,30 @@ from post_call.webhook.targets import TenantWebhookTarget
 from post_call.worker import PostCallWorkerProcessor
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+class FixedExtractionProvider:
+    provider_id = "test-extraction"
+    model_id = "fixture-v1"
+
+    def __init__(self, fields: dict[str, object]) -> None:
+        self.fields = fields
+
+    async def extract_json(self, **_: object) -> object:
+        return {"fields": self.fields}
+
+
+class FixedSummaryProvider:
+    provider_id = "test-summary"
+    model_id = "fixture-v1"
+
+    async def summarize_json(self, **_: object) -> object:
+        return {
+            "executive_summary": "The caller provided their patient name.",
+            "key_takeaways": ["Patient name provided"],
+            "sentiment_trajectory": [],
+            "evidence": [{"turn_id": 0, "quote": "patient_name John"}],
+        }
 
 
 def test_phase_plan_artifact_exists() -> None:
@@ -43,10 +69,30 @@ async def test_extraction_returns_null_for_missing_fields() -> None:
             ExtractionField(name="insurance_id", description="Insurance ID"),
         ],
     )
-    svc = ExtractionService()
-    res = await svc.extract("User called about patient_name John Doe", schema)
-    assert res["patient_name"] is not None
-    assert res["insurance_id"] is None  # Missing field returns None, not invented
+    svc = ExtractionService(
+        FixedExtractionProvider(
+            {
+                "patient_name": {
+                    "value": "John Doe",
+                    "confidence": 0.99,
+                    "evidence": [{"turn_id": 0, "quote": "patient_name John Doe"}],
+                }
+            }
+        )
+    )
+    turns = [
+        DiarizedTurn(
+            speaker="user",
+            text="User called about patient_name John Doe",
+            start_ms=0,
+            end_ms=1000,
+        )
+    ]
+    res = await svc.extract(turns, schema)
+    assert res.fields["patient_name"].value == "John Doe"
+    assert res.fields["patient_name"].source_turn_ids == (0,)
+    assert res.fields["insurance_id"].value is None
+    assert res.fields["insurance_id"].confidence == 0.0
 
 
 def test_phone_and_date_normalization() -> None:
@@ -69,7 +115,9 @@ def test_verification_enqueues_low_confidence_to_review_queue() -> None:
     extracted = {"appointment_date": "invalid_date_string"}
     conf_map = {"appointment_date": 0.5}  # Low confidence
 
-    issues = v_svc.verify(extracted, schema, confidence_map=conf_map, min_confidence_threshold=0.75)
+    issues = v_svc.verify(
+        extracted, schema, confidence_map=conf_map, min_confidence_threshold=0.75
+    )
     assert len(issues) >= 1
 
     for issue in issues:
@@ -85,35 +133,30 @@ def test_verification_enqueues_low_confidence_to_review_queue() -> None:
     assert len(pending) == len(issues)
 
 
-@pytest.mark.asyncio
-async def test_webhook_hmac_and_fail_closed_without_secret() -> None:
-    dispatcher = WebhookDispatcher()
-    target = TenantWebhookTarget(
-        tenant_id=uuid4(),
-        url="https://api.clinic.com/webhook",
-        secret="my-shared-hmac-secret-key",
-    )
-
-    sig = dispatcher.compute_signature(b'{"key":"val"}', target.secret)
+def test_webhook_hmac_and_fail_closed_without_secret() -> None:
+    sig = WebhookDispatcher.compute_signature(b'{"key":"val"}', "test-only-secret")
     assert len(sig) == 64  # SHA256 hex string
 
-    # Fail closed without secret
-    target_no_secret = TenantWebhookTarget(
-        tenant_id=uuid4(),
-        url="https://api.clinic.com/webhook",
-        secret="",
-    )
-    with pytest.raises(ValueError) as exc_info:
-        await dispatcher.dispatch(target_no_secret, {"payload": 1}, idempotency_key="key1")
-    assert "Webhook shared secret is missing" in str(exc_info.value)
+    with pytest.raises(ValidationError):
+        TenantWebhookTarget.model_validate(
+            {
+                "tenant_id": uuid4(),
+                "name": "Clinic",
+                "url": "https://api.clinic.com/webhook",
+                "credential_ref": "clinic-signing",
+                "secret": "raw-secret-is-forbidden",
+            }
+        )
 
 
 @pytest.mark.asyncio
 async def test_hipaa_blocks_extraction_without_baa_ack() -> None:
     svc_no_baa = ExtractionService(hipaa_baa_acknowledged=False)
-    schema = TenantExtractionSchema(tenant_id=uuid4(), fields=[ExtractionField(name="ssn")])
-    with pytest.raises(ValueError) as exc_info:
-        await svc_no_baa.extract("transcript text", schema, compliance_tier="hipaa")
+    schema = TenantExtractionSchema(
+        tenant_id=uuid4(), fields=[ExtractionField(name="ssn")]
+    )
+    with pytest.raises(PermissionError) as exc_info:
+        await svc_no_baa.extract([], schema, compliance_tier="hipaa")
     assert "HIPAA tier requires signed BAA acknowledgment" in str(exc_info.value)
 
 
@@ -132,7 +175,20 @@ def test_whatsapp_dispatcher_is_uninstantiable_abstract_stub() -> None:
 
 @pytest.mark.asyncio
 async def test_end_to_end_worker_processor() -> None:
-    processor = PostCallWorkerProcessor()
+    processor = PostCallWorkerProcessor(
+        extraction_service=ExtractionService(
+            FixedExtractionProvider(
+                {
+                    "patient_name": {
+                        "value": "John",
+                        "confidence": 0.99,
+                        "evidence": [{"turn_id": 0, "quote": "patient_name John"}],
+                    }
+                }
+            )
+        ),
+        summarization_service=SummarizationService(FixedSummaryProvider()),
+    )
     schema = TenantExtractionSchema(
         tenant_id=uuid4(),
         fields=[ExtractionField(name="patient_name")],
@@ -142,18 +198,23 @@ async def test_end_to_end_worker_processor() -> None:
         tenant_id=schema.tenant_id,
         agent_id=uuid4(),
         session_id=uuid4(),
-        started_at=datetime.now(timezone.utc),
-        ended_at=datetime.now(timezone.utc),
-        turns=[DiarizedTurn(speaker="user", text="patient_name John", start_ms=0, end_ms=1000)],
+        started_at=datetime.now(UTC),
+        ended_at=datetime.now(UTC),
+        turns=[
+            DiarizedTurn(
+                speaker="user", text="patient_name John", start_ms=0, end_ms=1000
+            )
+        ],
     )
 
     target = TenantWebhookTarget(
         tenant_id=schema.tenant_id,
+        name="Clinic",
         url="https://clinic.com/webhook",
-        secret="valid-secret-key",
+        credential_ref="clinic-signing",
     )
 
     result = await processor.process_record(record, schema, target)
     assert result["call_id"] == record.call_id
-    assert "summary" in result
-    assert len(processor.webhook_dispatcher.dispatched_payloads) == 1
+    assert result["summary"]["provider_id"] == "test-summary"
+    assert result["dispatch_state"] == "blocked_for_phase_11c"

@@ -9,7 +9,13 @@ import httpx
 
 from core.buffers.cancellation import CancellationToken
 from core.observability.logging import get_logger
+from core.providers.exceptions import (
+    ProviderInvocationError,
+    classify_http_failure,
+    provider_invocation_error,
+)
 from core.providers.interfaces.tts import BaseTTSProvider, TTSChunk, TTSConfig
+from core.providers.mode import provider_is_locally_ready, should_use_mock_provider
 
 logger = get_logger("ucve.providers.cartesia")
 
@@ -38,16 +44,12 @@ class CartesiaTTSProvider(BaseTTSProvider):
         self,
         api_key: str | None = None,
         *,
+        model: str | None = None,
         chunk_size_bytes: int = 3200,
     ) -> None:
-        self.api_key = (
-            api_key
-            or os.environ.get("PLATFORM_CARTESIA_API_KEY")
-            or os.environ.get("CARTESIA_API_KEY")
-            or ""
-        ).strip()
+        self.api_key = (api_key or "").strip()
         self.chunk_size_bytes = max(320, int(chunk_size_bytes))
-        self._model = os.environ.get("CARTESIA_MODEL_ID", "sonic-2")
+        self._model = (model or os.environ.get("CARTESIA_MODEL_ID") or "sonic-2").strip()
         self._sample_rate = int(os.environ.get("CARTESIA_SAMPLE_RATE", "16000") or 16000)
         self._version = os.environ.get("CARTESIA_VERSION", _VERSION)
         self._client: httpx.AsyncClient | None = None
@@ -63,7 +65,7 @@ class CartesiaTTSProvider(BaseTTSProvider):
             self._client = None
 
     def health_check(self) -> bool:
-        return True
+        return provider_is_locally_ready(api_key=self.api_key)
 
     def _resolve_voice(self, config: TTSConfig) -> str:
         voice = (config.voice_id or "").strip()
@@ -87,13 +89,14 @@ class CartesiaTTSProvider(BaseTTSProvider):
         cleaned = (text or "").strip()
         # Skip punctuation-only scraps (e.g. Urdu full stop "۔") — Cartesia 400s on these.
         if not cleaned or not any(ch.isalnum() for ch in cleaned):
-            logger.info("Skipping Cartesia TTS for empty/punctuation text", preview=cleaned[:20])
+            logger.info(
+                "Skipping Cartesia TTS for empty/punctuation text",
+                text_chars=len(cleaned),
+            )
             return
 
-        use_mock = (
-            not self.api_key
-            or os.environ.get("RUN_MOCK_PROVIDERS") == "1"
-            or os.environ.get("RUN_LIVE_PROVIDERS") != "1"
+        use_mock = should_use_mock_provider(
+            provider_id="cartesia", api_key=self.api_key
         )
         if use_mock:
             if not self.api_key:
@@ -132,7 +135,6 @@ class CartesiaTTSProvider(BaseTTSProvider):
             model_id=self._model,
             sample_rate=sample_rate,
             language=language,
-            preview=cleaned[:80],
         )
         client = self._get_client()
         try:
@@ -147,21 +149,33 @@ class CartesiaTTSProvider(BaseTTSProvider):
                 json=payload,
             ) as resp:
                 if resp.status_code != 200:
-                    body = await resp.aread()
+                    await resp.aread()
                     logger.error(
                         "Cartesia TTS API call failed",
                         status_code=resp.status_code,
-                        error=body[:300].decode("utf-8", errors="replace"),
                     )
-                    resp.raise_for_status()
+                    raise ProviderInvocationError(
+                        classify_http_failure("cartesia", resp.status_code)
+                    )
 
                 buf = bytearray()
+                emitted_first_audio = False
                 async for raw in resp.aiter_bytes():
                     if cancellation_token and cancellation_token.is_cancelled:
                         return
                     if not raw:
                         continue
                     buf.extend(raw)
+                    if not emitted_first_audio and len(buf) >= 2:
+                        take = len(buf) - (len(buf) % 2)
+                        part = bytes(buf[:take])
+                        del buf[:take]
+                        emitted_first_audio = True
+                        yield TTSChunk(
+                            pcm_data=part,
+                            native_sample_rate=sample_rate,
+                            is_final=False,
+                        )
                     while len(buf) >= self.chunk_size_bytes:
                         take = self.chunk_size_bytes - (self.chunk_size_bytes % 2)
                         part = bytes(buf[:take])
@@ -186,7 +200,10 @@ class CartesiaTTSProvider(BaseTTSProvider):
                         native_sample_rate=sample_rate,
                         is_final=True,
                     )
-        except Exception as exc:
-            logger.error("Cartesia TTS Exception: {0}".format(exc), error=str(exc))
+        except ProviderInvocationError:
             await self.aclose()
             raise
+        except Exception as exc:
+            logger.error("Cartesia TTS exception", error_type=type(exc).__name__)
+            await self.aclose()
+            raise provider_invocation_error("cartesia", exc) from exc

@@ -47,7 +47,7 @@ def test_playback_metric_handler_attaches_timestamp() -> None:
     assert e2e == 400.0
 
 
-def test_budget_breach_emits_warn_metric_not_hard_fail() -> None:
+def test_single_turn_is_not_misreported_as_a_p50_breach() -> None:
     slo = SLOPolicy(e2e_p50_target_ms=400.0, alert_on_breach=True)
     collector = LatencyCollector(slo_policy=slo)
 
@@ -59,8 +59,8 @@ def test_budget_breach_emits_warn_metric_not_hard_fail() -> None:
 
     result = collector.record_turn(waterfall)
     assert result.total_e2e_ms == 600.0
-    assert len(collector.warnings_emitted) == 1
-    assert "SLO breach" in collector.warnings_emitted[0]
+    assert collector.warnings_emitted == []
+    assert collector.percentile_summary()["p50_ms"] == 0.0
 
 
 def test_demotion_does_not_trigger_when_enforce_demotion_false() -> None:

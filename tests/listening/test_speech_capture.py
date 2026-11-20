@@ -54,6 +54,9 @@ async def test_process_frame_async_does_not_clear_on_onset(monkeypatch: pytest.M
     monkeypatch.setenv("UCVE_PIPELINE_V2", "quick_wins")
     monkeypatch.delenv("RUN_LIVE_PROVIDERS", raising=False)
     orch = PipelineOrchestrator()
+    # This test isolates capture-buffer behavior. Its constant DC fixture is not
+    # speech, so use the deterministic energy backend instead of neural VAD.
+    orch.vad_adapter._session = None
     orch._speech_buffer.extend(b"\x01\x00" * 16)
     loud = _loud_frame()
     # Drive enough frames to trip onset (quick_wins => 4 speech frames).

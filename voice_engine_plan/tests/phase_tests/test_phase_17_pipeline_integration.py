@@ -67,8 +67,12 @@ async def test_vad_adapter_speech_detection() -> None:
         loud_bytes.extend(val.to_bytes(2, byteorder="little", signed=True))
 
     speech_frame = AudioFrame(pcm16=bytes(loud_bytes), sample_rate=16000)
-    res_speech = vad.process_frame(speech_frame)
-    assert res_speech.speech_start is True
+    # Speech onset is intentionally debounced across consecutive frames.
+    results = [
+        vad.process_frame(speech_frame)
+        for _ in range(vad.config.min_speech_frames)
+    ]
+    assert any(result.speech_start for result in results)
 
 
 

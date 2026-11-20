@@ -19,4 +19,4 @@ ALTER TABLE dead_letter_queue FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY dead_letter_queue_tenant_isolation ON dead_letter_queue
     FOR ALL
-    USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);

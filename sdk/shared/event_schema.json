@@ -1,113 +1,202 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "UCVERealtimeEvent",
-  "description": "Unified event protocol specification for UCVE WebSocket audio streaming sessions.",
+  "$id": "https://wavia.dev/schemas/realtime-event-v1.json",
+  "title": "WaviaRealtimeEventV1",
+  "description": "Canonical v1 realtime protocol. Every JSON frame uses this ordered envelope; binary frames are PCM16 audio.",
+  "protocol_version": "1.0.0",
+  "supported_range": ">=1.0.0 <2.0.0",
   "type": "object",
+  "required": ["protocol_version", "event_id", "sequence", "event_type", "payload"],
+  "properties": {
+    "protocol_version": { "const": "1.0.0" },
+    "event_id": { "type": "string", "minLength": 1 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "event_type": { "type": "string", "minLength": 1 },
+    "timestamp_ms": { "type": "number" },
+    "payload": { "type": "object" }
+  },
   "oneOf": [
     {
+      "title": "ProtocolHello",
+      "x-direction": "client_to_server",
+      "properties": {
+        "event_type": { "const": "protocol.hello" },
+        "payload": {
+          "type": "object",
+          "required": ["protocol_version", "sdk"],
+          "properties": {
+            "protocol_version": { "type": "string" },
+            "sdk": {
+              "type": "object",
+              "required": ["name", "version"],
+              "properties": {
+                "name": { "type": "string" },
+                "version": { "type": "string" }
+              }
+            },
+            "capabilities": { "type": "array", "items": { "type": "string" } },
+            "resume": { "type": ["object", "null"] }
+          }
+        }
+      }
+    },
+    {
+      "title": "SessionReady",
+      "x-direction": "server_to_client",
+      "properties": {
+        "event_type": { "const": "session.ready" },
+        "payload": {
+          "type": "object",
+          "required": ["protocol_version", "supported_range", "session_id"],
+          "properties": {
+            "protocol_version": { "const": "1.0.0" },
+            "supported_range": { "const": ">=1.0.0 <2.0.0" },
+            "session_id": { "type": "string" },
+            "resume_supported": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    {
+      "title": "ControlPing",
+      "x-direction": "server_to_client",
+      "properties": { "event_type": { "const": "control.ping" }, "payload": { "type": "object" } }
+    },
+    {
       "title": "ControlPong",
-      "type": "object",
-      "required": ["event_type", "payload"],
-      "properties": {
-        "event_type": { "const": "control.pong" },
-        "payload": {
-          "type": "object",
-          "required": ["t"],
-          "properties": {
-            "t": { "type": "number", "description": "Client timestamp in ms" }
-          }
-        }
-      }
-    },
-    {
-      "title": "ControlPlaybackStarted",
-      "type": "object",
-      "required": ["event_type", "payload"],
-      "properties": {
-        "event_type": { "const": "control.playback_started" },
-        "payload": {
-          "type": "object",
-          "required": ["t"],
-          "properties": {
-            "t": { "type": "number", "description": "Speaker playback onset timestamp in ms" },
-            "kind": { "type": "string", "default": "playback_started" }
-          }
-        }
-      }
-    },
-    {
-      "title": "ControlBargeIn",
-      "type": "object",
-      "required": ["event_type", "payload"],
-      "properties": {
-        "event_type": { "const": "control.barge_in" },
-        "payload": {
-          "type": "object",
-          "required": ["rms"],
-          "properties": {
-            "rms": { "type": "number" },
-            "t": { "type": "number" }
-          }
-        }
-      }
+      "x-direction": "client_to_server",
+      "properties": { "event_type": { "const": "control.pong" }, "payload": { "type": "object" } }
     },
     {
       "title": "TextTurn",
-      "type": "object",
-      "required": ["event_type", "payload"],
+      "x-direction": "client_to_server",
       "properties": {
         "event_type": { "const": "text.turn" },
-        "payload": {
-          "type": "object",
-          "required": ["text"],
-          "properties": {
-            "text": { "type": "string" }
-          }
-        }
+        "payload": { "type": "object", "required": ["text"], "properties": { "text": { "type": "string", "minLength": 1 } } }
       }
+    },
+    {
+      "title": "TranscriptPartial",
+      "x-direction": "server_to_client",
+      "properties": { "event_type": { "const": "transcript.partial" }, "payload": { "$ref": "#/$defs/transcript" } }
+    },
+    {
+      "title": "TranscriptFinal",
+      "x-direction": "server_to_client",
+      "properties": { "event_type": { "const": "transcript.final" }, "payload": { "$ref": "#/$defs/transcript" } }
     },
     {
       "title": "Transcript",
-      "type": "object",
-      "required": ["event_type", "payload"],
-      "properties": {
-        "event_type": { "const": "transcript" },
-        "payload": {
-          "type": "object",
-          "required": ["speaker", "text"],
-          "properties": {
-            "speaker": { "type": "string", "enum": ["user", "agent"] },
-            "text": { "type": "string" }
-          }
-        }
-      }
+      "description": "Deprecated compatibility alias until protocol v2.",
+      "x-direction": "server_to_client",
+      "properties": { "event_type": { "const": "transcript" }, "payload": { "$ref": "#/$defs/transcript" } }
+    },
+    {
+      "title": "AudioStart",
+      "x-direction": "server_to_client",
+      "properties": { "event_type": { "const": "audio.start" }, "payload": { "$ref": "#/$defs/audioStart" } }
+    },
+    {
+      "title": "AudioEnd",
+      "x-direction": "server_to_client",
+      "properties": { "event_type": { "const": "audio.end" }, "payload": { "type": "object", "required": ["turn_id", "generated_audio_ms"] } }
+    },
+    {
+      "title": "ControlPlaybackStarted",
+      "x-direction": "client_to_server",
+      "properties": { "event_type": { "const": "control.playback_started" }, "payload": { "type": "object", "required": ["turn_id", "client_playback_started_ms"] } }
+    },
+    {
+      "title": "ControlBargeIn",
+      "x-direction": "client_to_server",
+      "properties": { "event_type": { "const": "control.barge_in" }, "payload": { "type": "object", "required": ["sequence"] } }
+    },
+    {
+      "title": "ControlClearAudio",
+      "x-direction": "server_to_client",
+      "properties": { "event_type": { "const": "control.clear_audio" }, "payload": { "type": "object", "required": ["turn_id", "sequence"] } }
+    },
+    {
+      "title": "ControlClearAudioAck",
+      "x-direction": "client_to_server",
+      "properties": { "event_type": { "const": "control.clear_audio_ack" }, "payload": { "type": "object", "required": ["turn_id", "sequence", "played_audio_ms"] } }
+    },
+    {
+      "title": "ControlPlaybackDrained",
+      "x-direction": "client_to_server",
+      "properties": { "event_type": { "const": "control.playback_drained" }, "payload": { "type": "object", "required": ["turn_id", "played_audio_ms"] } }
+    },
+    {
+      "title": "PlayedTextCommit",
+      "x-direction": "server_to_client",
+      "properties": { "event_type": { "const": "assistant.played_text_commit" }, "payload": { "type": "object", "required": ["turn_id", "text", "played_audio_ms", "complete"] } }
     },
     {
       "title": "MetricWaterfall",
-      "type": "object",
-      "required": ["event_type", "payload"],
+      "x-direction": "server_to_client",
       "properties": {
-        "event_type": { "const": "metric" },
+        "event_type": { "const": "metric.latency" },
         "payload": {
           "type": "object",
+          "required": ["kind", "turn_id", "durations_ms"],
           "properties": {
-            "event": { "type": "string" },
-            "waterfall": { "type": "object" }
+            "kind": { "const": "latency" },
+            "turn_id": { "type": "string" },
+            "durations_ms": { "type": "object" }
           }
         }
       }
     },
     {
-      "title": "SessionEvent",
+      "title": "TokenExpiring",
+      "x-direction": "server_to_client",
+      "properties": { "event_type": { "const": "session.token_expiring" }, "payload": { "type": "object", "required": ["expires_at_ms", "refresh_url"] } }
+    },
+    {
+      "title": "SessionClose",
+      "x-direction": "bidirectional",
+      "properties": { "event_type": { "const": "session.close" }, "payload": { "type": "object", "required": ["code", "reason", "retryable"] } }
+    },
+    {
+      "title": "Error",
+      "x-direction": "server_to_client",
+      "properties": { "event_type": { "const": "error" }, "payload": { "$ref": "#/$defs/problem" } }
+    },
+    {
+      "title": "Degraded",
+      "x-direction": "server_to_client",
+      "properties": { "event_type": { "const": "degraded" }, "payload": { "$ref": "#/$defs/problem" } }
+    }
+  ],
+  "$defs": {
+    "transcript": {
       "type": "object",
-      "required": ["event_type"],
+      "required": ["turn_id", "speaker", "text"],
       "properties": {
-        "event_type": {
-          "type": "string",
-          "enum": ["session_ready", "audio_start", "audio_stop", "info", "error"]
-        },
-        "payload": { "type": "object" }
+        "turn_id": { "type": "string" },
+        "speaker": { "enum": ["user", "agent"] },
+        "text": { "type": "string" }
+      }
+    },
+    "audioStart": {
+      "type": "object",
+      "required": ["turn_id", "format", "sample_rate_hz", "channels"],
+      "properties": {
+        "turn_id": { "type": "string" },
+        "format": { "const": "pcm_s16le" },
+        "sample_rate_hz": { "const": 16000 },
+        "channels": { "const": 1 }
+      }
+    },
+    "problem": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
       }
     }
-  ]
+  },
+  "additionalProperties": false
 }

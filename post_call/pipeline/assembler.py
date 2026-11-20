@@ -1,8 +1,8 @@
-"""CallRecord Assembler — Constructs CallRecord from session state & FSM transition logs."""
+"""Construct call records from session state and transition logs."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -10,7 +10,7 @@ from post_call.models.call_record import CallRecord
 from post_call.models.diarized_turn import DiarizedTurn
 from post_call.models.disposition import CallDisposition
 from post_call.models.memory_embed import MemoryEmbedStatus
-from post_call.models.recording import CallRecording
+from post_call.models.recording import CallRecording, RecordingState
 
 
 class CallRecordAssembler:
@@ -28,12 +28,15 @@ class CallRecordAssembler:
         end_reason: str = "user_hangup",
         transport_type: str = "websocket",
         recording_uri: str | None = None,
+        recording_checksum: str | None = None,
+        recording_channel_count: int = 1,
+        recording_storage_region: str | None = None,
         compliance_tier: str = "standard",
         metrics: dict[str, Any] | None = None,
     ) -> CallRecord:
         """Construct and validate a CallRecord instance."""
-        start = started_at or datetime.now(timezone.utc)
-        end = ended_at or datetime.now(timezone.utc)
+        start = started_at or datetime.now(UTC)
+        end = ended_at or datetime.now(UTC)
 
         turns: list[DiarizedTurn] = []
         for t in turns_data:
@@ -54,15 +57,21 @@ class CallRecordAssembler:
             # Suppress audio recording storage URI for zero-retention compliance
             recording_uri = None
 
-        recording = (
-            CallRecording(
+        recording = None
+        if recording_uri:
+            if not recording_checksum or not recording_storage_region:
+                raise ValueError(
+                    "Recording URI requires checksum and storage-region evidence."
+                )
+            recording = CallRecording(
+                state=RecordingState.AVAILABLE,
                 recording_s3_uri=recording_uri,
-                dual_channel=True,
-                duration_sec=max(0.0, (end - start).total_seconds()),
+                checksum=recording_checksum,
+                channel_count=recording_channel_count,
+                dual_channel=recording_channel_count == 2,
+                duration_sec=max(0.001, (end - start).total_seconds()),
+                storage_region=recording_storage_region,
             )
-            if recording_uri
-            else None
-        )
 
         return CallRecord(
             call_id=uuid4(),
@@ -77,6 +86,11 @@ class CallRecordAssembler:
             disposition=CallDisposition.COMPLETED,
             turns=turns,
             recording=recording,
+            recording_state=(
+                RecordingState.AVAILABLE
+                if recording is not None
+                else RecordingState.NOT_REQUESTED
+            ),
             compliance_tier=compliance_tier,
             metrics_snapshot=metrics or {},
             memory_embed_status=MemoryEmbedStatus.PENDING,

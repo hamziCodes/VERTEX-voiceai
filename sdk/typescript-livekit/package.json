@@ -1,12 +1,13 @@
 {
   "name": "@ucve/voice-livekit",
+  "private": true,
   "version": "1.0.0",
-  "description": "Optional LiveKit WebRTC Transport Adapter for UCVE Voice SDK",
+  "description": "Roadmap-only LiveKit adapter; not a supported Wavia v1 package",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "dependencies": {
-    "@ucve/voice-sdk": "1.0.0"
+    "@ucve/voice-sdk": "1.0.4"
   },
   "peerDependencies": {
     "livekit-client": ">=2.0.0"

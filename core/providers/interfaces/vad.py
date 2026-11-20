@@ -21,8 +21,8 @@ class VADConfig:
     sample_rate: int = 16000
     window_samples: int = 512
     threshold: float = 0.5
-    min_speech_frames: int = 1
-    min_silence_frames: int = 3
+    min_speech_frames: int = 5
+    min_silence_frames: int = 30
 
 
 @dataclass(frozen=True)

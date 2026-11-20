@@ -58,6 +58,11 @@ class Session:
     transport_type: str = "websocket"
     compliance_tier: ComplianceTier = "standard"
     config_version_id: str | None = None
+    agent_config_version: int | None = None
+    runtime_plan_hash: str | None = None
+    runtime_plan_snapshot: dict[str, Any] = field(default_factory=dict)
+    session_language: str | None = None
+    session_voice_id: str | None = None
     pinned_at: datetime.datetime | None = None
     degraded_flags: dict[str, Any] = field(default_factory=dict)
     started_at: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
@@ -100,7 +105,12 @@ class UsageEvent:
     tenant_id: str
     usage_kind: str
     quantity: float
+    event_key: str | None = None
     session_id: str | None = None
+    unit: str = "units"
+    provider_id: str | None = None
+    provider_request_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
     recorded_at: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
 
 

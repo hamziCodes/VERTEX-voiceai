@@ -1,4 +1,4 @@
-"""Twilio Media Streams Interface Stub — Abstract & Uninstantiable per Provider-Agnostic Pattern."""
+"""Abstract, unimplemented Twilio Media Streams interface."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from telephony_gateway.base import BaseTelephonyTransport
 class TwilioMediaStreamTransport(BaseTelephonyTransport, ABC):
     """Abstract interface stub for Twilio Media Streams (WebSocket μ-law stream).
 
-    Intentional abstract stub — not implemented in v1 [LATER]. DirectSIP is sovereign primary.
+    This is intentionally unimplemented in v1. DirectSIP is the primary path.
     """
 
     @abstractmethod

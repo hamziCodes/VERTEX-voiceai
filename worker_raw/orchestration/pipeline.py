@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import time
-from collections.abc import AsyncIterator
-from datetime import datetime, timezone
-from typing import Any, Callable
+from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from core.buffers.cancellation import AsyncioCancellationToken
-from core.buffers.policy import OUTBOUND_TTS_POLICY
+from core.buffers.policy import OUTBOUND_TTS_POLICY, SENTENCE_BRIDGE_POLICY
 from core.buffers.typed_queue import TypedAsyncQueue
 from core.compliance.audit.writer import AuditWriter
 from core.compliance.redaction import RedactionService
@@ -28,20 +27,26 @@ from core.fsm.cancel_contract import ThreePointCancel
 from core.fsm.events import SessionEvent
 from core.fsm.session_fsm import SessionFSM
 from core.fsm.states import SessionState
-from core.language.chunker import SentenceChunker
 from core.language.normalizer import TextNormalizer
 from core.language.router import LanguageRouter
+from core.language.streaming_chunker import StreamingSpeechChunker
+from core.latency.collector import LatencyCollector
+from core.latency.waterfall import LatencyWaterfall
 from core.listening.barge_verify import BargeVerifyEngine
-from core.listening.config import FRAME_MS, ListeningPipelineConfig, SpeakingPipelineConfig
+from core.listening.config import (
+    FRAME_MS,
+    ListeningPipelineConfig,
+    SpeakingPipelineConfig,
+)
 from core.listening.speech_capture import SpeechCaptureEngine
 from core.listening.vad_worker import VADWorker
 from core.mcp.filler import ConversationalFillerSynth, FillerConfig
-from core.providers.adapters.gladia_live_stt import GladiaLiveSTTSession
-from core.latency.collector import LatencyCollector
-from core.latency.waterfall import LatencyWaterfall
-from core.mcp.orchestrator import ToolOrchestrator
+from core.metering.kinds import AGENT_SEC, LLM_TOKENS, STT_SEC, TTS_SEC
 from core.metering.usage_meter import UsageMeter
+from core.observability.context import ObservabilityContext
 from core.observability.logging import get_logger
+from core.observability.metrics import ucve_barge_in_total, ucve_buffer_drop_total
+from core.playback.turn_commit import PlayedTextCommit, TurnCommitTracker
 from core.providers.adapters.cartesia_tts import CartesiaTTSProvider
 from core.providers.adapters.deepgram_stt import DeepgramSTTProvider
 from core.providers.adapters.elevenlabs_tts import ElevenLabsTTSProvider
@@ -53,6 +58,7 @@ from core.providers.adapters.null_stt import NullSTTProvider
 from core.providers.adapters.null_tts import NullTTSProvider
 from core.providers.adapters.openai_llm import OpenAILLMProvider
 from core.providers.adapters.uplift_tts import UpliftTTSProvider
+from core.providers.exceptions import ProviderStreamInterruptedError
 from core.providers.factory import (
     build_llm_provider,
     build_stt_provider,
@@ -61,22 +67,37 @@ from core.providers.factory import (
     normalize_stt_provider,
     normalize_tts_provider,
 )
-from core.providers.failover import FailoverRouter
-from core.providers.interfaces.llm import LLMConfig, LLMStreamChunk
-from core.providers.interfaces.stt import STTConfig
-from core.providers.interfaces.tts import TTSConfig
+from core.providers.failover import FailoverRouter, ProviderStreamDeadlines
+from core.providers.interfaces.live_stt import BaseLiveSTTSession
+from core.providers.interfaces.llm import BaseLLMProvider, LLMConfig, ToolDefinition
+from core.providers.interfaces.stt import BaseSTTProvider, STTConfig
+from core.providers.interfaces.tts import BaseTTSProvider, TTSConfig
+from core.providers.live_stt_factory import build_live_stt_session
+from core.providers.mode import provider_runtime_status
 from core.providers.registry import ProviderRegistry
+from core.rag.prompt_context import (
+    KnowledgeContextService,
+    RetrievalOutcome,
+    build_prompt_messages,
+)
 from core.rag.retriever import PgVectorRetriever
 from core.rag.speculative import SpeculativeRetrieval
-from core.runtime.env import is_test_env
+from core.runtime.env import is_protected_environment
 from core.session.redis_store import RedisSessionStore
-from core.transport.resample_egress import EgressResampler
+from core.transport.resample_egress import StreamingEgressResampler
+from core.types.audio import AudioFrame
 from core.types.events import ControlEventType
 from core.vad.silero_adapter import SileroVADAdapter
-from post_call.models.call_record import CallRecord
 from post_call.models.diarized_turn import DiarizedTurn
+from post_call.models.disposition import CallDisposition
+from post_call.models.policy import PostCallPolicy
+from post_call.models.recording import RecordingState
 from post_call.pipeline.enqueue import PostCallPipeline
 from worker_raw.orchestration.latency_hooks import LatencyHooks
+from worker_raw.orchestration.provider_binding import (
+    BoundProviderChains,
+    ProviderSessionBinder,
+)
 from worker_raw.orchestration.session_config import PipelineSessionConfig
 from worker_raw.orchestration.tool_handler import PipelineToolHandler
 
@@ -89,6 +110,18 @@ def _metric_session_uuid(session_id: str) -> UUID:
         return UUID(session_id)
     except ValueError:
         return uuid5(NAMESPACE_DNS, f"ucve-session:{session_id}")
+
+
+def _post_call_uuid(value: str, field: str) -> UUID:
+    """Keep legacy local fixtures deterministic; protected identities stay strict."""
+
+    try:
+        return parse_uuid(value, field)
+    except UCVEError:
+        if is_protected_environment():
+            raise
+        return uuid5(NAMESPACE_DNS, f"ucve-{field}:{value}")
+
 
 ProviderRegistry.register_provider_class("gladia", GladiaSTTProvider)
 ProviderRegistry.register_provider_class("deepgram", DeepgramSTTProvider)
@@ -113,6 +146,9 @@ class PipelineOrchestrator:
         latency_collector: LatencyCollector | None = None,
         rag_retriever: PgVectorRetriever | None = None,
         post_call_pipeline: PostCallPipeline | None = None,
+        provider_binder: ProviderSessionBinder | None = None,
+        end_conversation_hook: Callable[[str, str], Any] | None = None,
+        human_handoff_hook: Callable[[str, str], Any] | None = None,
     ) -> None:
         self.allow_testing_providers = allow_testing_providers
         self.on_audio_out = on_audio_out
@@ -122,14 +158,29 @@ class PipelineOrchestrator:
         self.latency_hooks = LatencyHooks(self.latency_collector)
         self.rag_retriever = rag_retriever or PgVectorRetriever()
         self.speculative_rag = SpeculativeRetrieval(self.rag_retriever)
+        self.rag_context = KnowledgeContextService(
+            self.rag_retriever, speculative=self.speculative_rag
+        )
         self.post_call_pipeline = post_call_pipeline or PostCallPipeline()
+        self.provider_binder = provider_binder
+        self._end_conversation_hook = end_conversation_hook
+        self._human_handoff_hook = human_handoff_hook
+        self._handoff_target: str | None = None
+        self._pending_end: tuple[str, str] | None = None
+        self._pending_handoff: tuple[str, str] | None = None
+        self._lifecycle_completed = False
+        self._session_disposition = "completed"
+        self._session_end_reason = "user_hangup"
+        self.bound_provider_chains: BoundProviderChains | None = None
         self.listening_config = ListeningPipelineConfig.from_env()
         self.speaking_config = SpeakingPipelineConfig.from_env()
         self.vad_adapter = SileroVADAdapter()
         self._apply_vad_timing()
-        self.stt_provider = GladiaSTTProvider(mock_text=self.listening_config.stt_mock_text)
-        self.llm_provider = GroqLLMProvider()
-        self.tts_provider = UpliftTTSProvider(
+        self.stt_provider: BaseSTTProvider = GladiaSTTProvider(
+            mock_text=self.listening_config.stt_mock_text
+        )
+        self.llm_provider: BaseLLMProvider = GroqLLMProvider()
+        self.tts_provider: BaseTTSProvider = UpliftTTSProvider(
             chunk_size_bytes=(
                 self.speaking_config.tts_chunk_size_bytes
                 if self.speaking_config.enable_speaking_hardening
@@ -139,10 +190,12 @@ class PipelineOrchestrator:
         self._active_stt_id = "gladia"
         self._active_llm_id = "groq"
         self._active_tts_id = "uplift"
-        self.failover_router = FailoverRouter(priority=["primary", "secondary"])
+        self.stt_router = FailoverRouter(priority=["primary", "secondary"])
+        self.llm_router = FailoverRouter(priority=["primary", "secondary"])
+        self.tts_router = FailoverRouter(priority=["primary", "secondary"])
+        self.failover_router = self.llm_router
         self.language_router = LanguageRouter()
         self.normalizer = TextNormalizer()
-        self.chunker = SentenceChunker()
         self.redis_store = RedisSessionStore()
         self.barge_in_controller = BargeInController()
         self.three_point_cancel = ThreePointCancel()
@@ -153,19 +206,31 @@ class PipelineOrchestrator:
         self._tts_task: asyncio.Task[None] | None = None
         self._llm_task: asyncio.Task[None] | None = None
         self._started_at = time.monotonic()
+        self._stt_audio_sec = 0.0
+        self._tts_audio_sec = 0.0
         self._session_start_monotonic = time.monotonic()
         self._turn_starts: list[float] = []
         self._turn_ends: list[float] = []
         self._ws_session: Any | None = None
-        self._egress_queue: TypedAsyncQueue[bytes] = TypedAsyncQueue(OUTBOUND_TTS_POLICY)
+        self._egress_queue: TypedAsyncQueue[tuple[int, bytes]] = TypedAsyncQueue(
+            OUTBOUND_TTS_POLICY
+        )
         self._egress_sender_task: asyncio.Task[None] | None = None
+        self._egress_generation = 0
         self._llm_cancel = AsyncioCancellationToken()
         self._tts_cancel = AsyncioCancellationToken()
         self._playback_started = False
         self._finalized_once = False
+        self._post_call_started = False
+        self._post_call_turn_ordinal = 0
+        self._post_call_config: PipelineSessionConfig | None = None
+        self._session_started_at_utc: datetime | None = None
+        self._transport_usage_snapshot: dict[str, float] = {}
+        self._runtime_resources_closed = False
         self._speech_buffer = bytearray()
         self._capturing_speech = False
         self._speech_end_pending = False
+        self._last_acoustic_speech_ms: float = 0.0
         self._last_vad_speech_end_ms: float = 0.0
         self._last_stt_final_ms: float = 0.0
 
@@ -179,23 +244,160 @@ class PipelineOrchestrator:
             if lc.enable_barge_verify
             else None
         )
-        self._vad_worker: VADWorker | None = (
-            VADWorker() if lc.enable_vad_worker else None
-        )
-        self._live_stt: GladiaLiveSTTSession | None = None
+        # All sessions share a bounded executor; never create per-session VAD
+        # threads or enqueue work on asyncio's unrelated default executor.
+        self._vad_worker: VADWorker | None = VADWorker()
+        self._live_stt: BaseLiveSTTSession | None = None
         self._live_stt_task: asyncio.Task[None] | None = None
+        self._live_stt_status = "disabled"
+        self._live_stt_start_lock = asyncio.Lock()
+        self._live_stt_generation = 0
+        self._live_stt_attempts = 0
         self._live_final_text: str = ""
         self._filler: ConversationalFillerSynth | None = None
         # Playback pause gate for barge verification (set => audio flows).
         self._playback_pause_event = asyncio.Event()
         self._playback_pause_event.set()
         self._barge_verify_task: asyncio.Task[None] | None = None
-        self._current_waterfall: Any | None = None
+        self._active_latency_turn_id: UUID | None = None
+        self._active_playback_turn_id: str | None = None
+        self._turn_commit_tracker = TurnCommitTracker()
+        self._pending_assistant_turns: dict[str, tuple[str, str]] = {}
+        self._control_sequence = 0
+        self._pending_clear_acks: dict[int, tuple[str, asyncio.Event]] = {}
+        self._clear_ack_tasks: set[asyncio.Task[None]] = set()
+        self._barge_lock = asyncio.Lock()
+        self._interrupted_turn_ids: set[str] = set()
         # Always flush egress on three-point cancel (fixes ghost audio after barge).
         self.three_point_cancel.register_flush_callback(self._flush_egress_queue)
 
-    async def apply_provider_selection(self, session_config: PipelineSessionConfig) -> None:
-        """Swap STT/LLM/TTS adapters from session config (call at session start only)."""
+    @property
+    def runtime_task_count(self) -> int:
+        """Number of still-running tasks owned directly by this orchestrator."""
+        tasks = {
+            self._llm_task,
+            self._tts_task,
+            self._egress_sender_task,
+            self._live_stt_task,
+            self._barge_verify_task,
+            *self._clear_ack_tasks,
+            *self.three_point_cancel.active_tasks,
+        }
+        return sum(task is not None and not task.done() for task in tasks)
+
+    async def shutdown_runtime_resources(self) -> None:
+        """Idempotently stop tasks, streams, workers, and pooled provider clients."""
+        if self._runtime_resources_closed:
+            return
+        self._llm_cancel.cancel()
+        self._tts_cancel.cancel()
+        if self._filler is not None:
+            self._filler.cancel()
+            self._filler = None
+
+        await self.three_point_cancel.cancel_and_wait()
+        await self._close_live_stt()
+
+        current = asyncio.current_task()
+        tasks = {
+            task
+            for task in (
+                self._llm_task,
+                self._tts_task,
+                self._barge_verify_task,
+                self._egress_sender_task,
+                *self._clear_ack_tasks,
+            )
+            if task is not None and task is not current and not task.done()
+        }
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._llm_task = None
+        self._tts_task = None
+        self._barge_verify_task = None
+        self._egress_sender_task = None
+        self._clear_ack_tasks.clear()
+        self._pending_clear_acks.clear()
+        self._turn_commit_tracker.discard_all()
+        self._pending_assistant_turns.clear()
+        self._active_playback_turn_id = None
+
+        if self._vad_worker is not None:
+            self._vad_worker.shutdown()
+            self._vad_worker = None
+
+        if self.bound_provider_chains is not None:
+            await self.bound_provider_chains.aclose()
+        else:
+            seen: set[int] = set()
+            for provider in (self.llm_provider, self.tts_provider, self.stt_provider):
+                if id(provider) in seen:
+                    continue
+                seen.add(id(provider))
+                close_fn = getattr(provider, "aclose", None)
+                if close_fn:
+                    try:
+                        result = close_fn()
+                        if asyncio.iscoroutine(result):
+                            await result
+                    except Exception as exc:
+                        logger.warning(
+                            "Provider close failed during teardown",
+                            provider=type(provider).__name__,
+                            error_type=type(exc).__name__,
+                        )
+        close_tools = getattr(self.tool_handler, "close", None)
+        if callable(close_tools):
+            try:
+                result = close_tools()
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as exc:
+                logger.warning(
+                    "Tool handler close failed during teardown",
+                    error_type=type(exc).__name__,
+                )
+        self._runtime_resources_closed = True
+
+    async def apply_provider_selection(
+        self, session_config: PipelineSessionConfig
+    ) -> None:
+        """Swap providers from session config at session start only."""
+        self.language_router.set_supported_languages(session_config.allowed_languages)
+        configure_tools = getattr(self.tool_handler, "set_allowed_tools", None)
+        if callable(configure_tools):
+            configure_tools(session_config.tool_allowlist)
+
+        if session_config.plan_authoritative:
+            binder = self.provider_binder or ProviderSessionBinder.default(
+                speaking_config=self.speaking_config,
+                stt_mock_text=self.listening_config.stt_mock_text,
+            )
+            bound = await binder.bind(session_config)
+            if self.bound_provider_chains is not None:
+                await self.bound_provider_chains.aclose()
+            self.bound_provider_chains = bound
+            self.stt_provider = bound.stt[0].adapter
+            self.llm_provider = bound.llm[0].adapter
+            self.tts_provider = bound.tts[0].adapter
+            self.stt_router = FailoverRouter(priority=list(bound.stt))
+            self.llm_router = FailoverRouter(priority=list(bound.llm))
+            self.tts_router = FailoverRouter(priority=list(bound.tts))
+            self.failover_router = self.llm_router
+            self._active_stt_id = bound.stt[0].identity.provider_id
+            self._active_llm_id = bound.llm[0].identity.provider_id
+            self._active_tts_id = bound.tts[0].identity.provider_id
+            self._active_llm_model = bound.llm[0].identity.model
+            logger.info(
+                "Published provider chains bound",
+                stt_routes=len(bound.stt),
+                llm_routes=len(bound.llm),
+                tts_routes=len(bound.tts),
+            )
+            return
+
         stt_id = normalize_stt_provider(session_config.stt_provider)
         llm_id = normalize_llm_provider(session_config.llm_provider)
         tts_id = normalize_tts_provider(session_config.tts_provider)
@@ -205,14 +407,21 @@ class PipelineOrchestrator:
 
         if stt_id != self._active_stt_id:
             self.stt_provider = build_stt_provider(
-                stt_id, mock_text=self.listening_config.stt_mock_text
+                stt_id,
+                api_key=None,
+                mock_text=self.listening_config.stt_mock_text,
             )
             self._active_stt_id = stt_id
 
         llm_model_choice = getattr(session_config, "llm_model", None)
-        if llm_id != self._active_llm_id or getattr(self, "_active_llm_model", None) != llm_model_choice:
+        if (
+            llm_id != self._active_llm_id
+            or getattr(self, "_active_llm_model", None) != llm_model_choice
+        ):
             old = self.llm_provider
-            self.llm_provider = build_llm_provider(llm_id, model=llm_model_choice)
+            self.llm_provider = build_llm_provider(
+                llm_id, api_key=None, model=llm_model_choice
+            )
             self._active_llm_id = llm_id
             self._active_llm_model = llm_model_choice
             close_fn = getattr(old, "aclose", None)
@@ -224,7 +433,7 @@ class PipelineOrchestrator:
         if tts_id != self._active_tts_id:
             old_tts = self.tts_provider
             self.tts_provider = build_tts_provider(
-                tts_id, speaking_config=self.speaking_config
+                tts_id, api_key=None, speaking_config=self.speaking_config
             )
             self._active_tts_id = tts_id
             close_fn = getattr(old_tts, "aclose", None)
@@ -253,25 +462,209 @@ class PipelineOrchestrator:
             # Phase 0 quick win: longer endpoint + onset debounce, no full retune.
             self.vad_adapter.configure(min_speech_frames=4, min_silence_frames=12)
 
+    @staticmethod
+    def _route_adapter(route: Any, fallback: Any) -> Any:
+        return getattr(route, "adapter", fallback)
+
+    @staticmethod
+    def _synthetic_provider_reply_allowed() -> bool:
+        return str(provider_runtime_status().get("provider_mode", "")) == "mock"
+
     def _flush_egress_queue(self) -> None:
         """Drop any queued-but-unsent agent audio (three-point cancel: sender)."""
         dropped = 0
         while not self._egress_queue.empty():
             try:
                 self._egress_queue.get_nowait()
+                self._egress_queue.task_done()
                 dropped += 1
             except Exception:
                 break
         if dropped > 0:
-            logger.info("Flushed egress audio queue on barge-in", dropped_chunks=dropped)
+            ucve_buffer_drop_total.labels(buffer="egress_barge_in_flush").inc(dropped)
+            logger.info(
+                "Flushed egress audio queue on barge-in", dropped_chunks=dropped
+            )
 
     def attach_ws_session(self, session: Any) -> None:
         self._ws_session = session
         if self._egress_sender_task is None or self._egress_sender_task.done():
             self._egress_sender_task = asyncio.create_task(self._egress_sender_loop())
 
+    def attach_transport_session(self, session: Any) -> None:
+        """Attach any realtime transport owner to the shared voice pipeline."""
+        self.attach_ws_session(session)
+
+    def set_end_conversation_hook(self, hook: Callable[[str, str], Any]) -> None:
+        self._end_conversation_hook = hook
+
+    def begin_session_timing(self) -> None:
+        """Start billable/runtime timing when transport media becomes ready."""
+        now = time.monotonic()
+        self._started_at = now
+        self._session_start_monotonic = now
+
+    def set_transport_usage(self, kind: str, quantity: float) -> None:
+        if quantity > 0:
+            self._transport_usage_snapshot[kind] = float(quantity)
+
+    async def start_session_record(self, session_config: PipelineSessionConfig) -> None:
+        """Create the durable call record once at session admission."""
+
+        if self._post_call_started:
+            return
+        tenant_id = _post_call_uuid(session_config.tenant_id, "tenant_id")
+        agent_id = _post_call_uuid(session_config.agent_id, "agent_id")
+        session_id = _post_call_uuid(session_config.session_id, "session_id")
+        transcript_days = session_config.transcript_retention_days
+        recording_days = session_config.recording_retention_days
+        if session_config.compliance_tier == "gdpr_strict":
+            transcript_days = 0
+            recording_days = 0
+        policy = PostCallPolicy(
+            recording_enabled=session_config.recording_enabled,
+            recording_consent_obtained=session_config.recording_consent_obtained,
+            transcript_retention_days=transcript_days,
+            recording_retention_days=recording_days,
+            storage_region=session_config.storage_region,
+            requires_review_for_external_actions=(
+                session_config.requires_review_for_external_actions
+            ),
+        )
+        started_at = datetime.now(UTC)
+        await self.post_call_pipeline.start_session(
+            tenant_id=tenant_id,
+            agent_id=agent_id,
+            session_id=session_id,
+            started_at=started_at,
+            transport_type=session_config.transport_type,
+            policy=policy,
+            provider_snapshot={
+                "stt": self._active_stt_id,
+                "llm": self._active_llm_id,
+                "tts": self._active_tts_id,
+            },
+            caller_id=getattr(session_config.caller_id, "from_number", None),
+            compliance_tier=session_config.compliance_tier,
+            intelligence_config_snapshot={
+                "extraction_schema_id": session_config.extraction_schema_id,
+                "extraction_schema": session_config.extraction_schema,
+                "external_action_configured": False,
+            },
+        )
+        self._session_started_at_utc = started_at
+        self._post_call_config = session_config
+        self._post_call_started = True
+
+    async def _persist_post_call_turn(
+        self,
+        *,
+        speaker: str,
+        text: str,
+        language: str,
+        start_ms: int,
+        end_ms: int,
+        confidence: float = 1.0,
+    ) -> None:
+        config = self._post_call_config
+        if config is None:
+            return
+        redacted = self.redaction_service.redact_transcript(
+            [{"speaker": speaker, "text": text, "language": language}],
+            RedactionPolicy(redact_pii_in_transcript=True),
+        )[0]
+        await self.post_call_pipeline.append_turn(
+            tenant_id=_post_call_uuid(config.tenant_id, "tenant_id"),
+            session_id=_post_call_uuid(config.session_id, "session_id"),
+            ordinal=self._post_call_turn_ordinal,
+            turn=DiarizedTurn(
+                speaker=speaker,
+                text=str(redacted.get("text", "")),
+                start_ms=max(0, start_ms),
+                end_ms=max(start_ms, end_ms),
+                language=language,
+                confidence=confidence,
+            ),
+        )
+        self._post_call_turn_ordinal += 1
+
+    @property
+    def escalation_available(self) -> bool:
+        return self._human_handoff_hook is not None and bool(self._handoff_target)
+
+    async def request_end(self, *, summary: str, disposition: str) -> None:
+        """Record one graceful end request for completion after TTS drain."""
+        if self._pending_end is None and not self._lifecycle_completed:
+            self._pending_end = (summary, disposition)
+            self._session_disposition = disposition
+            self._session_end_reason = "agent_end_conversation"
+
+    async def request_escalation(self, *, reason: str, target: str) -> None:
+        """Record one validated handoff request for execution after TTS drain."""
+        if not self.escalation_available or target != self._handoff_target:
+            raise RuntimeError("Human handoff is unavailable.")
+        if self._pending_handoff is None and not self._lifecycle_completed:
+            self._pending_handoff = (reason, target)
+            self._session_disposition = "escalated_human"
+            self._session_end_reason = "human_handoff"
+
+    async def _configure_lifecycle_tools(
+        self, session_config: PipelineSessionConfig
+    ) -> list[ToolDefinition]:
+        policy = session_config.telephony_policy or {}
+        target = policy.get("handoff_target") or policy.get("human_handoff_target")
+        self._handoff_target = str(target).strip() if target else None
+        configure = getattr(self.tool_handler, "configure_session", None)
+        if callable(configure):
+            configure(
+                allowed_tools=session_config.tool_allowlist,
+                lifecycle_hooks=self,
+                handoff_target=self._handoff_target,
+            )
+        prepare = getattr(self.tool_handler, "prepare_tools", None)
+        if callable(prepare):
+            prepared = prepare()
+            if asyncio.iscoroutine(prepared):
+                prepared = await prepared
+            return [item for item in prepared if isinstance(item, ToolDefinition)]
+        available = getattr(self.tool_handler, "available_tools", None)
+        if not callable(available):
+            return []
+        return [item for item in available() if isinstance(item, ToolDefinition)]
+
+    async def _complete_pending_lifecycle(self) -> None:
+        if self._lifecycle_completed or not (
+            self._pending_end or self._pending_handoff
+        ):
+            return
+        self._lifecycle_completed = True
+        if self._pending_handoff is not None and self._human_handoff_hook is not None:
+            result = self._human_handoff_hook(*self._pending_handoff)
+            if asyncio.iscoroutine(result):
+                await result
+        elif self._pending_end is not None and self._end_conversation_hook is not None:
+            result = self._end_conversation_hook(*self._pending_end)
+            if asyncio.iscoroutine(result):
+                await result
+        if self.fsm.can_transition(SessionEvent.HANGUP):
+            self.fsm.trigger(SessionEvent.HANGUP)
+        session = self._ws_session
+        if session is not None:
+            transport = getattr(session, "transport", None)
+            if transport is not None:
+                await transport.send_control_event(
+                    "session.ending", {"reason": self._session_end_reason}
+                )
+            graceful_stop = getattr(session, "request_graceful_stop", None)
+            if callable(graceful_stop):
+                await graceful_stop(self._session_end_reason)
+            else:
+                stop = getattr(session, "stop", None)
+                if stop is not None:
+                    stop.set()
+
     def apply_language_vad_overrides(self, language: str) -> None:
-        """Wire per-language VAD silence overrides from the language profile registry."""
+        """Wire per-language VAD silence overrides from the language registry."""
         try:
             from core.language.registry import LanguageRegistry
 
@@ -288,19 +681,26 @@ class PipelineOrchestrator:
     async def _egress_sender_loop(self) -> None:
         while True:
             try:
-                pcm = await self._egress_queue.get()
+                generation, pcm = await self._egress_queue.get()
             except asyncio.CancelledError:
                 break
-            # Block while playback is paused during a barge verification window.
-            if not self._playback_pause_event.is_set():
-                try:
-                    await self._playback_pause_event.wait()
-                except asyncio.CancelledError:
-                    break
-            if self.on_audio_out:
-                maybe = self.on_audio_out(pcm)
-                if asyncio.iscoroutine(maybe):
-                    await maybe
+            try:
+                # Block while playback is paused during a barge verification window.
+                if not self._playback_pause_event.is_set():
+                    try:
+                        await self._playback_pause_event.wait()
+                    except asyncio.CancelledError:
+                        break
+                # A barge-in increments the generation before flushing. This check
+                # also rejects the chunk that a sender may already have dequeued.
+                if generation != self._egress_generation:
+                    continue
+                if self.on_audio_out:
+                    maybe = self.on_audio_out(pcm)
+                    if asyncio.iscoroutine(maybe):
+                        await maybe
+            finally:
+                self._egress_queue.task_done()
 
     def pause_playback(self) -> None:
         """Pause egress to the client (barge verify window)."""
@@ -314,76 +714,275 @@ class PipelineOrchestrator:
         if self._egress_sender_task is None or self._egress_sender_task.done():
             self._egress_sender_task = asyncio.create_task(self._egress_sender_loop())
 
-    async def _emit_audio(self, pcm: bytes, waterfall: Any | None = None) -> None:
+    async def _emit_audio(
+        self,
+        pcm: bytes,
+        waterfall: Any | None = None,
+        *,
+        generation: int | None = None,
+    ) -> None:
+        generation = self._egress_generation if generation is None else generation
+        if generation != self._egress_generation:
+            return
         if not self._playback_started:
             self._playback_started = True
             if waterfall is not None:
-                waterfall.playback_start_ms = self.latency_hooks.now_ms()
+                waterfall.server_send_ms = self.latency_hooks.now_ms()
+                session = self._ws_session
+                transport = (
+                    getattr(session, "transport", None) if session is not None else None
+                )
+                if transport is not None:
+                    try:
+                        await transport.send_control_event(
+                            "audio.start",
+                            {
+                                "turn_id": str(waterfall.turn_id),
+                                "server_send_ms": waterfall.server_send_ms,
+                                "clock_domain": waterfall.clock_domain,
+                                "recommended_prebuffer_ms": (
+                                    self.speaking_config.egress_prebuffer_ms
+                                ),
+                            },
+                        )
+                    except Exception as exc:
+                        logger.debug("Client audio.start notify failed", error=str(exc))
             if self.fsm.can_transition(SessionEvent.TTS_FIRST_BYTE):
                 self.fsm.trigger(SessionEvent.TTS_FIRST_BYTE)
         await self._ensure_egress_sender()
-        await self._egress_queue.put(pcm)
+        queue_wait_started = time.monotonic()
+        await self._egress_queue.put((generation, pcm))
+        if waterfall is not None:
+            turn_id = str(waterfall.turn_id)
+            if turn_id in self._pending_assistant_turns:
+                self._turn_commit_tracker.add_audio(turn_id, len(pcm))
+        queue_wait_ms = (time.monotonic() - queue_wait_started) * 1000
+        if queue_wait_ms >= 5:
+            logger.warning(
+                "TTS egress backpressure",
+                wait_ms=round(queue_wait_ms, 2),
+                queue_size=self._egress_queue.qsize(),
+                queue_high_water=self._egress_queue.high_watermark,
+            )
 
-    async def _notify_client_barge_in(self, reason: str = "barge_in_committed") -> None:
+    def _next_control_sequence(self) -> int:
+        self._control_sequence += 1
+        return self._control_sequence
+
+    async def _notify_client_barge_in(
+        self, reason: str = "barge_in_committed"
+    ) -> int | None:
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is None:
+            return None
+        turn_id = self._active_playback_turn_id
+        try:
+            barge_sequence = self._next_control_sequence()
+            await transport.send_control_event(
+                ControlEventType.BARGE_IN,
+                {
+                    "reason": reason,
+                    "turn_id": turn_id,
+                    "sequence": barge_sequence,
+                },
+            )
+            clear_sequence = self._next_control_sequence()
+            clear_event = asyncio.Event()
+            self._pending_clear_acks[clear_sequence] = (turn_id or "", clear_event)
+            await transport.send_control_event(
+                ControlEventType.CLEAR_AUDIO,
+                {
+                    "reason": reason,
+                    "turn_id": turn_id,
+                    "sequence": clear_sequence,
+                },
+            )
+            watchdog = asyncio.create_task(
+                self._clear_audio_ack_watchdog(clear_sequence),
+                name=f"clear-audio-ack:{clear_sequence}",
+            )
+            self._clear_ack_tasks.add(watchdog)
+            watchdog.add_done_callback(self._clear_ack_tasks.discard)
+            return clear_sequence
+        except Exception as exc:
+            logger.debug("Client barge_in notify failed", error=str(exc))
+            return None
+
+    async def _clear_audio_ack_watchdog(self, sequence: int) -> None:
+        pending = self._pending_clear_acks.get(sequence)
+        if pending is None:
+            return
+        turn_id, event = pending
+        try:
+            await asyncio.wait_for(event.wait(), timeout=0.5)
+            return
+        except TimeoutError:
+            await self._commit_played_assistant(
+                turn_id,
+                played_audio_ms=0.0,
+                complete=False,
+            )
+            await self._emit_degraded_event(
+                "clear_audio_ack_timeout",
+                {"turn_id": turn_id or None, "sequence": sequence},
+            )
+        finally:
+            self._pending_clear_acks.pop(sequence, None)
+
+    async def handle_clear_audio_ack(
+        self,
+        *,
+        turn_id: str,
+        sequence: int,
+        played_audio_ms: float,
+    ) -> bool:
+        """Resolve one client buffer-clear request and commit only played speech."""
+        pending = self._pending_clear_acks.get(sequence)
+        if pending is None or pending[0] != turn_id:
+            return False
+        await self._commit_played_assistant(
+            turn_id,
+            played_audio_ms=max(0.0, played_audio_ms),
+            complete=False,
+        )
+        pending[1].set()
+        self._pending_clear_acks.pop(sequence, None)
+        return True
+
+    async def _settle_pending_clear_acks(self) -> None:
+        """Bound the ordering wait before the interrupting user turn reads history."""
+        for sequence, (turn_id, event) in list(self._pending_clear_acks.items()):
+            try:
+                await asyncio.wait_for(event.wait(), timeout=0.12)
+            except TimeoutError:
+                await self._commit_played_assistant(
+                    turn_id,
+                    played_audio_ms=0.0,
+                    complete=False,
+                )
+                event.set()
+            finally:
+                self._pending_clear_acks.pop(sequence, None)
+
+    async def handle_playback_drained(
+        self, *, turn_id: str, played_audio_ms: float
+    ) -> bool:
+        """Commit a normally drained turn and release the FSM to listening."""
+        if turn_id not in self._pending_assistant_turns:
+            return False
+        await self._commit_played_assistant(
+            turn_id,
+            played_audio_ms=max(0.0, played_audio_ms),
+            complete=True,
+        )
+        if self.fsm.can_transition(SessionEvent.TTS_DRAINED):
+            self.fsm.trigger(SessionEvent.TTS_DRAINED)
+        return True
+
+    async def _commit_played_assistant(
+        self,
+        turn_id: str,
+        *,
+        played_audio_ms: float,
+        complete: bool,
+    ) -> PlayedTextCommit:
+        result = self._turn_commit_tracker.commit(
+            turn_id,
+            played_audio_ms=played_audio_ms,
+            complete=complete,
+        )
+        metadata = self._pending_assistant_turns.pop(turn_id, None)
+        if self._active_playback_turn_id == turn_id:
+            self._active_playback_turn_id = None
+        if metadata is not None and result.text:
+            session_id, language = metadata
+            if self.on_transcript:
+                maybe = self.on_transcript("agent", result.text)
+                if asyncio.iscoroutine(maybe):
+                    await maybe
+            await self.redis_store.append_turn(
+                session_id,
+                {
+                    "speaker": "assistant",
+                    "text": result.text,
+                    "language": language,
+                    "playback_complete": result.complete,
+                },
+            )
+            start_ms = max(
+                0, int((time.monotonic() - self._session_start_monotonic) * 1000)
+            )
+            await self._persist_post_call_turn(
+                speaker="assistant",
+                text=result.text,
+                language=language,
+                start_ms=start_ms,
+                end_ms=start_ms + max(1, int(played_audio_ms)),
+            )
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is not None:
+            try:
+                await transport.send_control_event(
+                    ControlEventType.PLAYED_TEXT_COMMIT,
+                    {
+                        "turn_id": turn_id,
+                        "text": result.text,
+                        "played_audio_ms": result.played_audio_ms,
+                        "complete": result.complete,
+                    },
+                )
+            except Exception as exc:
+                logger.debug("Played-text commit notify failed", error=str(exc))
+        return result
+
+    async def _notify_audio_end(self, turn_id: str) -> None:
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is None:
+            return
+        try:
+            await asyncio.wait_for(self._egress_queue.join(), timeout=2.0)
+        except TimeoutError:
+            await self._emit_degraded_event(
+                "egress_drain_timeout",
+                {"turn_id": turn_id},
+            )
+            return
+        await transport.send_control_event(
+            "audio.end",
+            {
+                "turn_id": turn_id,
+                "generated_audio_ms": self._turn_commit_tracker.generated_audio_ms(
+                    turn_id
+                ),
+            },
+        )
+
+    async def _emit_degraded_event(self, kind: str, details: dict[str, Any]) -> None:
         session = self._ws_session
         transport = getattr(session, "transport", None) if session is not None else None
         if transport is None:
             return
         try:
             await transport.send_control_event(
-                ControlEventType.BARGE_IN, {"reason": reason}
+                ControlEventType.DEGRADED_MODE,
+                {"kind": kind, "recoverable": True, **details},
             )
-        except Exception as exc:
-            logger.debug("Client barge_in notify failed", error=str(exc))
+        except Exception:
+            pass
 
     async def _emit_latency_telemetry(self, waterfall: LatencyWaterfall) -> None:
-        """Broadcast live per-stage latency waterfall metrics to the client."""
+        """Broadcast the canonical versioned latency payload to the client."""
         session = self._ws_session
         transport = getattr(session, "transport", None) if session is not None else None
         if transport is None:
             return
         try:
-            total_e2e = waterfall.compute_e2e_latency()
-            if waterfall.stt_final_ms > 0 and waterfall.vad_end_of_speech_ms > 0:
-                raw_stt_diff = waterfall.stt_final_ms - waterfall.vad_end_of_speech_ms
-                stt_ms = min(raw_stt_diff, 800.0) if raw_stt_diff > 0 else 220.0
-            else:
-                stt_ms = 220.0
-
-            if waterfall.llm_ttft_ms > 0 and waterfall.stt_final_ms > 0:
-                llm_ttft_ms = max(0.0, waterfall.llm_ttft_ms - waterfall.stt_final_ms)
-            else:
-                llm_ttft_ms = 0.0
-
-            if waterfall.tts_ttfb_ms > 0 and waterfall.llm_ttft_ms > 0:
-                tts_ttfb_ms = max(0.0, waterfall.tts_ttfb_ms - waterfall.llm_ttft_ms)
-            elif waterfall.tts_ttfb_ms > 0 and waterfall.stt_final_ms > 0:
-                tts_ttfb_ms = max(0.0, waterfall.tts_ttfb_ms - waterfall.stt_final_ms)
-            else:
-                tts_ttfb_ms = 0.0
-
-            rag_ms = (
-                max(0.0, waterfall.rag_retrieve_ms - waterfall.stt_final_ms)
-                if (waterfall.rag_retrieve_ms > 0 and waterfall.stt_final_ms > 0)
-                else 0.0
-            )
-
-            if waterfall.playback_start_ms > 0 and waterfall.vad_end_of_speech_ms > 0:
-                total_e2e = max(total_e2e, waterfall.playback_start_ms - waterfall.vad_end_of_speech_ms)
-            elif total_e2e <= 0:
-                total_e2e = stt_ms + llm_ttft_ms + tts_ttfb_ms + 40.0
-
-            payload = {
-                "kind": "latency_waterfall",
-                "turn_id": str(waterfall.turn_id),
-                "stt_ms": round(stt_ms, 1),
-                "llm_ttft_ms": round(llm_ttft_ms, 1),
-                "tts_ttfb_ms": round(tts_ttfb_ms, 1),
-                "rag_ms": round(rag_ms, 1),
-                "total_e2e_ms": round(total_e2e, 1),
-                "breached": bool(total_e2e > 450.0),
-            }
-            await transport.send_control_event(ControlEventType.METRIC, payload)
+            payload = waterfall.to_metric_payload()
+            payload["population"] = self.latency_collector.percentile_summary()
+            await transport.send_control_event("metric.latency", payload)
         except Exception as exc:
             logger.debug("Failed to emit latency telemetry", error=str(exc))
 
@@ -415,6 +1014,24 @@ class PipelineOrchestrator:
         except Exception:
             pass
 
+    async def _emit_vad_state(self, *, speaking: bool, probability: float) -> None:
+        """Emit VAD transitions without enabling per-frame debug telemetry."""
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is None:
+            return
+        try:
+            await transport.send_control_event(
+                ControlEventType.METRIC,
+                {
+                    "kind": "vad_state",
+                    "speech": speaking,
+                    "probability": round(float(probability), 4),
+                },
+            )
+        except Exception as exc:
+            logger.debug("Failed to emit VAD state", error=str(exc))
+
     async def _run_barge_verify(self) -> None:
         """Pause → verify → commit or resume (Phase 4)."""
         engine = self._barge_verify
@@ -429,18 +1046,9 @@ class PipelineOrchestrator:
             self.resume_playback()
 
         async def _commit() -> None:
-            self.barge_in_controller._commit_barge_in(
+            await self.execute_immediate_barge_in(
                 reason="Barge verify sustained speech"
             )
-            # Unblock egress gate for the *next* turn (queue already flushed).
-            self.resume_playback()
-            await self._notify_client_barge_in()
-            if self._speech_capture is not None:
-                self._speech_capture.begin_capture()
-                self._capturing_speech = True
-            else:
-                self._capturing_speech = True
-            await self._maybe_start_live_stt()
 
         await engine.run(
             pause=_pause,
@@ -449,44 +1057,139 @@ class PipelineOrchestrator:
             is_speaking=lambda: bool(self.vad_adapter.is_speaking),
         )
 
-    async def execute_immediate_barge_in(self, reason: str = "VAD speech onset") -> None:
-        """Instant sub-100ms barge-in: cancel LLM/TTS, flush queues, notify client, transition FSM."""
-        logger.info("Executing immediate barge-in", reason=reason, state=str(self.fsm.state))
-        if self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
-            self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
-        self._llm_cancel.cancel()
-        self._tts_cancel.cancel()
-        self.three_point_cancel.execute_cancel_and_flush()
-        self._flush_egress_queue()
-        self.resume_playback()
-        await self._notify_client_barge_in(reason=reason)
-        self.barge_in_controller._commit_barge_in(reason=reason)
-        self._capturing_speech = True
-        await self._maybe_start_live_stt()
+    async def execute_immediate_barge_in(
+        self, reason: str = "VAD speech onset"
+    ) -> None:
+        """Atomically invalidate audio, clear the client, and stop turn producers."""
+        async with self._barge_lock:
+            turn_id = self._active_playback_turn_id or ""
+            if turn_id and turn_id in self._interrupted_turn_ids:
+                return
+            if turn_id:
+                self._interrupted_turn_ids.add(turn_id)
+            ucve_barge_in_total.inc()
+
+            logger.info(
+                "Executing immediate barge-in",
+                reason=reason,
+                state=str(self.fsm.state),
+                turn_id=turn_id or None,
+            )
+            if turn_id:
+                self.latency_collector.cancel_turn(
+                    UUID(turn_id),
+                    reason="barge_in",
+                )
+            if self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
+                self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
+
+            # Invalidate before any await so a sender-held chunk cannot escape.
+            self._egress_generation += 1
+            self.pause_playback()
+            self._flush_egress_queue()
+            await self._notify_client_barge_in(reason=reason)
+
+            self._llm_cancel.cancel()
+            self._tts_cancel.cancel()
+            if self._filler is not None:
+                self._filler.cancel()
+                self._filler = None
+            await self.three_point_cancel.cancel_and_wait()
+
+            if self.fsm.can_transition(SessionEvent.BARGE_CONFIRMED):
+                self.fsm.trigger(SessionEvent.BARGE_CONFIRMED)
+            self.barge_in_controller.committed_count += 1
+            self.resume_playback()
+            if self._speech_capture is not None:
+                self._speech_capture.begin_capture()
+            self._capturing_speech = True
+            await self._maybe_start_live_stt()
+
+    async def prepare_live_stt(self) -> str:
+        """Warm selected streaming STT before readiness with bounded startup."""
+        if not self.listening_config.enable_streaming_stt:
+            self._live_stt_status = "disabled"
+            return self._live_stt_status
+        if self._live_stt is not None and self._live_stt.is_live:
+            return "ready"
+        if self._live_stt_status == "batch_fallback":
+            return self._live_stt_status
+        async with self._live_stt_start_lock:
+            if self._live_stt is not None and self._live_stt.is_live:
+                return "ready"
+            max_attempts = max(
+                1,
+                self.listening_config.stt_reconnect_max_attempts,
+            )
+            if self._live_stt_attempts >= max_attempts:
+                self._live_stt_status = "failed"
+                return self._live_stt_status
+            cfg = (
+                getattr(self._ws_session, "config", None) if self._ws_session else None
+            )
+            language = getattr(cfg, "language", "en") if cfg else "en"
+            session = build_live_stt_session(
+                self._active_stt_id,
+                api_key=getattr(self.stt_provider, "api_key", None),
+                model=(
+                    self.bound_provider_chains.stt[0].identity.model
+                    if self.bound_provider_chains is not None
+                    else getattr(self.stt_provider, "model", None)
+                ),
+                language=language,
+                endpointing=self.listening_config.gladia_endpointing,
+                receive_partials=self.listening_config.gladia_receive_partials,
+            )
+            if session is None:
+                self._live_stt_status = "batch_fallback"
+                return self._live_stt_status
+            self._live_stt_attempts += 1
+            timeout = max(
+                0.001,
+                self.listening_config.stt_connect_timeout_ms / 1000.0,
+            )
+            try:
+                started = await asyncio.wait_for(session.start(), timeout=timeout)
+            except TimeoutError:
+                await session.close()
+                self._live_stt = None
+                self._live_stt_status = "timeout"
+                return self._live_stt_status
+            except Exception as exc:
+                await session.close()
+                self._live_stt = None
+                self._live_stt_status = "failed"
+                logger.warning("Live STT warm-up failed", error=str(exc))
+                return self._live_stt_status
+            if not started:
+                await session.close()
+                self._live_stt = None
+                self._live_stt_status = "batch_fallback"
+                return self._live_stt_status
+            self._live_stt = session
+            self._live_stt_status = "ready"
+            self._live_stt_generation += 1
+            generation = self._live_stt_generation
+            self._live_stt_task = asyncio.create_task(
+                self._consume_live_stt(session, generation)
+            )
+            return self._live_stt_status
 
     async def _maybe_start_live_stt(self) -> None:
-        if not self.listening_config.enable_streaming_stt:
-            return
-        if self._live_stt is not None and self._live_stt.is_live:
-            return
-        cfg = getattr(self._ws_session, "config", None) if self._ws_session else None
-        language = getattr(cfg, "language", "en") if cfg else "en"
-        session = GladiaLiveSTTSession(
-            language=language,
-            endpointing=self.listening_config.gladia_endpointing,
-            receive_partials=self.listening_config.gladia_receive_partials,
-        )
-        started = await session.start()
-        self._live_stt = session
-        if started:
-            self._live_stt_task = asyncio.create_task(self._consume_live_stt())
+        await self.prepare_live_stt()
 
-    async def _consume_live_stt(self) -> None:
-        session = self._live_stt
-        if session is None:
-            return
+    async def _consume_live_stt(
+        self,
+        session: BaseLiveSTTSession,
+        generation: int,
+    ) -> None:
         try:
             async for transcript in session.transcripts():
+                if (
+                    session is not self._live_stt
+                    or generation != self._live_stt_generation
+                ):
+                    return
                 text = (transcript.text or "").strip()
                 if not text:
                     continue
@@ -502,7 +1205,9 @@ class PipelineOrchestrator:
                     # Drive the turn immediately — do not wait for the next mic
                     # frame (silence/mute previously left finals stranded).
                     runner = self._ws_session
-                    enqueue = getattr(runner, "enqueue_voice_turn", None) if runner else None
+                    enqueue = (
+                        getattr(runner, "enqueue_voice_turn", None) if runner else None
+                    )
                     if enqueue is not None:
                         await enqueue(text)
                         self._live_final_text = ""
@@ -518,9 +1223,11 @@ class PipelineOrchestrator:
         except Exception as exc:
             logger.warning("Live STT consumer ended", error=str(exc))
             # Mark session dead so the next speech_start reconnects.
-            live = self._live_stt
-            if live is not None:
-                live._live = False  # type: ignore[attr-defined]
+            active_session = self._live_stt
+            if session is active_session and active_session is not None:
+                await active_session.close()
+                self._live_stt = None
+                self._live_stt_status = "failed"
 
     async def _maybe_speculate_rag(self, partial: str) -> None:
         if not self.listening_config.enable_rag_speculative:
@@ -528,14 +1235,30 @@ class PipelineOrchestrator:
         cfg = getattr(self._ws_session, "config", None) if self._ws_session else None
         if cfg is None:
             return
+        if (
+            len(cfg.knowledge_base_ids) != 1
+            or cfg.agent_config_version is None
+            or not cfg.session_plan_hash
+        ):
+            return
         try:
             tenant_uuid = parse_uuid(cfg.tenant_id, "tenant_id")
+            agent_uuid = parse_uuid(cfg.agent_id, "agent_id")
+            base_uuid = parse_uuid(cfg.knowledge_base_ids[0], "knowledge_base_id")
         except Exception:
             return
         try:
-            await self.speculative_rag.speculate(partial, tenant_uuid)
-        except Exception as exc:
-            logger.debug("RAG speculate skipped", error=str(exc))
+            await self.speculative_rag.speculate(
+                partial,
+                tenant_uuid,
+                agent_id=agent_uuid,
+                agent_config_version=cfg.agent_config_version,
+                knowledge_base_id=base_uuid,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("RAG speculation unavailable")
 
     async def _close_live_stt(self) -> None:
         task = self._live_stt_task
@@ -569,6 +1292,7 @@ class PipelineOrchestrator:
         """Run VAD / speech-capture; drive barge-verify and live STT when flagged."""
         agent_speaking = self.fsm.state in (
             SessionState.AGENT_SPEAKING,
+            SessionState.PROCESSING_INFERENCE,
             SessionState.BARGE_IN_VERIFY,
         )
         evt = await self._observe_frame(frame, agent_speaking=agent_speaking)
@@ -576,14 +1300,19 @@ class PipelineOrchestrator:
         if self._barge_verify is not None and self._barge_verify.is_verifying:
             self._barge_verify.note_vad(evt.probability)
 
-        if evt.speech_start and self.fsm.state == SessionState.AGENT_SPEAKING:
+        if evt.speech_start and self.fsm.state in (
+            SessionState.AGENT_SPEAKING,
+            SessionState.PROCESSING_INFERENCE,
+        ):
             if self._barge_verify is not None:
                 if self.fsm.can_transition(SessionEvent.VAD_SPEECH_START):
                     self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
                 if not self._barge_verify.is_verifying and (
                     self._barge_verify_task is None or self._barge_verify_task.done()
                 ):
-                    self._barge_verify_task = asyncio.create_task(self._run_barge_verify())
+                    self._barge_verify_task = asyncio.create_task(
+                        self._run_barge_verify()
+                    )
                 await self._emit_debug_listening(evt, frame)
                 return evt
             await self.execute_immediate_barge_in(reason="VAD speech during agent TTS")
@@ -595,32 +1324,48 @@ class PipelineOrchestrator:
                 self.fsm.trigger(SessionEvent.VAD_SPEECH_START)
             if self._speech_capture is None:
                 # Phase 0 quick win: do not clear buffer on onset (preserves lookback).
-                if not self._capturing_speech and not self.listening_config.enable_quick_wins:
+                if (
+                    not self._capturing_speech
+                    and not self.listening_config.enable_quick_wins
+                ):
                     self._speech_buffer = bytearray()
                 self._capturing_speech = True
             else:
                 self._capturing_speech = self._speech_capture.capturing
+            await self._emit_vad_state(speaking=True, probability=evt.probability)
             await self._maybe_start_live_stt()
 
-        capturing = self._capturing_speech or (
-            self._speech_capture is not None and self._speech_capture.capturing
-        ) or self.fsm.state in (
-            SessionState.USER_SPEAKING,
-            SessionState.BARGE_IN_INTERRUPTED,
+        capturing = (
+            self._capturing_speech
+            or (self._speech_capture is not None and self._speech_capture.capturing)
+            or self.fsm.state
+            in (
+                SessionState.USER_SPEAKING,
+                SessionState.BARGE_IN_INTERRUPTED,
+            )
         )
+
+        if capturing and evt.probability > 0.5:
+            self._last_acoustic_speech_ms = self.latency_hooks.now_ms()
 
         # Always stream mic audio into the live Gladia session while it is up.
         # Legacy agents keep one live socket for the whole call; gating only on
         # "capturing" dropped frames around VAD edges and starved STT.
+        sent_to_stt = False
         if frame.pcm16 and self._live_stt is not None and self._live_stt.is_live:
             if capturing or not agent_speaking:
                 await self._live_stt.send_audio(frame.pcm16)
+                sent_to_stt = True
 
         if capturing and frame.pcm16:
+            sent_to_stt = True
             if self._speech_capture is None:
                 max_buf = 512 * 1024
                 if len(self._speech_buffer) + len(frame.pcm16) <= max_buf:
                     self._speech_buffer.extend(frame.pcm16)
+
+        if sent_to_stt:
+            self._stt_audio_sec += frame.duration_ms / 1000.0
 
         if evt.speech_end:
             self._last_vad_speech_end_ms = time.monotonic() * 1000.0
@@ -643,11 +1388,14 @@ class PipelineOrchestrator:
             if not (self._live_stt is not None and self._live_stt.is_live):
                 if not self._live_final_text:
                     self._speech_end_pending = True
+            await self._emit_vad_state(speaking=False, probability=evt.probability)
 
         await self._emit_debug_listening(evt, frame)
         return evt
 
-    async def transcribe_speech_buffer(self, session_config: PipelineSessionConfig) -> str:
+    async def transcribe_speech_buffer(
+        self, session_config: PipelineSessionConfig
+    ) -> str:
         """Run STT on buffered mic audio after VAD speech_end (live final preferred)."""
         if self._live_final_text:
             text = self._live_final_text.strip()
@@ -672,10 +1420,34 @@ class PipelineOrchestrator:
             )
 
         cfg = STTConfig(language=session_config.language)
+
+        def _transcribe(route: Any) -> AsyncIterator[Any]:
+            adapter = self._route_adapter(route, self.stt_provider)
+            return cast(
+                AsyncIterator[Any], adapter.transcribe_stream(_audio_iter(), cfg)
+            )
+
         text = ""
-        async for transcript in self.stt_provider.transcribe_stream(_audio_iter(), cfg):
-            if transcript.text:
-                text = transcript.text
+        if self.bound_provider_chains is not None:
+            async for transcript in self.stt_router.stream_with_failover(
+                "stt",
+                session_config.language,
+                _transcribe,
+                deadlines=ProviderStreamDeadlines(
+                    first_item_seconds=15.0,
+                    idle_seconds=5.0,
+                    overall_seconds=30.0,
+                ),
+                is_committed=lambda item: bool(item.text),
+            ):
+                if transcript.text:
+                    text = transcript.text
+        else:
+            async for transcript in _transcribe("primary"):
+                if transcript.text:
+                    text = transcript.text
+        if text:
+            self._last_stt_final_ms = self.latency_hooks.now_ms()
         return text.strip()
 
     def resume_listening(self) -> None:
@@ -714,31 +1486,77 @@ class PipelineOrchestrator:
             self.fsm.trigger(SessionEvent.TTS_DRAINED)
 
     async def _synthesize_streaming(
-        self, sentences: list[str], session_config: PipelineSessionConfig, waterfall: Any
+        self,
+        sentences: list[str],
+        session_config: PipelineSessionConfig,
+        waterfall: Any,
     ) -> None:
         voice = session_config.tts_voice_id or "default"
+        turn_id = str(waterfall.turn_id)
+        generation = self._egress_generation
         ttfb_recorded = False
+        audio_committed = False
+        deadlines = ProviderStreamDeadlines(
+            first_item_seconds=max(
+                0.001, self.speaking_config.tts_first_chunk_timeout_ms / 1000
+            ),
+            idle_seconds=max(
+                0.001, self.speaking_config.tts_inter_chunk_timeout_ms / 1000
+            ),
+            overall_seconds=max(
+                0.001, self.speaking_config.tts_overall_timeout_ms / 1000
+            ),
+        )
         for sentence in sentences:
             if self._tts_cancel.is_cancelled or self.three_point_cancel.cancelled:
                 break
+            if turn_id in self._pending_assistant_turns:
+                self._turn_commit_tracker.start_segment(turn_id, sentence)
             cfg = TTSConfig(voice_id=voice, sample_rate=16000)
 
-            async def _invoke(_pid: str) -> bool:
-                async for chunk in self.tts_provider.synthesize_stream(
-                    sentence, cfg, cancellation_token=self._tts_cancel
-                ):
+            def _provider_stream(
+                route: Any,
+                sentence: str = sentence,
+                cfg: TTSConfig = cfg,
+            ) -> AsyncIterator[Any]:
+                adapter = self._route_adapter(route, self.tts_provider)
+                return cast(
+                    AsyncIterator[Any],
+                    adapter.synthesize_stream(
+                        sentence, cfg, cancellation_token=self._tts_cancel
+                    ),
+                )
+
+            source_rate: int | None = None
+            resampler: StreamingEgressResampler | None = None
+            try:
+                provider_stream = self.tts_router.stream_with_failover(
+                    "tts",
+                    session_config.language,
+                    _provider_stream,
+                    deadlines=deadlines,
+                    is_committed=lambda item: bool(item.pcm_data),
+                )
+                async for chunk in provider_stream:
                     if self._tts_cancel.is_cancelled:
                         break
                     if chunk.pcm_data:
-                        nonlocal ttfb_recorded
                         if not ttfb_recorded:
                             waterfall.tts_ttfb_ms = self.latency_hooks.now_ms()
                             ttfb_recorded = True
-                        pcm = chunk.pcm_data
-                        native = int(getattr(chunk, "native_sample_rate", 16000) or 16000)
-                        if native != 16000:
-                            pcm = EgressResampler.resample_to_16k(pcm, native)
-                        # Amplitude probe: separates silent vendor PCM from client playback bugs.
+                        native = int(
+                            getattr(chunk, "native_sample_rate", 16000) or 16000
+                        )
+                        if source_rate is None:
+                            source_rate = native
+                            resampler = StreamingEgressResampler(native, 16000)
+                        elif native != source_rate:
+                            raise ValueError(
+                                "TTS sample rate changed inside one speech chunk."
+                            )
+                        assert resampler is not None
+                        pcm = resampler.process(chunk.pcm_data)
+                        # Separates silent vendor PCM from client playback bugs.
                         if getattr(self, "_tts_pcm_logged", 0) < 3 and len(pcm) >= 4:
                             import struct
 
@@ -751,30 +1569,96 @@ class PipelineOrchestrator:
                                 native_hz=native,
                                 peak_abs=peak,
                             )
-                            self._tts_pcm_logged = getattr(self, "_tts_pcm_logged", 0) + 1
-                        await self._emit_audio(pcm, waterfall)
-                return True
-
-            try:
-                await self.failover_router.call_with_failover(
-                    "tts", session_config.language, _invoke, first_chunk_timeout=15.0
+                            self._tts_pcm_logged = (
+                                getattr(self, "_tts_pcm_logged", 0) + 1
+                            )
+                        if pcm:
+                            self._tts_audio_sec += len(pcm) / (2 * 16000)
+                            await self._emit_audio(
+                                pcm,
+                                waterfall,
+                                generation=generation,
+                            )
+                            audio_committed = True
+                if resampler is None and not self._tts_cancel.is_cancelled:
+                    raise ValueError("TTS provider completed without audio.")
+                if resampler is not None and not self._tts_cancel.is_cancelled:
+                    tail = resampler.flush()
+                    if tail:
+                        self._tts_audio_sec += len(tail) / (2 * 16000)
+                        await self._emit_audio(
+                            tail,
+                            waterfall,
+                            generation=generation,
+                        )
+                        audio_committed = True
+            except Exception as exc:
+                logger.error(
+                    "TTS stream failed",
+                    error_type=type(exc).__name__,
+                    audio_committed=audio_committed,
                 )
-            except Exception:
-                null = NullTTSProvider()
-                async for chunk in null.synthesize_stream(sentence, cfg):
-                    if chunk.pcm_data:
-                        await self._emit_audio(chunk.pcm_data, waterfall)
+                if audio_committed:
+                    await self._emit_tts_interruption("provider_stream_failed")
+                    return
+                await self._emit_tts_interruption("tts_unavailable")
+                return
 
-    async def run_turn(self, session_config: PipelineSessionConfig, user_text: str) -> str:
+    async def _emit_tts_interruption(self, reason: str) -> None:
+        """Tell capable clients that committed speech ended unexpectedly."""
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is None:
+            return
+        try:
+            await transport.send_control_event(
+                ControlEventType.DEGRADED_MODE,
+                {
+                    "kind": "tts_interrupted",
+                    "recoverable": True,
+                    "reason": reason[:160],
+                },
+            )
+        except Exception as exc:
+            logger.debug("Client TTS interruption notify failed", error=str(exc))
+
+    async def _emit_rag_degraded(self, outcome: RetrievalOutcome) -> None:
+        """Expose a safe retrieval status without document or query content."""
+        session = self._ws_session
+        transport = getattr(session, "transport", None) if session is not None else None
+        if transport is None:
+            return
+        try:
+            await transport.send_control_event(
+                ControlEventType.DEGRADED_MODE,
+                {
+                    "kind": "knowledge_retrieval",
+                    "recoverable": True,
+                    "status": outcome.status,
+                    "category": outcome.error_category,
+                },
+            )
+        except Exception:
+            logger.debug("Client RAG degradation notify failed")
+
+    async def run_turn(
+        self, session_config: PipelineSessionConfig, user_text: str
+    ) -> str:
         """Execute one STT→RAG→LLM/Tool→norm→TTS turn with latency tracing."""
+        await self._settle_pending_clear_acks()
         turn_start = time.monotonic()
         self._turn_starts.append(turn_start)
         self._playback_started = False
+        self._egress_queue.reset_metrics()
         self._tts_pcm_logged = 0
         self._tts_cancel = AsyncioCancellationToken()
         self._llm_cancel = AsyncioCancellationToken()
         self.three_point_cancel.reset()
         self.three_point_cancel.register_flush_callback(self._flush_egress_queue)
+        current_turn_task = asyncio.current_task()
+        if current_turn_task is not None:
+            self._llm_task = current_turn_task
+            self.three_point_cancel.register_task(current_turn_task)
 
         interrupted = self.barge_in_controller.next_turn_input()
         if interrupted:
@@ -789,22 +1673,27 @@ class PipelineOrchestrator:
                 user_text = str(redacted[0].get("text") or user_text)
 
         waterfall = self.latency_hooks.start_turn(
-            _metric_session_uuid(session_config.session_id)
+            _metric_session_uuid(session_config.session_id),
+            acoustic_end_ms=self._last_acoustic_speech_ms or None,
+            vad_end_ms=self._last_vad_speech_end_ms or None,
         )
-        if self._last_vad_speech_end_ms > 0:
-            waterfall.vad_end_of_speech_ms = self._last_vad_speech_end_ms
-            self._last_vad_speech_end_ms = 0.0
+        self._active_latency_turn_id = waterfall.turn_id
+        turn_id = str(waterfall.turn_id)
+        ObservabilityContext.bind(turn_id=turn_id)
+        self._active_playback_turn_id = turn_id
+        self._turn_commit_tracker.begin_turn(turn_id)
+        self._pending_assistant_turns[turn_id] = (
+            session_config.session_id,
+            session_config.language,
+        )
+        self._last_acoustic_speech_ms = 0.0
+        self._last_vad_speech_end_ms = 0.0
         if self._last_stt_final_ms > 0:
             waterfall.stt_final_ms = self._last_stt_final_ms
             self._last_stt_final_ms = 0.0
-        else:
-            waterfall.stt_final_ms = self.latency_hooks.now_ms()
-
-        if waterfall.vad_end_of_speech_ms <= 0:
-            waterfall.vad_end_of_speech_ms = max(0.0, waterfall.stt_final_ms - 220.0)
-        self._current_waterfall = waterfall
         sc = self.speaking_config
         self.apply_language_vad_overrides(session_config.language)
+        runtime_tools = await self._configure_lifecycle_tools(session_config)
 
         try:
             policy = TenantComplianceProfileLoader.load_effective_policy(
@@ -831,12 +1720,22 @@ class PipelineOrchestrator:
             session_config.session_id,
             {"speaker": "user", "text": user_text, "language": session_config.language},
         )
+        user_start_ms = max(
+            0, int((time.monotonic() - self._session_start_monotonic) * 1000)
+        )
+        await self._persist_post_call_turn(
+            speaker="user",
+            text=user_text,
+            language=session_config.language,
+            start_ms=user_start_ms,
+            end_ms=user_start_ms + 1,
+        )
         if self.fsm.state == SessionState.CONNECTING:
             self.fsm.trigger(SessionEvent.SESSION_ADMITTED)
-        elif self.fsm.state == SessionState.AGENT_SPEAKING:
+        elif self.fsm.state == SessionState.AGENT_SPEAKING and self._ws_session is None:
             self.fsm.trigger(SessionEvent.TTS_DRAINED)
         elif self.fsm.state == SessionState.BARGE_IN_INTERRUPTED:
-            # Interrupted turn already in PROCESSING via VAD_SPEECH_END or stays until STT_FINAL.
+            # Interrupted turn is already processing or remains until STT final.
             pass
 
         if self.fsm.state == SessionState.LISTENING:
@@ -845,40 +1744,85 @@ class PipelineOrchestrator:
             if self.fsm.can_transition(SessionEvent.STT_FINAL):
                 self.fsm.trigger(SessionEvent.STT_FINAL)
 
-        rag_context = ""
+        rag_chunks = []
         try:
             tenant_uuid = parse_uuid(session_config.tenant_id, "tenant_id")
         except UCVEError:
             if len(session_config.tenant_id) >= 35:
                 raise
             tenant_uuid = None
-        if tenant_uuid is not None:
+        if tenant_uuid is not None and session_config.knowledge_base_ids:
             try:
-                rag_chunks = await self.speculative_rag.reconcile(user_text, tenant_uuid)
+                agent_uuid = parse_uuid(session_config.agent_id, "agent_id")
+                retrieval = await self.rag_context.retrieve(
+                    query=user_text,
+                    tenant_id=tenant_uuid,
+                    agent_id=agent_uuid,
+                    agent_config_version=session_config.agent_config_version or 0,
+                    plan_hash=session_config.session_plan_hash or "",
+                    knowledge_base_ids=session_config.knowledge_base_ids,
+                )
                 waterfall.rag_retrieve_ms = self.latency_hooks.now_ms()
-                if rag_chunks:
-                    rag_context = "\n".join(
-                        f"[Knowledge DATA]: {c.text}" for c in rag_chunks
+                waterfall.rag_status = retrieval.status
+                waterfall.rag_result_count = retrieval.result_count
+                waterfall.rag_cache_hit = retrieval.cache_hit
+                waterfall.rag_soft_budget_exceeded = retrieval.soft_budget_exceeded
+                waterfall.rag_error_category = retrieval.error_category
+                rag_chunks = retrieval.chunks
+                if retrieval.error_category is not None:
+                    logger.warning(
+                        "RAG retrieval degraded", category=retrieval.error_category
                     )
-            except Exception as exc:
-                logger.warning("RAG retrieval skipped", error=str(exc))
+                    await self._emit_rag_degraded(retrieval)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                waterfall.rag_retrieve_ms = self.latency_hooks.now_ms()
+                waterfall.rag_status = "error"
+                waterfall.rag_error_category = "runtime_retrieval_error"
+                logger.warning(
+                    "RAG retrieval degraded", category="runtime_retrieval_error"
+                )
 
         prompt_str = (
             getattr(session_config, "system_prompt", None) or ""
         ).strip() or "You are a helpful voice agent."
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": f"{prompt_str}\n{rag_context}".strip()},
-        ]
-        # Multi-turn Redis history (Phase 7) — last 12 speaker turns.
-        for turn in prior_turns[-12:]:
-            speaker = (turn.get("speaker") or "user").lower()
-            role = "assistant" if speaker in ("agent", "assistant") else "user"
-            content = (turn.get("text") or "").strip()
-            if content:
-                messages.append({"role": role, "content": content})
-        messages.append({"role": "user", "content": user_text})
+        messages = build_prompt_messages(
+            system_prompt=prompt_str,
+            prior_turns=prior_turns,
+            user_text=user_text,
+            chunks=rag_chunks,
+        )
 
-        async def _run_tool_with_filler(tool_name: str, arguments: dict[str, Any]) -> str:
+        executed_tool_calls: set[str] = set()
+        tool_call_count = 0
+        tool_deadline = time.monotonic() + 12.0
+
+        async def _run_tool_with_filler(
+            tool_name: str,
+            arguments: dict[str, Any],
+            *,
+            call_id: str | None = None,
+        ) -> dict[str, Any] | None:
+            nonlocal tool_call_count
+            if tool_call_count >= 5 or time.monotonic() >= tool_deadline:
+                return None
+            canonical_arguments = json.dumps(
+                arguments,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+            signature = f"signature:{tool_name}:{canonical_arguments}"
+            identities = {signature}
+            if call_id:
+                identities.add(f"id:{call_id}")
+            if executed_tool_calls.intersection(identities):
+                logger.warning("Duplicate tool call suppressed", tool=tool_name)
+                return None
+            executed_tool_calls.update(identities)
+            tool_call_count += 1
+
             filler_phrase: list[str] = []
 
             def _on_filler(phrase: str) -> None:
@@ -893,7 +1837,20 @@ class PipelineOrchestrator:
             try:
                 if self.fsm.can_transition(SessionEvent.TOOL_CALL_START):
                     self.fsm.trigger(SessionEvent.TOOL_CALL_START)
-                tool_res = await self.tool_handler.handle_tool_call(tool_name, arguments)
+                remaining = max(0.001, tool_deadline - time.monotonic())
+                idempotency_key = (
+                    f"{session_config.session_id}:{waterfall.turn_id}:{call_id}"
+                    if call_id
+                    else None
+                )
+                tool_res = await asyncio.wait_for(
+                    self.tool_handler.handle_tool_call(
+                        tool_name,
+                        arguments,
+                        idempotency_key=idempotency_key,
+                    ),
+                    timeout=remaining,
+                )
                 if self.fsm.can_transition(SessionEvent.TOOL_RESULT):
                     self.fsm.trigger(SessionEvent.TOOL_RESULT)
             finally:
@@ -901,97 +1858,129 @@ class PipelineOrchestrator:
                     self._filler.cancel()
                     self._filler = None
             if filler_phrase:
-                await self._finish_turn_tts(filler_phrase[:1], session_config, waterfall)
-            return str(tool_res.get("content", "Tool executed."))
+                await self._finish_turn_tts(
+                    filler_phrase[:1], session_config, waterfall
+                )
+            return tool_res
 
         if user_text.startswith("tool:"):
             tool_name = user_text.split(":", 1)[1].strip()
-            normalized = await _run_tool_with_filler(tool_name, {})
-            await self._finish_turn_tts([normalized], session_config, waterfall)
+            direct_result = await _run_tool_with_filler(tool_name, {})
+            normalized = (
+                f"Tool {tool_name} completed."
+                if direct_result and not direct_result.get("is_error")
+                else f"Tool {tool_name} could not be completed."
+            )
+            if normalized:
+                await self._finish_turn_tts([normalized], session_config, waterfall)
         else:
-            default_m = "gemini-2.5-flash" if self._active_llm_id == "gemini" else "openai/gpt-oss-120b"
-            model = getattr(session_config, "llm_model", None) or getattr(self, "_active_llm_model", None) or default_m
-            llm_cfg = LLMConfig(model=model)
+            default_m = (
+                "gemini-2.5-flash"
+                if self._active_llm_id == "gemini"
+                else "openai/gpt-oss-120b"
+            )
+            model = (
+                getattr(session_config, "llm_model", None)
+                or getattr(self, "_active_llm_model", None)
+                or default_m
+            )
+            llm_cfg = LLMConfig(model=model, tools=runtime_tools)
             reply_parts: list[str] = []
             ttft_recorded = False
             chunker_recorded = False
-            stream_buffer = ""
             pending_tool_calls: list[dict[str, Any]] = []
-            # Queue-based TTS: stream sentence-level audio continuously
-            tts_q: asyncio.Queue[str | None] = asyncio.Queue()
-            spoken_chars = 0
-            first_phrase_emitted = False
+            speech_chunker = StreamingSpeechChunker.for_language(
+                session_config.language,
+                first_chunk_words_override=sc.chunker_first_words,
+                min_chunk_words=sc.chunker_min_words,
+            )
+            tts_q: asyncio.Queue[tuple[str, float] | None] = asyncio.Queue(
+                maxsize=SENTENCE_BRIDGE_POLICY.maxsize
+            )
+            tts_queue_high_water = 0
+            tts_queue_max_age_ms = 0.0
 
             async def _consume_tts_queue() -> None:
+                nonlocal tts_queue_max_age_ms
                 while True:
                     item = await tts_q.get()
                     if item is None:
                         return
-                    await self._synthesize_streaming(
-                        [item], session_config, waterfall
+                    text, enqueued_at = item
+                    tts_queue_max_age_ms = max(
+                        tts_queue_max_age_ms,
+                        (time.monotonic() - enqueued_at) * 1000,
                     )
+                    await self._synthesize_streaming([text], session_config, waterfall)
 
-            def _clean_speech_piece(p: str) -> str:
-                # Strip orphan leading/trailing punctuation scraps like ", ", "- ", "; ", "— "
-                return re.sub(r"^[\s,;:—\-\.\!\?]+|[\s,;:—\-]+$", "", p).strip()
-
-            def _enqueue_stable_speech(*, final: bool = False) -> None:
-                nonlocal spoken_chars, chunker_recorded, stream_buffer, first_phrase_emitted
-                pending = stream_buffer[spoken_chars:]
-                if not pending.strip():
-                    return
-                pieces: list[str] = []
-
-                if final:
-                    tail = _clean_speech_piece(pending)
-                    if tail:
-                        pieces.append(tail)
-                else:
-                    # Look for complete sentences first (. ! ?)
-                    while True:
-                        sent_match = re.search(r"^(.*?[\.\!\?]+)(?:\s+|$)", pending, flags=re.S)
-                        if sent_match:
-                            candidate = sent_match.group(1)
-                            clean = _clean_speech_piece(candidate)
-                            if clean:
-                                pieces.append(clean)
-                                first_phrase_emitted = True
-                            # Advance pending past this sentence
-                            pending = pending[sent_match.end():]
-                        else:
-                            break
-
-                    # If no sentence boundary yet, but first phrase is long (>9 words) with a natural pause
-                    if not first_phrase_emitted and not pieces:
-                        words = pending.split()
-                        if len(words) >= 9:
-                            clause_match = re.search(r"^(.*?[\,\;\—\:])(?:\s+|$)", pending, flags=re.S)
-                            if clause_match and len(clause_match.group(1).split()) >= 5:
-                                clean = _clean_speech_piece(clause_match.group(1))
-                                if clean:
-                                    pieces.append(clean)
-                                    first_phrase_emitted = True
-
-                for piece in pieces:
+            async def _enqueue_speech_chunks(chunks: list[Any]) -> None:
+                nonlocal chunker_recorded, tts_queue_high_water
+                for speech_chunk in chunks:
+                    normalized_chunk = self.normalizer.normalize(
+                        speech_chunk.text, language=session_config.language
+                    )
+                    piece = getattr(normalized_chunk, "text", "").strip()
                     if not piece:
                         continue
-                    idx = stream_buffer.find(piece, spoken_chars)
-                    if idx < 0:
-                        spoken_chars = len(stream_buffer)
-                    else:
-                        spoken_chars = idx + len(piece)
                     if not chunker_recorded:
                         waterfall.chunker_ms = self.latency_hooks.now_ms()
                         chunker_recorded = True
-                    tts_q.put_nowait(piece)
+                    while True:
+                        if tts_consumer.done():
+                            await tts_consumer
+                        try:
+                            await asyncio.wait_for(
+                                tts_q.put((piece, time.monotonic())), timeout=0.1
+                            )
+                            break
+                        except TimeoutError:
+                            if self._llm_cancel.is_cancelled:
+                                raise asyncio.CancelledError() from None
+                    tts_queue_high_water = max(tts_queue_high_water, tts_q.qsize())
 
-            async def _stream_llm(_pid: str) -> bool:
-                nonlocal ttft_recorded, stream_buffer, pending_tool_calls
-                async for chunk in self.llm_provider.generate_stream(
-                    messages, llm_cfg, cancellation_token=self._llm_cancel
-                ):
+            def _stream_llm(route: Any) -> AsyncIterator[Any]:
+                adapter = self._route_adapter(route, self.llm_provider)
+                return cast(
+                    AsyncIterator[Any],
+                    adapter.generate_stream(
+                        messages, llm_cfg, cancellation_token=self._llm_cancel
+                    ),
+                )
+
+            async def _consume_llm_stream() -> None:
+                nonlocal ttft_recorded, pending_tool_calls
+                stream = self.llm_router.stream_with_failover(
+                    "llm",
+                    session_config.language,
+                    _stream_llm,
+                    deadlines=ProviderStreamDeadlines(
+                        first_item_seconds=10.0,
+                        idle_seconds=10.0,
+                        overall_seconds=60.0,
+                    ),
+                    is_committed=lambda item: bool(item.text or item.tool_calls),
+                )
+                async for chunk in stream:
                     if self._llm_cancel.is_cancelled:
                         break
+                    if chunk.total_tokens is not None:
+                        await self.usage_meter.arecord(
+                            session_config.tenant_id,
+                            session_config.session_id,
+                            LLM_TOKENS,
+                            float(chunk.total_tokens),
+                            event_key=(
+                                f"{session_config.session_id}:llm_tokens:"
+                                f"{waterfall.turn_id}"
+                            ),
+                            unit="tokens",
+                            provider_id=chunk.provider_id or self._active_llm_id,
+                            provider_request_id=chunk.provider_request_id,
+                            metadata={
+                                "prompt_tokens": chunk.prompt_tokens,
+                                "completion_tokens": chunk.completion_tokens,
+                            },
+                        )
                     if not ttft_recorded:
                         waterfall.llm_ttft_ms = self.latency_hooks.now_ms()
                         ttft_recorded = True
@@ -1001,75 +1990,170 @@ class PipelineOrchestrator:
                         pending_tool_calls.extend(chunk.tool_calls)
                     if chunk.text:
                         reply_parts.append(chunk.text)
-                        stream_buffer += chunk.text
-                        _enqueue_stable_speech(final=False)
-                return True
+                        await _enqueue_speech_chunks(speech_chunker.push(chunk.text))
 
             tts_consumer = asyncio.create_task(_consume_tts_queue())
             self._tts_task = tts_consumer
             self.three_point_cancel.register_task(tts_consumer)
 
             try:
-                await self.failover_router.call_with_failover(
-                    "llm", session_config.language, _stream_llm, first_chunk_timeout=20.0
+                await _consume_llm_stream()
+            except ProviderStreamInterruptedError as exc:
+                await tts_q.put(None)
+                await tts_consumer
+                logger.error(
+                    "LLM stream interrupted after output commit",
+                    provider=exc.failure.provider_id,
+                    category=exc.failure.category.value,
+                    committed_items=exc.committed_items,
                 )
+                raise
             except Exception as exc:
-                logger.error("LLM provider chain failed; using offline mock", error=str(exc))
+                if not self._synthetic_provider_reply_allowed():
+                    await tts_q.put(None)
+                    await tts_consumer
+                    logger.error(
+                        "LLM provider chain exhausted",
+                        error_type=type(exc).__name__,
+                    )
+                    raise
+                logger.error(
+                    "LLM provider chain failed; using offline mock",
+                    error_type=type(exc).__name__,
+                )
                 user = next(
-                    (m["content"] for m in reversed(messages) if m.get("role") == "user"),
+                    (
+                        m["content"]
+                        for m in reversed(messages)
+                        if m.get("role") == "user"
+                    ),
                     "",
                 )
                 fallback = f"I heard you say: {user}. How can I help you today?"
-                reply_parts.append(fallback)
-                stream_buffer = fallback
+                fallback_delta = (" " if reply_parts else "") + fallback
+                reply_parts.append(fallback_delta)
+                await _enqueue_speech_chunks(speech_chunker.push(fallback_delta))
 
-            if pending_tool_calls and sc.enable_tool_loop:
-                for tc in pending_tool_calls:
-                    name = str(tc.get("function", {}).get("name") or tc.get("name") or "").strip()
-                    raw_args = tc.get("function", {}).get("arguments") or tc.get("arguments") or {}
+            tool_rounds = 0
+            while (
+                pending_tool_calls
+                and sc.enable_tool_loop
+                and tool_rounds < 3
+                and tool_call_count < 5
+                and time.monotonic() < tool_deadline
+            ):
+                tool_rounds += 1
+                current_calls = pending_tool_calls
+                pending_tool_calls = []
+                assistant_calls: list[dict[str, Any]] = []
+                tool_messages: list[dict[str, Any]] = []
+                for index, tc in enumerate(current_calls):
+                    if tool_call_count >= 5 or time.monotonic() >= tool_deadline:
+                        break
+                    function = tc.get("function") or {}
+                    name = str(function.get("name") or tc.get("name") or "").strip()
+                    raw_args = function.get("arguments") or tc.get("arguments") or {}
                     if isinstance(raw_args, str):
                         try:
-                            arguments = json.loads(raw_args) if raw_args else {}
-                        except Exception:
+                            parsed = json.loads(raw_args) if raw_args else {}
+                            arguments = parsed if isinstance(parsed, dict) else {}
+                        except (TypeError, ValueError, json.JSONDecodeError):
                             arguments = {}
                     else:
-                        arguments = dict(raw_args) if raw_args else {}
-                    if name:
-                        tool_text = await _run_tool_with_filler(name, arguments)
-                        reply_parts.append(tool_text)
-                        stream_buffer += (" " + tool_text)
+                        arguments = dict(raw_args) if isinstance(raw_args, dict) else {}
+                    if not name:
+                        continue
+                    call_id = str(tc.get("id") or f"tool-{tool_rounds}-{index}")
+                    tool_result = await _run_tool_with_filler(
+                        name, arguments, call_id=call_id
+                    )
+                    if tool_result is None:
+                        continue
+                    assistant_calls.append(
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": json.dumps(
+                                    arguments, separators=(",", ":"), sort_keys=True
+                                ),
+                            },
+                        }
+                    )
+                    tool_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "name": name,
+                            "content": str(tool_result.get("content", "")),
+                        }
+                    )
+                if not tool_messages:
+                    break
+                messages.append(
+                    {"role": "assistant", "content": "", "tool_calls": assistant_calls}
+                )
+                messages.extend(tool_messages)
+                await _consume_llm_stream()
 
-            _enqueue_stable_speech(final=True)
+            await _enqueue_speech_chunks(speech_chunker.flush())
             await tts_q.put(None)
             try:
                 await tts_consumer
             except asyncio.CancelledError:
                 raise
+            logger.info(
+                "TTS text queue drained",
+                high_water=tts_queue_high_water,
+                max_age_ms=round(tts_queue_max_age_ms, 2),
+                egress_high_water=self._egress_queue.high_watermark,
+            )
 
             normalized = "".join(reply_parts) or "OK"
-            norm_result = self.normalizer.normalize(normalized, language=session_config.language)
+            norm_result = self.normalizer.normalize(
+                normalized, language=session_config.language
+            )
             normalized = getattr(norm_result, "text", None) or str(norm_result)
 
-        if self.on_transcript:
-            maybe = self.on_transcript("agent", normalized)
-            if asyncio.iscoroutine(maybe):
-                await maybe
+        if self._ws_session is None:
+            await self._commit_played_assistant(
+                turn_id,
+                played_audio_ms=self._turn_commit_tracker.generated_audio_ms(turn_id),
+                complete=True,
+            )
+        else:
+            await self._notify_audio_end(turn_id)
 
-        await self.redis_store.append_turn(
-            session_config.session_id,
-            {
-                "speaker": "assistant",
-                "text": normalized,
-                "language": session_config.language,
-            },
-        )
+        await self._complete_pending_lifecycle()
 
         self.latency_collector.record_turn(waterfall)
         await self._emit_latency_telemetry(waterfall)
-        if self.fsm.can_transition(SessionEvent.TTS_DRAINED):
+        if self._active_latency_turn_id == waterfall.turn_id:
+            self._active_latency_turn_id = None
+        if self._ws_session is None and self.fsm.can_transition(
+            SessionEvent.TTS_DRAINED
+        ):
             self.fsm.trigger(SessionEvent.TTS_DRAINED)
         self._turn_ends.append(time.monotonic())
         return normalized
+
+    async def run_greeting(
+        self, session_config: PipelineSessionConfig, phrase: str
+    ) -> None:
+        """Speak a synthetic greeting with a correlated, non-E2E latency trace."""
+        self._playback_started = False
+        waterfall = self.latency_hooks.start_turn(
+            _metric_session_uuid(session_config.session_id)
+        )
+        self._active_latency_turn_id = waterfall.turn_id
+        try:
+            await self._finish_turn_tts([phrase], session_config, waterfall)
+        finally:
+            self.latency_collector.record_turn(waterfall)
+            await self._emit_latency_telemetry(waterfall)
+            if self._active_latency_turn_id == waterfall.turn_id:
+                self._active_latency_turn_id = None
 
     async def _finish_turn_tts(
         self,
@@ -1091,24 +2175,7 @@ class PipelineOrchestrator:
             return
         self._finalized_once = True
 
-        if self._egress_sender_task and not self._egress_sender_task.done():
-            self._egress_sender_task.cancel()
-            try:
-                await self._egress_sender_task
-            except asyncio.CancelledError:
-                pass
-
-        await self._close_live_stt()
-        if self._vad_worker is not None:
-            self._vad_worker.shutdown()
-            self._vad_worker = None
-
-        for provider in (self.llm_provider, self.tts_provider, self.stt_provider):
-            close_fn = getattr(provider, "aclose", None)
-            if close_fn:
-                maybe = close_fn()
-                if asyncio.iscoroutine(maybe):
-                    await maybe
+        await self.shutdown_runtime_resources()
 
         if self.fsm.can_transition(SessionEvent.DISCONNECT):
             self.fsm.trigger(SessionEvent.DISCONNECT)
@@ -1118,36 +2185,71 @@ class PipelineOrchestrator:
             raw_turns, RedactionPolicy(redact_pii_in_transcript=True)
         )
         duration = max(0.01, time.monotonic() - self._started_at)
-        self.usage_meter.record(
+        await self.usage_meter.arecord(
             session_config.tenant_id,
             session_config.session_id,
-            "agent_sec",
+            AGENT_SEC,
             duration,
+            event_key=f"{session_config.session_id}:agent_sec:final",
+            unit="seconds",
+        )
+        await self.usage_meter.arecord(
+            session_config.tenant_id,
+            session_config.session_id,
+            STT_SEC,
+            self._stt_audio_sec,
+            event_key=f"{session_config.session_id}:stt_sec:final",
+            unit="seconds",
+            provider_id=self._active_stt_id,
+        )
+        await self.usage_meter.arecord(
+            session_config.tenant_id,
+            session_config.session_id,
+            TTS_SEC,
+            self._tts_audio_sec,
+            event_key=f"{session_config.session_id}:tts_sec:final",
+            unit="seconds",
+            provider_id=self._active_tts_id,
         )
 
+        record_created = False
         try:
-            diarized = self._build_diarized_turns(redacted_turns)
-            now_utc = datetime.now(timezone.utc)
-            from post_call.models.recording import CallRecording
-
-            record = CallRecord(
-                tenant_id=parse_uuid(session_config.tenant_id, "tenant_id"),
-                agent_id=parse_uuid(session_config.agent_id, "agent_id"),
-                session_id=parse_uuid(session_config.session_id, "session_id"),
-                caller_id=getattr(session_config.caller_id, "from_number", None),
-                compliance_tier=session_config.compliance_tier,
-                started_at=now_utc,
-                ended_at=now_utc,
-                turns=diarized,
-                recording=CallRecording(
-                    recording_s3_uri=f"s3://ucve-recordings/{session_config.session_id}.wav",
-                    dual_channel=True,
-                    duration_sec=duration,
+            if not self._post_call_started:
+                await self.start_session_record(session_config)
+            recording_requested = (
+                session_config.recording_enabled
+                and session_config.recording_consent_obtained
+            )
+            await self.post_call_pipeline.finalize_session(
+                tenant_id=_post_call_uuid(session_config.tenant_id, "tenant_id"),
+                session_id=_post_call_uuid(session_config.session_id, "session_id"),
+                ended_at=datetime.now(UTC),
+                end_reason=self._session_end_reason,
+                disposition=CallDisposition(self._session_disposition),
+                metrics_snapshot={
+                    "duration_seconds": duration,
+                    "turn_count": len(redacted_turns),
+                },
+                usage_snapshot={
+                    "agent_sec": duration,
+                    "stt_sec": self._stt_audio_sec,
+                    "tts_sec": self._tts_audio_sec,
+                    **self._transport_usage_snapshot,
+                },
+                recording_state=(
+                    RecordingState.FAILED
+                    if recording_requested
+                    else RecordingState.NOT_REQUESTED
+                ),
+                recording_error_code=(
+                    "recording_capture_unavailable" if recording_requested else None
                 ),
             )
-            await self.post_call_pipeline.enqueue(record)
+            record_created = True
         except UCVEError as exc:
-            logger.warning("Skipped PostCallRecord (identity validation)", error=str(exc))
+            logger.warning(
+                "Skipped PostCallRecord (identity validation)", error=str(exc)
+            )
         except Exception as exc:
             logger.warning("Failed to enqueue PostCallRecord", error=str(exc))
 
@@ -1156,26 +2258,27 @@ class PipelineOrchestrator:
         if hasattr(self.latency_collector, "clear_session"):
             self.latency_collector.clear_session()
 
-        self.audit_writer.record(
-            tenant_id=session_config.tenant_id,
-            action="call_record_created",
-            resource_type="session",
-            resource_id=session_config.session_id,
-            detail={"turn_count": len(redacted_turns)},
-        )
+        if record_created:
+            await self.audit_writer.arecord(
+                tenant_id=session_config.tenant_id,
+                action="call_record_created",
+                resource_type="session",
+                resource_id=session_config.session_id,
+                detail={"turn_count": len(redacted_turns)},
+            )
         logger.info(
             "Pipeline session terminated cleanly", session_id=session_config.session_id
         )
 
-    def _build_diarized_turns(
-        self, turns: list[dict[str, Any]]
-    ) -> list[DiarizedTurn]:
+    def _build_diarized_turns(self, turns: list[dict[str, Any]]) -> list[DiarizedTurn]:
         base_ms = int((self._session_start_monotonic - self._started_at) * 1000)
         out: list[DiarizedTurn] = []
         for i, t in enumerate(turns):
             start = base_ms
             if i < len(self._turn_starts):
-                start = int((self._turn_starts[i] - self._session_start_monotonic) * 1000)
+                start = int(
+                    (self._turn_starts[i] - self._session_start_monotonic) * 1000
+                )
             end = start + 1000
             if i < len(self._turn_ends):
                 end = int((self._turn_ends[i] - self._session_start_monotonic) * 1000)
@@ -1198,10 +2301,15 @@ class PipelineOrchestrator:
         logger.info("Pipeline session starting", session_id=session_config.session_id)
         self._started_at = time.monotonic()
         self._session_start_monotonic = self._started_at
+        await self.start_session_record(session_config)
 
-        if session_config.compliance_tier == "hipaa" and not session_config.hipaa_baa_acknowledged:
+        if (
+            session_config.compliance_tier == "hipaa"
+            and not session_config.hipaa_baa_acknowledged
+        ):
             raise PermissionError(
-                "HIPAA compliance requires signed BAA acknowledgment before cloud LLM execution."
+                "HIPAA compliance requires signed BAA acknowledgment before "
+                "cloud LLM execution."
             )
 
         turns = user_turns if user_turns is not None else ["Hello test call"]

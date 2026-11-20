@@ -9,6 +9,7 @@ import pytest
 from core.providers.adapters.cartesia_tts import CartesiaTTSProvider
 from core.providers.adapters.elevenlabs_tts import ElevenLabsTTSProvider
 from core.providers.adapters.uplift_tts import UpliftTTSProvider
+from core.providers.exceptions import UnknownProviderError
 from core.providers.factory import (
     build_tts_provider,
     normalize_tts_provider,
@@ -20,13 +21,16 @@ def test_normalize_tts_provider_defaults_and_allows_vendors() -> None:
     assert normalize_tts_provider(None) == "uplift"
     assert normalize_tts_provider("ELEVENLABS") == "elevenlabs"
     assert normalize_tts_provider("cartesia") == "cartesia"
-    assert normalize_tts_provider("nope") == "uplift"
+    with pytest.raises(UnknownProviderError):
+        normalize_tts_provider("nope")
 
 
 def test_build_tts_provider_switches() -> None:
-    assert isinstance(build_tts_provider("uplift"), UpliftTTSProvider)
-    assert isinstance(build_tts_provider("elevenlabs"), ElevenLabsTTSProvider)
-    assert isinstance(build_tts_provider("cartesia"), CartesiaTTSProvider)
+    assert isinstance(build_tts_provider("uplift", api_key=""), UpliftTTSProvider)
+    assert isinstance(
+        build_tts_provider("elevenlabs", api_key=""), ElevenLabsTTSProvider
+    )
+    assert isinstance(build_tts_provider("cartesia", api_key=""), CartesiaTTSProvider)
 
 
 @pytest.mark.asyncio

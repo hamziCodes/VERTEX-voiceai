@@ -84,7 +84,15 @@ async def test_dlq_retention_and_retry_sweeper() -> None:
     assert job.attempts == 1
     assert (job.expires_at - job.created_at).days == 30  # 30-day TTL
 
-    sweeper = DLQRetrySweeper(repo)
+    # Phase 14: without a real re-dispatch path nothing is counted as retried.
+    honest = await DLQRetrySweeper(repo).run_sweep()
+    assert honest["retried"] == 0 and honest["redispatch_unavailable"] == 1
+    assert job.attempts == 1
+
+    async def redispatch(_job) -> bool:
+        return True
+
+    sweeper = DLQRetrySweeper(repo, redispatch=redispatch)
     res = await sweeper.run_sweep()
     assert res["retried"] == 1
     assert job.attempts == 2
@@ -123,6 +131,20 @@ async def test_alert_router_routes_by_severity() -> None:
         severity="warn",
     )
 
-    await router.route_alert(tenant_id, error, alert_webhook_url="https://tenant.com/alert-webhook")
-    assert len(router.routed_alerts) == 1
-    assert router.routed_alerts[0]["webhook_dispatched"] is True
+    # Phase 14: delivery is reported honestly. A 2xx receiver counts as
+    # delivered; an unreachable one is a failure in every environment.
+    import httpx
+
+    ok_router = AlertRouter(transport=httpx.MockTransport(lambda r: httpx.Response(204)))
+    assert await ok_router.route_alert(
+        tenant_id, error, alert_webhook_url="https://tenant.example/alert-webhook"
+    )
+    assert ok_router.routed_alerts[0]["webhook_dispatched"] is True
+
+    down = httpx.MockTransport(lambda r: httpx.Response(503))
+    failing = AlertRouter(transport=down)
+    assert not await failing.route_alert(
+        tenant_id, error, alert_webhook_url="https://tenant.example/alert-webhook"
+    )
+    assert failing.routed_alerts[0]["webhook_dispatched"] is False
+    assert len(router.routed_alerts) == 0

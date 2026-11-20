@@ -1,4 +1,4 @@
-"""Worker Raw Monotonic Latency Timestamp Hooks."""
+"""Worker monotonic latency timestamp hooks."""
 
 from __future__ import annotations
 
@@ -10,18 +10,26 @@ from core.latency.waterfall import LatencyWaterfall
 
 
 class LatencyHooks:
-    """Timestamp injection helper for pipeline orchestration stages."""
+    """Create traces without inventing speech or provider timestamps."""
 
     def __init__(self, collector: LatencyCollector | None = None) -> None:
         self.collector = collector or LatencyCollector()
 
     @staticmethod
     def now_ms() -> float:
-        """Get monotonic timestamp in milliseconds."""
         return time.monotonic() * 1000.0
 
-    def start_turn(self, session_id: UUID) -> LatencyWaterfall:
-        """Initialize turn waterfall with VAD speech-end timestamp."""
-        waterfall = LatencyWaterfall(session_id=session_id)
-        waterfall.vad_end_of_speech_ms = self.now_ms()
+    def start_turn(
+        self,
+        session_id: UUID,
+        *,
+        acoustic_end_ms: float | None = None,
+        vad_end_ms: float | None = None,
+    ) -> LatencyWaterfall:
+        waterfall = LatencyWaterfall(
+            session_id=session_id,
+            acoustic_end_ms=acoustic_end_ms,
+            vad_end_of_speech_ms=vad_end_ms,
+        )
+        self.collector.register_turn(waterfall)
         return waterfall

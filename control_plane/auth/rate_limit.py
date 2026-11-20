@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import time
 
-from core.runtime.env import is_test_env
+from core.runtime.env import is_protected_environment, is_test_env
 
 
 class RateLimiter:
@@ -26,9 +26,9 @@ class RateLimiter:
         url = redis_url if redis_url is not None else os.environ.get("REDIS_URL")
         if url and not is_test_env():
             try:
-                import redis as redis_sync
+                from core.redis.client import sync_redis_from_url
 
-                self._redis = redis_sync.from_url(url, decode_responses=True)
+                self._redis = sync_redis_from_url(url)
             except Exception:
                 self._redis = None
 
@@ -37,12 +37,16 @@ class RateLimiter:
         limit = limit_override or self.limit_per_min
         if self._redis is not None:
             key = f"ucve:ratelimit:{tenant_id}"
-            count = self._redis.incr(key)
-            if count == 1:
-                self._redis.expire(key, 60)
-            return int(count) <= limit
+            try:
+                count = self._redis.incr(key)
+                if count == 1:
+                    self._redis.expire(key, 60)
+                return int(count) <= limit
+            except Exception:
+                if is_protected_environment():
+                    return False
 
-        if not is_test_env() and os.environ.get("REDIS_URL"):
+        if is_protected_environment():
             # Redis was expected but unavailable — fail closed outside test.
             return False
 

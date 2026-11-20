@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Callable
+from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
 
-class TelephonyEventType(str, Enum):
+class TelephonyEventType(StrEnum):
     """Normalized telephony event kinds."""
 
     CALL_STARTED = "call_started"

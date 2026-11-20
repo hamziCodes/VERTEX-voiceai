@@ -20,9 +20,9 @@ class RedisSessionStore:
         self._redis = None
         if url and not is_test_env():
             try:
-                import redis.asyncio as redis_async
+                from core.redis.client import async_redis_from_url
 
-                self._redis = redis_async.from_url(url, decode_responses=True)
+                self._redis = async_redis_from_url(url)
             except Exception:
                 self._redis = None
 

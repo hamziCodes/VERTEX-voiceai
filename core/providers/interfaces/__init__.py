@@ -26,6 +26,9 @@ from core.providers.interfaces.tts import (
     BaseTTSProvider,
     TTSChunk,
     TTSConfig,
+    TTSStreamTimeoutError,
+    TTSStreamTimeouts,
+    iterate_tts_stream,
 )
 from core.providers.interfaces.vad import (
     BaseVADProvider,
@@ -49,6 +52,9 @@ __all__ = [
     "BaseTTSProvider",
     "TTSConfig",
     "TTSChunk",
+    "TTSStreamTimeoutError",
+    "TTSStreamTimeouts",
+    "iterate_tts_stream",
     "BaseSpeechToSpeechProvider",
     "S2SConfig",
     "S2SEvent",

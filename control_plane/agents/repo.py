@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import copy
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 from control_plane.agents.models.agent_config import AgentConfig
-from control_plane.agents.validation.validator import AgentConfigValidator, ValidationResult
+from control_plane.agents.validation.validator import (
+    AgentConfigValidator,
+    ValidationResult,
+)
 
 
 class AgentNotFoundError(Exception):
@@ -19,8 +22,12 @@ class DebounceThrottledError(Exception):
     """Raised when an autosave occurs too quickly within the debounce window."""
 
 
+class AgentRevisionConflictError(RuntimeError):
+    """Raised when a draft mutation is based on a stale revision."""
+
+
 class AgentConfigRepo:
-    """Repository managing agent drafts, debounced autosaves, and immutable published snapshots."""
+    """Manage agent drafts, debounced autosaves, and immutable snapshots."""
 
     def __init__(self, validator: AgentConfigValidator | None = None) -> None:
         self.validator = validator or AgentConfigValidator()
@@ -36,11 +43,8 @@ class AgentConfigRepo:
     def create_agent(self, config: AgentConfig) -> AgentConfig:
         """Create a new agent draft under the specified tenant."""
         key = (config.tenant_id, config.agent_id)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         record = config.model_dump(mode="json")
-        record["created_at"] = now.isoformat()
-        record["updated_at"] = now.isoformat()
-        record["last_autosaved_at"] = now.isoformat()
         self._drafts[key] = record
         self._last_autosave[key] = now
         return config
@@ -50,7 +54,9 @@ class AgentConfigRepo:
         key = (tenant_id, agent_id)
         record = self._drafts.get(key)
         if not record:
-            raise AgentNotFoundError(f"Agent {agent_id} not found for tenant {tenant_id}.")
+            raise AgentNotFoundError(
+                f"Agent {agent_id} not found for tenant {tenant_id}."
+            )
         return AgentConfig.model_validate(record)
 
     def list_agents(self, tenant_id: UUID) -> list[AgentConfig]:
@@ -69,14 +75,23 @@ class AgentConfigRepo:
         *,
         debounce_seconds: float = 30.0,
         force: bool = False,
+        expected_revision: int | None = None,
     ) -> tuple[AgentConfig, bool]:
         """Debounced persist of in-progress edits to the draft.
 
-        Returns (updated_config, did_save). If throttled by debounce, returns (current_config, False).
+        Returns (updated_config, did_save). A debounce throttle returns the
+        current config and False.
         """
         key = (tenant_id, agent_id)
         current = self.get_draft(tenant_id, agent_id)
-        now = datetime.now(timezone.utc)
+        if (
+            expected_revision is not None
+            and current.draft_revision != expected_revision
+        ):
+            raise AgentRevisionConflictError(
+                f"Draft revision is {current.draft_revision}, not {expected_revision}."
+            )
+        now = datetime.now(UTC)
 
         last_time = self._last_autosave.get(key)
         if not force and last_time is not None:
@@ -89,10 +104,13 @@ class AgentConfigRepo:
         dumped.update(patch_data)
         dumped["tenant_id"] = str(tenant_id)
         dumped["agent_id"] = str(agent_id)
-        dumped["updated_at"] = now.isoformat()
-        dumped["last_autosaved_at"] = now.isoformat()
+        dumped["draft_revision"] = current.draft_revision + 1
 
         updated = AgentConfig.model_validate(dumped)
+        if updated.model_dump(exclude={"draft_revision"}) == current.model_dump(
+            exclude={"draft_revision"}
+        ):
+            return current, False
         self._drafts[key] = dumped
         self._last_autosave[key] = now
         return updated, True
@@ -102,13 +120,18 @@ class AgentConfigRepo:
         tenant_id: UUID,
         agent_id: UUID,
         published_by: str = "system",
+        expected_revision: int | None = None,
     ) -> tuple[AgentConfig, ValidationResult]:
         """Validate the draft, increment version, and record an immutable snapshot."""
         draft = self.get_draft(tenant_id, agent_id)
+        if expected_revision is not None and draft.draft_revision != expected_revision:
+            raise AgentRevisionConflictError(
+                f"Draft revision is {draft.draft_revision}, not {expected_revision}."
+            )
         validation_result = self.validator.validate(draft)
         validation_result.raise_if_invalid()
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         current_v = self._latest_published_version.get((tenant_id, agent_id), 0)
         next_v = current_v + 1
 
@@ -117,6 +140,7 @@ class AgentConfigRepo:
                 "version": next_v,
                 "is_published": True,
                 "published_at": now,
+                "draft_revision": draft.draft_revision + 1,
             }
         )
 
@@ -135,9 +159,39 @@ class AgentConfigRepo:
         draft_dump["version"] = next_v
         draft_dump["is_published"] = True
         draft_dump["published_at"] = now.isoformat()
+        draft_dump["draft_revision"] = published_config.draft_revision
         self._drafts[(tenant_id, agent_id)] = draft_dump
 
         return published_config, validation_result
+
+    def restore_version(
+        self,
+        tenant_id: UUID,
+        agent_id: UUID,
+        version: int,
+        *,
+        expected_revision: int,
+    ) -> AgentConfig:
+        current = self.get_draft(tenant_id, agent_id)
+        if current.draft_revision != expected_revision:
+            raise AgentRevisionConflictError(
+                f"Draft revision is {current.draft_revision}, not {expected_revision}."
+            )
+        snapshot = self.get_published_version(tenant_id, agent_id, version)
+        restored = snapshot.model_copy(
+            update={
+                "tenant_id": tenant_id,
+                "agent_id": agent_id,
+                "version": current.version,
+                "published_at": None,
+                "is_published": False,
+                "draft_revision": current.draft_revision + 1,
+            },
+            deep=True,
+        )
+        self._drafts[(tenant_id, agent_id)] = restored.model_dump(mode="json")
+        self._last_autosave[(tenant_id, agent_id)] = datetime.now(UTC)
+        return restored
 
     def get_published_version(
         self, tenant_id: UUID, agent_id: UUID, version: int | None = None
@@ -150,7 +204,9 @@ class AgentConfigRepo:
 
         entry = self._versions.get((tenant_id, agent_id, version))
         if not entry:
-            raise AgentNotFoundError(f"Version {version} of agent {agent_id} not found.")
+            raise AgentNotFoundError(
+                f"Version {version} of agent {agent_id} not found."
+            )
 
         return AgentConfig.model_validate(entry["snapshot"])
 
@@ -159,7 +215,9 @@ class AgentConfigRepo:
         # Verify agent belongs to tenant
         _ = self.get_draft(tenant_id, agent_id)
         results = []
-        for (t_id, a_id, v_num), entry in sorted(self._versions.items(), key=lambda x: x[0][2]):
+        for (t_id, a_id, v_num), entry in sorted(
+            self._versions.items(), key=lambda x: x[0][2]
+        ):
             if t_id == tenant_id and a_id == agent_id:
                 results.append(
                     {
@@ -169,3 +227,41 @@ class AgentConfigRepo:
                     }
                 )
         return results
+
+
+_default_agent_config_repo: Any | None = None
+
+
+def get_default_agent_config_repo() -> Any:
+    """Return the process-wide repository shared by publish and session mint."""
+
+    global _default_agent_config_repo
+    if _default_agent_config_repo is None:
+        from core.db.pg import use_memory_repos
+
+        if not use_memory_repos():
+            from control_plane.agents.pg_repo import PostgresAgentConfigRepo
+
+            _default_agent_config_repo = PostgresAgentConfigRepo()
+            return _default_agent_config_repo
+        repo = AgentConfigRepo()
+        tenant_id = UUID("00000000-0000-0000-0000-000000000001")
+        agent_id = UUID("00000000-0000-0000-0000-0000000000a1")
+        repo.create_agent(
+            AgentConfig(
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                name="Wavia local demo agent",
+            )
+        )
+        repo.publish(tenant_id, agent_id, published_by="system:local-demo-seed")
+        _default_agent_config_repo = repo
+    return _default_agent_config_repo
+
+
+def reset_default_agent_config_repo() -> Any:
+    """Reset the shared repository for isolated tests and local process restarts."""
+
+    global _default_agent_config_repo
+    _default_agent_config_repo = None
+    return get_default_agent_config_repo()

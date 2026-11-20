@@ -1,36 +1,68 @@
-"""Summarization Service — Generates executive summary & sentiment trajectory."""
+"""Strict, evidence-backed post-call summarization."""
 
 from __future__ import annotations
 
-from typing import Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from post_call.extraction.service import (
+    EvidenceRef,
+    IntelligenceOutputError,
+    IntelligenceProviderUnavailableError,
+    evidence_turn_ids,
+    parse_provider_json,
+)
 from post_call.models.diarized_turn import DiarizedTurn
+from post_call.summarization.provider import SummaryProvider
+
+
+class _RawSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    executive_summary: str = Field(min_length=1, max_length=2_000)
+    key_takeaways: tuple[str, ...] = Field(default=(), max_length=20)
+    sentiment_trajectory: tuple[str, ...] = Field(default=(), max_length=50)
+    evidence: tuple[EvidenceRef, ...]
 
 
 class CallSummary(BaseModel):
-    """Executive summary & sentiment analysis trajectory."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     executive_summary: str
-    key_takeaways: list[str] = Field(default_factory=list)
-    sentiment_trajectory: list[str] = Field(default_factory=lambda: ["neutral", "positive"])
+    key_takeaways: tuple[str, ...] = ()
+    sentiment_trajectory: tuple[str, ...] = ()
+    source_turn_ids: tuple[int, ...]
+    provider_id: str
+    model_id: str
 
 
 class SummarizationService:
-    """Produces call summary and sentiment trajectory from turns."""
+    def __init__(self, provider: SummaryProvider | None = None) -> None:
+        self.provider = provider
 
-    def summarize(self, turns: list[DiarizedTurn]) -> CallSummary:
-        text_full = " ".join(t.text for t in turns)
-        if not text_full:
-            return CallSummary(
-                executive_summary="Empty session — no speech recorded.",
-                key_takeaways=[],
-                sentiment_trajectory=["neutral"],
+    async def summarize(self, turns: list[DiarizedTurn]) -> CallSummary | None:
+        if not turns or not any(turn.text.strip() for turn in turns):
+            return None
+        if self.provider is None:
+            raise IntelligenceProviderUnavailableError(
+                "A structured summary provider is required."
             )
-
-        summary_text = f"Caller discussed: {text_full[:120]}..."
+        try:
+            raw = await self.provider.summarize_json(turns=turns)
+            parsed = _RawSummary.model_validate(parse_provider_json(raw))
+            source_ids = evidence_turn_ids(parsed.evidence, turns)
+        except IntelligenceOutputError:
+            raise
+        except (ValidationError, TypeError, ValueError) as exc:
+            raise IntelligenceOutputError(
+                "Provider summary failed schema validation."
+            ) from exc
+        if not source_ids:
+            raise IntelligenceOutputError("Summary requires transcript evidence.")
         return CallSummary(
-            executive_summary=summary_text,
-            key_takeaways=["User connected", "Query processed successfully"],
-            sentiment_trajectory=["neutral", "positive"],
+            executive_summary=parsed.executive_summary,
+            key_takeaways=parsed.key_takeaways,
+            sentiment_trajectory=parsed.sentiment_trajectory,
+            source_turn_ids=source_ids,
+            provider_id=self.provider.provider_id,
+            model_id=self.provider.model_id,
         )

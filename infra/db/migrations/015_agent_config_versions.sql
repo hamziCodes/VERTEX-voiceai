@@ -44,18 +44,18 @@ ALTER TABLE agent_configs FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY agent_configs_tenant_isolation ON agent_configs
     FOR ALL
-    USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 
 ALTER TABLE agent_config_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_config_versions FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY agent_versions_tenant_isolation ON agent_config_versions
     FOR ALL
-    USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 
 ALTER TABLE session_config_pins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE session_config_pins FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY session_pins_tenant_isolation ON session_config_pins
     FOR ALL
-    USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);

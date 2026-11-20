@@ -52,7 +52,15 @@ transitions:
     to: BARGE_IN_VERIFY
     event: vad_speech_start
 
+  - from: PROCESSING_INFERENCE
+    to: BARGE_IN_VERIFY
+    event: vad_speech_start
+
   - from: AGENT_SPEAKING
+    to: BARGE_IN_INTERRUPTED
+    event: barge_confirmed
+
+  - from: PROCESSING_INFERENCE
     to: BARGE_IN_INTERRUPTED
     event: barge_confirmed
 

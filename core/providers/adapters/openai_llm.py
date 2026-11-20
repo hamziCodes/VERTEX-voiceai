@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -11,7 +10,14 @@ import httpx
 
 from core.buffers.cancellation import CancellationToken
 from core.observability.logging import get_logger
+from core.providers.exceptions import (
+    ProviderInvocationError,
+    classify_http_failure,
+    provider_invocation_error,
+)
 from core.providers.interfaces.llm import BaseLLMProvider, LLMConfig, LLMStreamChunk
+from core.providers.mode import provider_is_locally_ready, should_use_mock_provider
+from core.providers.tool_calls import ToolCallAccumulator, serialize_tool_definitions
 
 logger = get_logger("ucve.providers.openai")
 
@@ -33,43 +39,18 @@ def resolve_openai_model(model: str | None) -> str:
     return _MODEL_ALIASES.get(raw, raw)
 
 
-def _finalize_tool_calls(tool_acc: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
-    """Build finalized tool-call dicts from accumulated stream fragments."""
-    calls: list[dict[str, Any]] = []
-    for _idx in sorted(tool_acc):
-        slot = tool_acc[_idx]
-        raw_args = slot.get("arguments") or ""
-        try:
-            parsed = json.loads(raw_args) if raw_args else {}
-        except json.JSONDecodeError:
-            parsed = {"_raw": raw_args}
-        calls.append(
-            {
-                "id": slot.get("id"),
-                "name": slot.get("name", ""),
-                "arguments": parsed,
-            }
-        )
-    return calls
-
-
 class OpenAILLMProvider(BaseLLMProvider):
     """OpenAI chat completions provider with streaming and cancellation."""
 
     def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
-        self.api_key = (
-            api_key
-            or os.environ.get("PLATFORM_OPENAI_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or ""
-        ).strip()
+        self.api_key = (api_key or "").strip()
         self.default_model = resolve_openai_model(model or _DEFAULT_MODEL)
         self.model = self.default_model
         self._url = "https://api.openai.com/v1/chat/completions"
         self._client: httpx.AsyncClient | None = None
 
     def health_check(self) -> bool:
-        return True
+        return provider_is_locally_ready(api_key=self.api_key)
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -87,10 +68,8 @@ class OpenAILLMProvider(BaseLLMProvider):
         config: LLMConfig,
         cancellation_token: CancellationToken | None = None,
     ) -> AsyncIterator[LLMStreamChunk]:
-        use_mock = (
-            not self.api_key
-            or os.environ.get("RUN_MOCK_PROVIDERS") == "1"
-            or os.environ.get("RUN_LIVE_PROVIDERS") != "1"
+        use_mock = should_use_mock_provider(
+            provider_id="openai", api_key=self.api_key
         )
         if use_mock:
             async for chunk in self._mock_stream(messages, cancellation_token):
@@ -103,11 +82,11 @@ class OpenAILLMProvider(BaseLLMProvider):
             "temperature": float(config.temperature),
             "max_tokens": int(config.max_tokens or 256),
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if config.tools:
-            payload["tools"] = config.tools
-            if config.tool_choice:
-                payload["tool_choice"] = config.tool_choice
+            payload["tools"] = serialize_tool_definitions(config.tools)
+            payload["tool_choice"] = "auto"
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -115,17 +94,17 @@ class OpenAILLMProvider(BaseLLMProvider):
         }
 
         client = self._get_client()
-        tool_acc: dict[int, dict[str, Any]] = {}
+        tool_acc = ToolCallAccumulator("openai")
 
         first = True
         try:
             async with client.stream("POST", self._url, json=payload, headers=headers) as resp:
                 if resp.status_code != 200:
-                    body = await resp.aread()
-                    logger.error("OpenAI stream error", status=resp.status_code, body=body.decode(errors="replace")[:300])
-                    async for chunk in self._mock_stream(messages, cancellation_token):
-                        yield chunk
-                    return
+                    await resp.aread()
+                    logger.error("OpenAI stream error", status=resp.status_code)
+                    raise ProviderInvocationError(
+                        classify_http_failure("openai", resp.status_code)
+                    )
 
                 async for line in resp.aiter_lines():
                     if cancellation_token and cancellation_token.is_cancelled:
@@ -141,21 +120,23 @@ class OpenAILLMProvider(BaseLLMProvider):
                     except json.JSONDecodeError:
                         continue
 
+                    usage = data.get("usage") or {}
+                    if usage:
+                        yield LLMStreamChunk(
+                            prompt_tokens=usage.get("prompt_tokens"),
+                            completion_tokens=usage.get("completion_tokens"),
+                            total_tokens=usage.get("total_tokens"),
+                            provider_id="openai",
+                            provider_request_id=data.get("id"),
+                        )
+
                     choices = data.get("choices") or []
                     if not choices:
                         continue
                     delta = choices[0].get("delta") or {}
 
                     for tc in delta.get("tool_calls") or []:
-                        idx = int(tc.get("index", 0))
-                        slot = tool_acc.setdefault(idx, {})
-                        if tc.get("id"):
-                            slot["id"] = tc["id"]
-                        fn = tc.get("function") or {}
-                        if fn.get("name"):
-                            slot["name"] = (slot.get("name") or "") + fn["name"]
-                        if fn.get("arguments"):
-                            slot["arguments"] = (slot.get("arguments") or "") + fn["arguments"]
+                        tool_acc.add(tc)
 
                     text = delta.get("content")
                     finish = choices[0].get("finish_reason")
@@ -164,19 +145,20 @@ class OpenAILLMProvider(BaseLLMProvider):
                         first = False
 
                     if finish:
-                        calls = _finalize_tool_calls(tool_acc) if tool_acc else None
+                        calls = tool_acc.finalize() if tool_acc else None
                         if calls:
                             yield LLMStreamChunk(tool_calls=calls, finish_reason=finish)
-                        return
+                            tool_acc.clear()
 
             if tool_acc:
-                calls = _finalize_tool_calls(tool_acc)
+                calls = tool_acc.finalize()
                 yield LLMStreamChunk(tool_calls=calls, finish_reason="tool_calls")
 
+        except ProviderInvocationError:
+            raise
         except Exception as exc:
-            logger.error("OpenAI stream exception", error=str(exc))
-            async for chunk in self._mock_stream(messages, cancellation_token):
-                yield chunk
+            logger.error("OpenAI stream exception", error_type=type(exc).__name__)
+            raise provider_invocation_error("openai", exc) from exc
 
     async def _mock_stream(
         self,

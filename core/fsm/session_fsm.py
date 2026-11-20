@@ -32,7 +32,14 @@ TRANSITION_TABLE: dict[tuple[SessionState, SessionEvent], SessionState] = {
     # PROCESSING_INFERENCE
     (SessionState.PROCESSING_INFERENCE, SessionEvent.TTS_FIRST_BYTE): SessionState.AGENT_SPEAKING,
     (SessionState.PROCESSING_INFERENCE, SessionEvent.TOOL_CALL_START): SessionState.TOOL_EXECUTING,
-    (SessionState.PROCESSING_INFERENCE, SessionEvent.VAD_SPEECH_START): SessionState.USER_SPEAKING,
+    (
+        SessionState.PROCESSING_INFERENCE,
+        SessionEvent.VAD_SPEECH_START,
+    ): SessionState.BARGE_IN_VERIFY,
+    (
+        SessionState.PROCESSING_INFERENCE,
+        SessionEvent.BARGE_CONFIRMED,
+    ): SessionState.BARGE_IN_INTERRUPTED,
     (SessionState.PROCESSING_INFERENCE, SessionEvent.DISCONNECT): SessionState.DISCONNECTED,
     (SessionState.PROCESSING_INFERENCE, SessionEvent.HANGUP): SessionState.DISCONNECTED,
 

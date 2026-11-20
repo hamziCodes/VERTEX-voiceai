@@ -62,19 +62,30 @@ Requires `barge_verify` or `production` in `UCVE_PIPELINE_V2`.
 | `UCVE_GLADIA_ENDPOINTING` | `0.2` | Seconds of silence before final |
 | `UCVE_GLADIA_RECEIVE_PARTIALS` | `true` | Stream partial transcripts |
 | `UCVE_STT_MOCK_TEXT` | *(empty)* | Dev-only mock text; leave empty in prod |
+| `UCVE_STT_CONNECT_TIMEOUT_MS` | `3000` | Bound warm-session startup before readiness |
+| `UCVE_STT_RECONNECT_MAX_ATTEMPTS` | `3` | Maximum live-session starts per voice session |
+| `UCVE_INGRESS_BACKPRESSURE_WARN_MS` | `100` | Emit degradation metric after blocked ingress wait |
 
 Requires `streaming_stt` or `production` for live WebSocket STT.
+The selected STT is warmed before `session_ready`. Providers without a live
+adapter use an explicit batch fallback. Canonical 32 ms frame slicing and
+lossless blocking ingress apply regardless of the feature-flag set.
 
 ### Speaking / TTS egress
 
 | Variable | Default | Notes |
 |---|---|---|
-| `UCVE_TTS_CHUNK_SIZE_BYTES` | `8192` | Uplift batch size |
-| `UCVE_TTS_POP_SKIP_BYTES` | `2048` | Skip initial pop artifact |
-| `UCVE_EGRESS_PREBUFFER_MS` | `35` | Server-side egress prebuffer |
-| `UCVE_CLIENT_PREBUFFER_CHUNKS` | `3` | Web client jitter buffer |
+| `UCVE_TTS_CHUNK_SIZE_BYTES` | `8192` | Batch size after the first audio bytes; the first provider chunk is emitted immediately |
+| `UCVE_EGRESS_PREBUFFER_MS` | `35` | Recommended browser jitter-buffer delay sent with `audio_start` |
+| `UCVE_TTS_FIRST_CHUNK_TIMEOUT_MS` | `3000` | Connect and first-audio deadline |
+| `UCVE_TTS_INTER_CHUNK_TIMEOUT_MS` | `3000` | Maximum silence between provider audio chunks |
+| `UCVE_TTS_OVERALL_TIMEOUT_MS` | `30000` | Overall synthesis deadline for one speech chunk |
 
 Requires `speaking_hardening` or `production`.
+
+The engine parses RIFF/WAVE framing instead of discarding a fixed number of
+bytes. Do not restore `UCVE_TTS_POP_SKIP_BYTES`; fixed byte removal clips valid
+speech and only hides the actual container or audio-format problem.
 
 ### LLM chunking & tools
 

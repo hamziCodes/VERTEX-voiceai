@@ -12,18 +12,29 @@ class InterruptBuffer:
 
     def append_partial(self, text: str) -> None:
         """Append interim partial STT hypothesis."""
-        if text and text.strip():
-            self._partials.append(text.strip())
+        cleaned = " ".join(text.split())
+        if cleaned and (not self._partials or self._partials[-1] != cleaned):
+            self._partials.append(cleaned)
 
     def append_final(self, text: str) -> None:
         """Append finalized STT hypothesis."""
-        if text and text.strip():
-            self._finals.append(text.strip())
+        cleaned = " ".join(text.split())
+        if cleaned and (not self._finals or self._finals[-1] != cleaned):
+            self._finals.append(cleaned)
 
     def get_next_turn_input(self) -> str:
-        """Extract retained interrupting utterance as next turn input and reset buffer."""
+        """Extract the retained interruption once, then reset the buffer."""
         if self._finals:
-            result = " ".join(self._finals)
+            words: list[str] = []
+            for fragment in self._finals:
+                incoming = fragment.split()
+                overlap = 0
+                for size in range(min(len(words), len(incoming)), 0, -1):
+                    if words[-size:] == incoming[:size]:
+                        overlap = size
+                        break
+                words.extend(incoming[overlap:])
+            result = " ".join(words)
         elif self._partials:
             result = self._partials[-1]
         else:

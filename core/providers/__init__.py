@@ -9,10 +9,35 @@ from core.providers.exceptions import (
     CircuitBreakerOpenError,
     ConfigurationError,
     NoProviderAvailableError,
+    ProviderCapabilityError,
+    ProviderFailure,
+    ProviderFailureCategory,
+    ProviderInvocationError,
+    ProviderStreamInterruptedError,
     ProviderTimeoutError,
+    UnknownProviderError,
+    classify_http_failure,
+    provider_invocation_error,
 )
-from core.providers.failover import FailoverRouter, ProviderHealthState
+from core.providers.failover import (
+    FailoverRouter,
+    ProviderHealthState,
+    ProviderStreamDeadlines,
+)
 from core.providers.registry import ProviderRegistry
+from core.providers.routing import (
+    ProviderRouteBuilder,
+    ProviderRouteIdentity,
+    ResolvedProviderRoute,
+)
+from core.providers.spec import (
+    ADVERTISED_PROVIDER_IDS,
+    CredentialPolicyState,
+    ProviderCategory,
+    ProviderRolloutState,
+    ProviderSpec,
+    get_provider_spec,
+)
 
 __all__ = [
     "interfaces",
@@ -25,9 +50,25 @@ __all__ = [
     "AgentProviderConfig",
     "ProviderChainConfig",
     "ConfigurationError",
+    "ProviderCapabilityError",
+    "ProviderFailure",
+    "ProviderFailureCategory",
+    "ProviderInvocationError",
+    "ProviderStreamInterruptedError",
+    "ProviderStreamDeadlines",
+    "provider_invocation_error",
+    "ProviderRouteBuilder",
+    "ProviderRouteIdentity",
+    "ResolvedProviderRoute",
+    "UnknownProviderError",
+    "classify_http_failure",
+    "ADVERTISED_PROVIDER_IDS",
+    "CredentialPolicyState",
+    "ProviderCategory",
+    "ProviderRolloutState",
+    "ProviderSpec",
+    "get_provider_spec",
     "NoProviderAvailableError",
     "ProviderTimeoutError",
     "CircuitBreakerOpenError",
 ]
-
-

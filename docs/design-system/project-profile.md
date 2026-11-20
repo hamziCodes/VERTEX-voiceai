@@ -1,163 +1,124 @@
 # Project Profile
 
-> **Template.** Fill this in once, the first time anyone touches UI in this repository, then commit it. Every later session — human or agent — reads this instead of re-deriving the answers. That is what stops two reasonable people from making two different reasonable choices six months apart.
->
-> Replace every `[ ]` with a real value. If a field does not apply, write `n/a` and why. Never leave a blank.
-
-**Toolkit version in use:** `[ ]` (see `CHANGELOG.md`)
-**Profile last reviewed:** `[ YYYY-MM-DD ]` by `[ name ]`
-
----
+**Toolkit version in use:** `1.0.0`
+**Profile last reviewed:** `2026-11-12` by `Claude, Phase 13K completion QA close gate`
 
 ## 1. What this project is
 
 | Field | Value |
 | :--- | :--- |
-| Product name | `[ e.g. VERTEX/care ]` |
-| One-line purpose | `[ what it does, for whom ]` |
-| Primary user | `[ e.g. non-technical clinic receptionist on a mid-range Android phone ]` |
-| Secondary user | `[ or n/a ]` |
-| Repository | `[ path or URL ]` |
-
-**Why the primary user matters:** it settles arguments that the spec cannot. A receptionist on a 5-year-old Android needs bigger targets and a cheaper motion budget than a desk-bound analyst, and both are compliant with this toolkit.
-
----
+| Product name | Wavia Studio |
+| One-line purpose | An authenticated SaaS workspace for non-technical operators and developers to build, test, connect and operate Wavia web and telephony voice agents. |
+| Primary user | A non-technical business owner or operator configuring and monitoring a voice agent from a desktop or tablet. |
+| Secondary user | Tenant administrators, enterprise implementers, SDK developers and read-only workspace viewers. |
+| Repository | `D:\PROJECTS\PASSION PROJECTS\VERTEX_voiceai` |
 
 ## 2. Surfaces in scope
 
-List every distinct surface and its archetype from [`spec/SURFACES.md`](./spec/SURFACES.md). One project commonly has several.
-
 | Surface | Archetype | Density | Canvas | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `[ e.g. Public site ]` | `marketing` | `comfortable` | `--background` | |
-| `[ e.g. Clinic dashboard ]` | `dashboard` | `compact` | `--app-canvas` | |
-| `[ e.g. Staff phone app ]` | `mobile-app` | `comfortable` | `--app-canvas` | |
-| `[ e.g. Booking wizard ]` | `form-flow` | `comfortable` | `--app-canvas` | |
-| `[ e.g. Admin log viewer ]` | `console` | `dense` | `--app-canvas` | |
+| Wavia Studio shell and task screens | `dashboard` | `compact` | Wavia Theme B paper field | Persistent collapsible sidebar, contextual top bar and fluid content capped near 1280px. |
+| Conversation, audit and monitoring data | `console` inside the dashboard shell | `dense` | Wavia warm paper field | Technical values use Space Mono; tables become cards below 800px. |
+| Agent and onboarding editors | `form-flow` inside the dashboard shell | `comfortable` form regions | Wavia warm paper field | Single-column field reading order with sticky save/status controls where useful. |
 
----
+The Phase 13G pilot covered `SCR-01` Agent Directory and `SCR-03` Persona Editor. Phase 13H extended Theme B to the customer foundation routes: sign-in, workspace selection, dashboard, onboarding, agent creation, `/test`, `/settings` and `/settings/members`. Phase 13I then converted the operational routes: knowledge, the per-agent browser voice test, web and telephony channels, API keys, provider credentials, conversations, usage and audit. Phase 13J added the internal `/admin` area (overview, tenant directory, tenant summary, staff, platform audit) with its own navigation built on the same shared sidebar shell and tokens. The public Wavia website is out of scope.
+
+`docs/DESIGN.md` and `docs/design/design-tokens.json` (Wavia Ripple, supplied by Hamzi on 2026-11-10) govern future dashboard frontend work. Their §9 keeps this Theme B Studio untouched until a deliberately approved migration, and the suggested Theme B → Ripple mapping there is not yet approved. Phase 13H therefore stayed on Theme B.
 
 ## 3. Stack
 
-Fill from the repository, not from memory.
-
 | Field | Value | How it was determined |
 | :--- | :--- | :--- |
-| Framework and version | `[ e.g. Next.js 15, App Router ]` | `[ package.json ]` |
-| Language | `[ TypeScript strict / JavaScript ]` | `[ tsconfig.json ]` |
-| Styling | `[ Tailwind v4 / Tailwind v3 / CSS Modules / styled-components / vanilla ]` | `[ ]` |
-| Token delivery path | `[ tailwind-v4 / tailwind-v3 / plain-css / json ]` | `[ ]` |
-| Motion library | `[ motion (motion/react) / framer-motion / CSS only / none ]` | `[ ]` |
-| Icon library | `[ lucide-react / other / none ]` | `[ ]` |
-| Font loading | `[ next/font Inter Tight / @import / self-hosted / system fallback ]` | `[ ]` |
-| Theme mechanism | `[ html.dark class + pre-paint script / next-themes / prefers-color-scheme only ]` | `[ ]` |
-| Target platforms | `[ e.g. mobile web first, desktop web, PWA ]` | `[ ]` |
-| Browser floor | `[ e.g. last 2 versions, iOS Safari 16+ ]` | `[ ]` |
+| Framework and version | Next.js `16.4.3`, App Router; React `19.3.1` | `studio/package.json`, `studio/src/app/` |
+| Language | Strict TypeScript | `studio/tsconfig.json` |
+| Styling | Plain CSS in `studio/src/app/globals.css`; no styling framework | Phase 13G implementation and `studio/package.json` |
+| Token delivery path | Plain CSS custom properties installed in the pilot | No Tailwind dependency; repository toolkit plain-CSS guidance |
+| Motion library | None | `studio/package.json` |
+| Icon library | None | `studio/package.json` |
+| Font loading | `next/font/google` with Bricolage Grotesque, Instrument Sans, Space Mono and Instrument Serif | `studio/src/app/layout.tsx`; Hamzi approved free Google Fonts delivery |
+| Theme mechanism | None in the current Studio | No theme provider, class strategy, toggle or media-query theme found |
+| Target platforms | Desktop web primary; responsive tablet and mobile web required | Phase 13 requirements and pilot brief |
+| Browser floor | Current Chromium for automated evidence; Safari and real-device coverage not yet established | `studio/playwright.config.ts` and current test evidence |
 
 ### Substitutions
 
-If the stack lacks something the toolkit assumes, record the substitute here. This is normal and not a deviation.
-
 | Toolkit assumes | This project uses | Consequence |
 | :--- | :--- | :--- |
-| `motion/react` | `[ ]` | `[ e.g. sticky stacks use CSS scroll-timeline; reveals use IntersectionObserver ]` |
-| `lucide-react` | `[ ]` | `[ e.g. icons ported at 1.75 stroke equivalent ]` |
-| Inter Tight | `[ ]` | `[ e.g. system stack; weight roles map to 800/700/500/300 ]` |
-| Tailwind | `[ ]` | `[ e.g. CSS Modules consuming var(--token) directly ]` |
-
----
+| `motion/react` | CSS only | Motion remains reduced and functional; no scroll animation or replaying list entrances. |
+| `lucide-react` | No icon dependency | Pilot controls use text and existing semantic HTML unless an icon source is approved later. |
+| Inter Tight | Instrument Sans for operational UI; Bricolage Grotesque for wordmark/major titles; Space Mono for technical values; Instrument Serif excluded from controls/data | This is an explicit Wavia brand override. |
+| Tailwind | Plain CSS custom properties and component class names | Tokens live in one Studio stylesheet and components consume variables directly. |
 
 ## 4. Content and locale
 
 | Field | Value |
 | :--- | :--- |
-| Primary locale | `[ e.g. en-PK ]` |
-| Additional locales | `[ e.g. ur-PK, or none ]` |
-| Text direction | `[ ltr / rtl / both ]` |
-| Currency | `[ e.g. PKR ]` |
-| Currency format | `[ e.g. PKR 184,250 — see DESIGN.md money rules ]` |
-| Decimal policy | `[ whole units in lists and metrics; 2dp in reconciliation only ]` |
-| Date format | `[ e.g. Monday, 24 August ]` |
-| Number format | `[ e.g. en-PK grouping ]` |
-
-**If direction includes `rtl`:** all directional spacing uses logical properties (`ps-`/`pe-`, `ms-`/`me-`, `start`/`end`), the offset shadow mirrors to `-3px 4px 0`, and chevrons flip. Record it here so nobody has to rediscover it.
-
----
+| Primary locale | `en-PK` |
+| Additional locales | Agent content may include any supported language; Urdu/RTL behavior remains a product capability but is outside this two-screen visual pilot. |
+| Text direction | Studio chrome is `ltr`; agent content may be `ltr` or `rtl`. |
+| Currency | n/a for this pilot; Studio does not perform billing or charging. |
+| Currency format | n/a |
+| Decimal policy | Technical latency and usage values preserve server-provided precision. |
+| Date format | Human-readable locale dates in operational UI; exact timestamps in Space Mono where technically necessary. |
+| Number format | `en-PK` grouping; IDs and technical values use tabular numerals. |
 
 ## 5. Motion and performance budget
 
 | Field | Value |
 | :--- | :--- |
-| Motion budget | `[ full / reduced / minimal ]` |
-| Reason | `[ e.g. reduced — primary users on low-end Android ]` |
-| Lighthouse targets | `[ default: Perf >=90 mobile / >=95 desktop, SEO >=95, A11y >=95 ]` |
-| Core Web Vitals | `[ default: LCP <2.5s, CLS <0.1, INP <200ms ]` |
-| Bundle ceiling | `[ or n/a ]` |
-
-Budget definitions live in `spec/SURFACES.md`. `minimal` means opacity-only transitions and no scroll-linked transforms; it is a legitimate choice, not a failure.
-
----
+| Motion budget | Reduced |
+| Reason | Studio is an operational application; transitions must communicate state and never distract or replay on filters/tabs. |
+| Lighthouse targets | Performance >=90 mobile / >=95 desktop; Accessibility >=95; SEO is not a meaningful release gate for authenticated Studio routes. |
+| Core Web Vitals | LCP <2.5s, CLS <0.1, INP <200ms |
+| Bundle ceiling | No new runtime UI or motion dependency in the pilot without explicit justification. |
 
 ## 6. Accessibility commitment
 
 | Field | Value |
 | :--- | :--- |
-| Conformance target | `[ default: WCAG 2.1 AA ]` |
-| Known gaps | `[ list, or none ]` |
-| Assistive tech tested | `[ e.g. VoiceOver iOS, NVDA, or not yet ]` |
-| Minimum touch target | `[ default: 44x44px ]` |
-
----
+| Conformance target | WCAG 2.2 AA |
+| Known gaps | Every customer route inside the Studio shell now uses the shared focus system, tokens and loading/error/empty treatment. Manual screen-reader, forced-colours and non-Chromium checks remain unverified. |
+| Assistive tech tested | Automated Axe coverage exists; manual screen-reader testing has not yet been evidenced. |
+| Minimum touch target | 44x44px |
 
 ## 7. Deviation register
 
-**The most important section in this file.** Any departure from the toolkit goes here. An undocumented deviation is drift; a documented one is a decision the next session can trust or revisit.
-
-A deviation needs all five columns. If you cannot write the reason, you do not have a deviation — you have a mistake to fix.
-
 | # | Deviation | Reason | Scope | Review by |
 | :--- | :--- | :--- | :--- | :--- |
-| 1 | `[ e.g. Legacy tables keep 4px radii ]` | `[ e.g. shared with an unconverted reporting module ]` | `[ e.g. src/legacy/reports/** only ]` | `[ YYYY-MM-DD ]` |
+| 1 | Wavia Studio uses Wavia Theme B and the named Wavia type system; Brand Kit v1.1, the later steel-blue website theme and the older VERTEX navy/Inter system are superseded for this surface. | Hamzi explicitly selected Theme B (`#FFF6E5`, `#FFFBF2`, `#FBEACD`, `#F6E6C8`, `#1C1408`, `#B45309`) and approved free Google Fonts delivery. | `studio/**` only; compatible dashboard composition, state and accessibility rules still come from the repository design documents. | Pilot review |
+| 2 | The two-screen pilot does not add a new theme switcher solely to satisfy the older toolkit's two-theme rule. | The current Studio has no theme mechanism and the brief requests both-theme QA only if Studio already supports both. Adding a preference and persistence behavior would exceed a visual-only pilot. | Phase 13G pilot only | Pilot review |
+| 3 | Toolkit shadow and navy component prescriptions are not adopted. | The pilot forbids generic template output and uses Wavia's solid paper surfaces, ink borders and marigold accent. | `SCR-01`, `SCR-03` and shared shell/primitives used by them | Pilot review |
 
-### Not deviations
-
-These are always violations, never negotiable, and must not be entered above:
-
-- A second accent colour
-- A single-theme surface
-- `--brand-primary` used as text on a dark canvas
-- A removed focus indicator
-- A missing empty, loading or error state
-- Invented reviews, logos, metrics, SLAs or addresses
-- Any word from the banned list
-
-### Optional product signal — the one scoped escape hatch
-
-A product line may carry a single identity tint, `--product-signal`, which defaults to `var(--brand-primary)`. It is permitted **only** on the product identity chip and the nav mark, and only on areas under roughly 40×40px. It is banned on CTAs, links, focus rings, large fills, charts and text. Using it requires an entry here.
+### Optional product signal
 
 | Field | Value |
 | :--- | :--- |
-| `--product-signal` in use | `[ no / yes ]` |
-| Value if yes | `[ hex, light and dark ]` |
-| Contrast measured | `[ ratio against its own background ]` |
-| Approved by | `[ name and date ]` |
-
----
+| `--product-signal` in use | No separate signal; marigold is the single brand accent. |
+| Value if yes | n/a |
+| Contrast measured | Automated Axe reported no serious or critical findings on both pilot screens after the active-navigation contrast fix. |
+| Approved by | Pending Hamzi pilot review. |
 
 ## 8. Adoption status
 
-Retrofits convert one surface at a time. Track it, so nobody has to guess how far along the project is.
-
 | Surface | Tokens installed | Converted | Both themes verified | Gate passed | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `[ ]` | `[ ]` | `[ ]` | `[ ]` | `[ ]` | `[ ]` |
-
----
+| Shared Studio shell | Yes | Yes | n/a, current Studio has no theme mechanism | Yes | Responsive collapse, active routes, role filtering and focus order verified in unit and Chromium tests. |
+| `SCR-01` Agent Directory | Yes | Yes | n/a | Yes | Ready, empty-by-data, empty-by-filter, loading and error treatments implemented; desktop/390px/320px checked. |
+| `SCR-03` Persona Editor | Yes | Yes | n/a | Yes | Route `/agents/[agentId]/build`; validation, autosave, readiness, view-only, loading and error treatments verified. |
+| Entry and workspace selection (`/`, `/sign-in`, `/workspaces`) | Yes | Yes | n/a | Yes | Phase 13H Task 4; invitation, empty and error states, including the expired, used and wrong-email invitation messages added in Task 7. |
+| Dashboard, onboarding, agent creation | Yes | Yes | n/a | Yes | Phase 13H Task 5; desktop and 390px checked in the Task 8 shell QA journey. |
+| `/test` selector | Yes | Yes | n/a | Yes | Phase 13H Task 6. |
+| `/settings`, `/settings/members` | Yes | Yes | n/a | Yes | Phase 13H Task 7; only existing `--studio-*` tokens. Members are shown by account ID because the control-plane list exposes no name or email. |
+| Operational routes (knowledge, voice test, channels, API keys, providers, conversations, usage, audit) | Yes | Yes | n/a | Yes | Phase 13I. No inline styles or colour literals remain in `studio/src`; colours are defined only in the `:root` token block. |
+| Internal area (`/admin`, tenants, tenant summary, staff, platform audit) | Yes | Yes | n/a | Yes | Phase 13J. Separate "Wavia admin" navigation through the shared `SidebarShell`; customers receive not-found. |
+| Support sessions and operations (`/admin/support-sessions`, `/admin/operations`) | Yes | Yes | n/a | Yes | Phase 13K. Persistent read-only banner on warning surface; text status badges. Axe WCAG 2.1 AA (serious/critical) clean on every customer and internal route; no overflow at 320px; reduced motion stops transitions and animations. |
 
 ## 9. Project-specific decisions
 
-Anything a future session would otherwise have to reverse-engineer. Keep it short and factual.
-
-- `[ e.g. Money always renders through formatMoney(); no inline toLocaleString anywhere ]`
-- `[ e.g. Bottom nav has exactly 4 tabs; a 5th requires an IA change, not an overflow menu ]`
-- `[ e.g. Charts use the navy ramp 300/500/700 in that order for series 1-3 ]`
+- Instrument Sans is the operational UI face. Space Mono is restricted to code, IDs, logs, latency and technical values. Bricolage Grotesque is restricted to the wordmark and major screen titles. Instrument Serif never appears in controls or data.
+- Marigold is the only brand accent. Green, amber, red and blue are functional status colors and always include text or an icon signal.
+- Application radii never exceed 24px. No gradients, glass cards, decorative blobs, marketing heroes, giant display sections or scroll animation.
+- Lists do not replay entrance animation when a filter or tab changes.
+- All list, table and panel components must define ready, empty, loading and error states.
+- Studio behavior, routes, API contracts, roles and test selectors are preserved by the visual pilot.
+- Temporary Playwright captures belong under a gitignored QA directory and are never committed unless Hamzi asks.

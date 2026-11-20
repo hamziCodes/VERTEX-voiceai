@@ -1,237 +1,5155 @@
+# GENERATED from control_plane.app by scripts/release/export_openapi.py.
+# Do not edit by hand; CI-style check: --check.
 openapi: 3.1.0
 info:
-  title: Wavia Voice AI — Control Plane API
-  description: Sovereign Real-Time Voice AI Control Plane REST API for Wavia agent management, session minting, telephony, and extraction schemas.
-  version: 1.0.0
-servers:
-  - url: http://localhost:8080
-    description: Local Development Control Plane
-
+  title: Wavia Voice AI — Control Plane
+  version: 0.1.0
 paths:
-  /v1/session/mint:
-    post:
-      summary: Mint an ephemeral session token for realtime voice sessions
-      operationId: mintSession
-      security:
-        - HMACAuth: []
-        - BearerAuth: []
+  /v1/telephony/settings:
+    get:
+      tags:
+      - telephony
+      summary: Get Telephony Settings
+      operationId: get_telephony_settings_v1_telephony_settings_get
       parameters:
-        - name: x-tenant-id
-          in: header
-          required: true
-          schema:
-            type: string
-            format: uuid
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Telephony Settings V1 Telephony Settings Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - telephony
+      summary: Put Telephony Settings
+      operationId: put_telephony_settings_v1_telephony_settings_put
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SessionMintRequest'
+              $ref: '#/components/schemas/TelephonyPolicySettings'
       responses:
         '200':
-          description: Session minted successfully
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SessionMintResponse'
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden or quota exceeded
-
-  /v1/agents:
-    get:
-      summary: List all agents for a tenant
-      operationId: listAgents
+                type: object
+                additionalProperties: true
+                title: Response Put Telephony Settings V1 Telephony Settings Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/telephony/calls:
+    post:
+      tags:
+      - telephony
+      summary: Create Outbound Call
+      description: Create one consented, policy-gated outbound call request.
+      operationId: create_outbound_call_v1_telephony_calls_post
       parameters:
-        - name: x-tenant-id
-          in: header
-          required: true
-          schema:
-            type: string
-            format: uuid
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OutboundCallBody'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  anyOf:
+                  - type: string
+                  - type: 'null'
+                title: Response Create Outbound Call V1 Telephony Calls Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/extraction-schemas:
+    post:
+      tags:
+      - extraction
+      summary: Create Extraction Schema
+      description: Create or update a tenant extraction schema with max_fields validation.
+      operationId: create_extraction_schema_v1_extraction_schemas_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantExtractionSchema'
       responses:
         '200':
-          description: List of agent configurations
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Extraction Schema V1 Extraction Schemas Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/knowledge-bases/status/{tenant_id}:
+    get:
+      tags:
+      - knowledge-bases
+      summary: Get Kb Status
+      description: Compatibility aggregate backed by real tenant records and counts.
+      operationId: get_kb_status_v1_knowledge_bases_status__tenant_id__get
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Tenant Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Kb Status V1 Knowledge Bases Status  Tenant Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/knowledge-bases:
+    post:
+      tags:
+      - knowledge-bases
+      summary: Create Knowledge Base
+      operationId: create_knowledge_base_v1_knowledge_bases_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKnowledgeBaseBody'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Knowledge Base V1 Knowledge Bases Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - knowledge-bases
+      summary: List Knowledge Bases
+      operationId: list_knowledge_bases_v1_knowledge_bases_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/AgentConfig'
-    post:
-      summary: Create a new agent draft
-      operationId: createAgent
-      parameters:
-        - name: x-tenant-id
-          in: header
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateAgentRequest'
-      responses:
-        '201':
-          description: Agent draft created
+                  type: object
+                  additionalProperties: true
+                title: Response List Knowledge Bases V1 Knowledge Bases Get
+        '422':
+          description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentConfig'
-
-  /v1/agents/{agent_id}/publish:
-    post:
-      summary: Validate and publish an agent configuration into an immutable version snapshot
-      operationId: publishAgent
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/knowledge-bases/{knowledge_base_id}:
+    get:
+      tags:
+      - knowledge-bases
+      summary: Get Knowledge Base
+      operationId: get_knowledge_base_v1_knowledge_bases__knowledge_base_id__get
       parameters:
-        - name: agent_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: x-tenant-id
-          in: header
-          required: true
-          schema:
-            type: string
-            format: uuid
+      - name: knowledge_base_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Knowledge Base Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
       responses:
         '200':
-          description: Agent published successfully
+          description: Successful Response
           content:
             application/json:
               schema:
                 type: object
-                properties:
-                  version:
-                    type: integer
-                  published_at:
-                    type: string
-                    format: date-time
+                additionalProperties: true
+                title: Response Get Knowledge Base V1 Knowledge Bases  Knowledge Base Id  Get
         '422':
-          description: Validation failed (e.g. insufficient providers, invalid RTL voice)
-
-  /v1/agents/{agent_id}/autosave:
-    patch:
-      summary: Apply debounced updates to an agent draft
-      operationId: autosaveAgentDraft
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/knowledge-bases/{knowledge_base_id}/sources:
+    post:
+      tags:
+      - knowledge-bases
+      summary: Upload Knowledge Source
+      operationId: upload_knowledge_source_v1_knowledge_bases__knowledge_base_id__sources_post
       parameters:
-        - name: agent_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: x-tenant-id
-          in: header
-          required: true
-          schema:
-            type: string
-            format: uuid
+      - name: knowledge_base_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Knowledge Base Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_knowledge_source_v1_knowledge_bases__knowledge_base_id__sources_post'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Upload Knowledge Source V1 Knowledge Bases  Knowledge Base Id  Sources
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - knowledge-bases
+      summary: List Knowledge Sources
+      operationId: list_knowledge_sources_v1_knowledge_bases__knowledge_base_id__sources_get
+      parameters:
+      - name: knowledge_base_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Knowledge Base Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Knowledge Sources V1 Knowledge Bases  Knowledge Base Id  Sources
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/knowledge-bases/{knowledge_base_id}/faqs:
+    post:
+      tags:
+      - knowledge-bases
+      summary: Create Faq Source
+      operationId: create_faq_source_v1_knowledge_bases__knowledge_base_id__faqs_post
+      parameters:
+      - name: knowledge_base_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Knowledge Base Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                patch:
-                  type: object
-                debounce_seconds:
-                  type: number
-                  default: 30.0
-                force:
-                  type: boolean
-                  default: false
+              $ref: '#/components/schemas/CreateFAQSourceBody'
       responses:
-        '200':
-          description: Autosave status and updated draft
-
-components:
-  securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-    HMACAuth:
-      type: apiKey
-      in: header
-      name: x-mint-signature
-
-  schemas:
-    SessionMintRequest:
-      type: object
-      required:
-        - tenant_id
-        - agent_id
-      properties:
-        tenant_id:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Faq Source V1 Knowledge Bases  Knowledge Base Id  Faqs Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/knowledge-bases/{knowledge_base_id}/sources/{source_id}:
+    delete:
+      tags:
+      - knowledge-bases
+      summary: Delete Knowledge Source
+      operationId: delete_knowledge_source_v1_knowledge_bases__knowledge_base_id__sources__source_id__delete
+      parameters:
+      - name: knowledge_base_id
+        in: path
+        required: true
+        schema:
           type: string
           format: uuid
+          title: Knowledge Base Id
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Source Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - knowledge-bases
+      summary: Get Knowledge Source
+      operationId: get_knowledge_source_v1_knowledge_bases__knowledge_base_id__sources__source_id__get
+      parameters:
+      - name: knowledge_base_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Knowledge Base Id
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Source Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Knowledge Source V1 Knowledge Bases  Knowledge Base Id  Sources  Source
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/knowledge-bases/{knowledge_base_id}/preview-query:
+    post:
+      tags:
+      - knowledge-bases
+      summary: Preview Knowledge Query
+      operationId: preview_knowledge_query_v1_knowledge_bases__knowledge_base_id__preview_query_post
+      parameters:
+      - name: knowledge_base_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Knowledge Base Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewQueryBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Preview Knowledge Query V1 Knowledge Bases  Knowledge Base Id  Preview
+                  Query Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/knowledge-bases/{knowledge_base_id}/sources/{source_id}/retry:
+    post:
+      tags:
+      - knowledge-bases
+      summary: Retry Knowledge Source
+      operationId: retry_knowledge_source_v1_knowledge_bases__knowledge_base_id__sources__source_id__retry_post
+      parameters:
+      - name: knowledge_base_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Knowledge Base Id
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Source Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Retry Knowledge Source V1 Knowledge Bases  Knowledge Base Id  Sources  Source
+                  Id  Retry Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/knowledge-bases/{knowledge_base_id}/activate:
+    post:
+      tags:
+      - knowledge-bases
+      summary: Activate Knowledge Base
+      operationId: activate_knowledge_base_v1_knowledge_bases__knowledge_base_id__activate_post
+      parameters:
+      - name: knowledge_base_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Knowledge Base Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Activate Knowledge Base V1 Knowledge Bases  Knowledge Base Id  Activate
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/knowledge-bases/{knowledge_base_id}/bind/{agent_id}:
+    post:
+      tags:
+      - knowledge-bases
+      summary: Bind Knowledge Base
+      operationId: bind_knowledge_base_v1_knowledge_bases__knowledge_base_id__bind__agent_id__post
+      parameters:
+      - name: knowledge_base_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Knowledge Base Id
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Agent Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Bind Knowledge Base V1 Knowledge Bases  Knowledge Base Id  Bind  Agent
+                  Id  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/alerts/{tenant_id}:
+    get:
+      tags:
+      - alerts
+      summary: List Tenant Alerts
+      description: Alerts raised for this tenant, newest first.
+      operationId: list_tenant_alerts_v1_alerts__tenant_id__get
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Tenant Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Tenant Alerts V1 Alerts  Tenant Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/me:
+    get:
+      tags:
+      - studio-identity
+      summary: Get Current Identity
+      operationId: get_current_identity_v1_me_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Current Identity V1 Me Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/organizations:
+    post:
+      tags:
+      - studio-identity
+      summary: Create Workspace
+      operationId: create_workspace_v1_organizations_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkspaceBody'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Workspace V1 Organizations Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/organizations/{tenant_id}/members:
+    get:
+      tags:
+      - studio-identity
+      summary: List Workspace Members
+      operationId: list_workspace_members_v1_organizations__tenant_id__members_get
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Tenant Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Workspace Members V1 Organizations  Tenant Id  Members Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/organizations/{tenant_id}/invitations:
+    post:
+      tags:
+      - studio-identity
+      summary: Create Workspace Invitation
+      operationId: create_workspace_invitation_v1_organizations__tenant_id__invitations_post
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Tenant Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvitationBody'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Workspace Invitation V1 Organizations  Tenant Id  Invitations Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/invitations/accept:
+    post:
+      tags:
+      - studio-identity
+      summary: Accept Workspace Invitation
+      operationId: accept_workspace_invitation_v1_invitations_accept_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptInvitationBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Accept Workspace Invitation V1 Invitations Accept Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/organizations/{tenant_id}/members/{user_id}:
+    patch:
+      tags:
+      - studio-identity
+      summary: Change Workspace Member Role
+      operationId: change_workspace_member_role_v1_organizations__tenant_id__members__user_id__patch
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Tenant Id
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: User Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeMemberRoleBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Change Workspace Member Role V1 Organizations  Tenant Id  Members  User
+                  Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - studio-identity
+      summary: Remove Workspace Member
+      operationId: remove_workspace_member_v1_organizations__tenant_id__members__user_id__delete
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Tenant Id
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: User Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/me:
+    get:
+      tags:
+      - platform
+      summary: Get Platform Identity
+      operationId: get_platform_identity_v1_platform_me_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Platform Identity V1 Platform Me Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/tenants:
+    get:
+      tags:
+      - platform
+      summary: List Platform Tenants
+      operationId: list_platform_tenants_v1_platform_tenants_get
+      parameters:
+      - name: q
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Q
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+          default: 25
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 10000
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Platform Tenants V1 Platform Tenants Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/tenants/{tenant_id}:
+    get:
+      tags:
+      - platform
+      summary: Get Platform Tenant
+      operationId: get_platform_tenant_v1_platform_tenants__tenant_id__get
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Tenant Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Platform Tenant V1 Platform Tenants  Tenant Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/staff:
+    get:
+      tags:
+      - platform
+      summary: List Platform Staff
+      operationId: list_platform_staff_v1_platform_staff_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Platform Staff V1 Platform Staff Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - platform
+      summary: Grant Platform Staff
+      operationId: grant_platform_staff_v1_platform_staff_put
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantStaffBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Grant Platform Staff V1 Platform Staff Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/staff/{user_id}/revoke:
+    post:
+      tags:
+      - platform
+      summary: Revoke Platform Staff
+      operationId: revoke_platform_staff_v1_platform_staff__user_id__revoke_post
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: User Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeStaffBody'
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/audit:
+    get:
+      tags:
+      - platform
+      summary: List Platform Audit
+      operationId: list_platform_audit_v1_platform_audit_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Platform Audit V1 Platform Audit Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/tenants/{tenant_id}/support-sessions:
+    post:
+      tags:
+      - platform
+      summary: Start Support Session
+      operationId: start_support_session_v1_platform_tenants__tenant_id__support_sessions_post
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Tenant Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartSupportBody'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Start Support Session V1 Platform Tenants  Tenant Id  Support Sessions
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/support-sessions:
+    get:
+      tags:
+      - platform
+      summary: List Support Sessions
+      operationId: list_support_sessions_v1_platform_support_sessions_get
+      parameters:
+      - name: state
+        in: query
+        required: false
+        schema:
+          enum:
+          - active
+          - recent
+          type: string
+          default: recent
+          title: State
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Support Sessions V1 Platform Support Sessions Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/support-sessions/{session_id}:
+    get:
+      tags:
+      - platform
+      summary: Get Support Session
+      operationId: get_support_session_v1_platform_support_sessions__session_id__get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Session Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Support Session V1 Platform Support Sessions  Session Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/support-sessions/{session_id}/end:
+    post:
+      tags:
+      - platform
+      summary: End Support Session
+      operationId: end_support_session_v1_platform_support_sessions__session_id__end_post
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Session Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EndSupportBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response End Support Session V1 Platform Support Sessions  Session Id  End Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/support-sessions/{session_id}/configuration:
+    get:
+      tags:
+      - platform
+      summary: Read Support Configuration
+      operationId: read_support_configuration_v1_platform_support_sessions__session_id__configuration_get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Session Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Read Support Configuration V1 Platform Support Sessions  Session Id  Configuration
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/support-sessions/{session_id}/readiness:
+    get:
+      tags:
+      - platform
+      summary: Read Support Readiness
+      operationId: read_support_readiness_v1_platform_support_sessions__session_id__readiness_get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Session Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Read Support Readiness V1 Platform Support Sessions  Session Id  Readiness
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/alerts:
+    get:
+      tags:
+      - platform
+      summary: List Platform Alerts
+      operationId: list_platform_alerts_v1_platform_alerts_get
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - open
+            - resolved
+            type: string
+          - type: 'null'
+          title: Status
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Platform Alerts V1 Platform Alerts Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/alerts/{alert_id}/resolve:
+    post:
+      tags:
+      - platform
+      summary: Resolve Platform Alert
+      operationId: resolve_platform_alert_v1_platform_alerts__alert_id__resolve_post
+      parameters:
+      - name: alert_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Alert Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Resolve Platform Alert V1 Platform Alerts  Alert Id  Resolve Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/platform/operations:
+    get:
+      tags:
+      - platform
+      summary: Read Platform Operations
+      operationId: read_platform_operations_v1_platform_operations_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Read Platform Operations V1 Platform Operations Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/onboarding:
+    get:
+      tags:
+      - studio
+      summary: Get Onboarding
+      operationId: get_onboarding_v1_onboarding_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Onboarding V1 Onboarding Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - studio
+      summary: Patch Onboarding
+      operationId: patch_onboarding_v1_onboarding_patch
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardingPatchBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Patch Onboarding V1 Onboarding Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/entitlements:
+    get:
+      tags:
+      - studio
+      summary: Get Entitlements
+      operationId: get_entitlements_v1_entitlements_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Entitlements V1 Entitlements Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/catalog/providers:
+    get:
+      tags:
+      - studio
+      summary: Get Provider Catalog
+      operationId: get_provider_catalog_v1_catalog_providers_get
+      parameters:
+      - name: category
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/ProviderCategory'
+          - type: 'null'
+          title: Category
+      - name: language
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Language
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Provider Catalog V1 Catalog Providers Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/agents/templates:
+    get:
+      tags:
+      - studio
+      summary: Get Agent Templates
+      operationId: get_agent_templates_v1_agents_templates_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Agent Templates V1 Agents Templates Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/agents:
+    post:
+      tags:
+      - agents
+      summary: Create Agent
+      description: Create a new agent draft under the tenant.
+      operationId: create_agent_v1_agents_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentBody'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Agent V1 Agents Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - agents
+      summary: List Agents
+      description: List all agents for the tenant.
+      operationId: list_agents_v1_agents_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Agents V1 Agents Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/agents/{agent_id}:
+    get:
+      tags:
+      - agents
+      summary: Get Agent Draft
+      description: Retrieve the editable draft of an agent.
+      operationId: get_agent_draft_v1_agents__agent_id__get
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Agent Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Agent Draft V1 Agents  Agent Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/agents/{agent_id}/autosave:
+    patch:
+      tags:
+      - agents
+      summary: Autosave Draft
+      description: Apply debounced updates to the agent draft.
+      operationId: autosave_draft_v1_agents__agent_id__autosave_patch
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Agent Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutosavePatchBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Autosave Draft V1 Agents  Agent Id  Autosave Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/agents/{agent_id}/publish:
+    post:
+      tags:
+      - agents
+      summary: Publish Agent
+      description: Validate and publish an agent draft into an immutable version snapshot.
+      operationId: publish_agent_v1_agents__agent_id__publish_post
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Agent Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevisionBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Publish Agent V1 Agents  Agent Id  Publish Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/agents/{agent_id}/validate:
+    post:
+      tags:
+      - agents
+      summary: Validate Agent Draft
+      operationId: validate_agent_draft_v1_agents__agent_id__validate_post
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Agent Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Validate Agent Draft V1 Agents  Agent Id  Validate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/agents/{agent_id}/versions/{version}/restore:
+    post:
+      tags:
+      - agents
+      summary: Restore Agent Version
+      operationId: restore_agent_version_v1_agents__agent_id__versions__version__restore_post
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Agent Id
+      - name: version
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Version
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevisionBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Restore Agent Version V1 Agents  Agent Id  Versions  Version  Restore
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/agents/{agent_id}/versions:
+    get:
+      tags:
+      - agents
+      summary: List Agent Versions
+      description: List published version metadata.
+      operationId: list_agent_versions_v1_agents__agent_id__versions_get
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Agent Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Agent Versions V1 Agents  Agent Id  Versions Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/agents/{agent_id}/versions/{version}:
+    get:
+      tags:
+      - agents
+      summary: Get Agent Version Snapshot
+      description: Get an immutable published snapshot by version.
+      operationId: get_agent_version_snapshot_v1_agents__agent_id__versions__version__get
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Agent Id
+      - name: version
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Version
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Agent Version Snapshot V1 Agents  Agent Id  Versions  Version  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/agents/{agent_id}/pin:
+    post:
+      tags:
+      - agents
+      summary: Pin Session Config
+      description: Pin an active session to a published agent version snapshot.
+      operationId: pin_session_config_v1_agents__agent_id__pin_post
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Agent Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PinSessionBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Pin Session Config V1 Agents  Agent Id  Pin Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/conversations:
+    get:
+      tags:
+      - conversations
+      summary: List Conversations
+      operationId: list_conversations_v1_conversations_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 25
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 1024
+          - type: 'null'
+          title: Cursor
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Conversations V1 Conversations Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/conversations/{call_id}:
+    get:
+      tags:
+      - conversations
+      summary: Get Conversation
+      operationId: get_conversation_v1_conversations__call_id__get
+      parameters:
+      - name: call_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Call Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Conversation V1 Conversations  Call Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/conversations/{call_id}/intelligence:
+    get:
+      tags:
+      - conversations
+      summary: Get Conversation Intelligence
+      operationId: get_conversation_intelligence_v1_conversations__call_id__intelligence_get
+      parameters:
+      - name: call_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Call Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Conversation Intelligence V1 Conversations  Call Id  Intelligence
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/api-keys:
+    get:
+      tags:
+      - api-keys
+      summary: List Api Keys
+      operationId: list_api_keys_v1_api_keys_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Api Keys V1 Api Keys Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - api-keys
+      summary: Create Api Key
+      operationId: create_api_key_v1_api_keys_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAPIKeyBody'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Api Key V1 Api Keys Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/api-keys/{key_id}:
+    delete:
+      tags:
+      - api-keys
+      summary: Revoke Api Key
+      operationId: revoke_api_key_v1_api_keys__key_id__delete
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Key Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/provider-credentials:
+    get:
+      tags:
+      - provider-credentials
+      summary: List Provider Credentials
+      operationId: list_provider_credentials_v1_provider_credentials_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Provider Credentials V1 Provider Credentials Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - provider-credentials
+      summary: Create Provider Credential
+      operationId: create_provider_credential_v1_provider_credentials_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProviderCredentialBody'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Provider Credential V1 Provider Credentials Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/provider-credentials/{credential_id}:
+    delete:
+      tags:
+      - provider-credentials
+      summary: Revoke Provider Credential
+      operationId: revoke_provider_credential_v1_provider_credentials__credential_id__delete
+      parameters:
+      - name: credential_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Credential Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/conversations/{call_id}/legal-hold:
+    post:
+      tags:
+      - privacy
+      summary: Set Legal Hold
+      operationId: set_legal_hold_v1_conversations__call_id__legal_hold_post
+      parameters:
+      - name: call_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Call Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegalHoldBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Set Legal Hold V1 Conversations  Call Id  Legal Hold Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/conversations/{call_id}/deletion:
+    post:
+      tags:
+      - privacy
+      summary: Request Conversation Deletion
+      operationId: request_conversation_deletion_v1_conversations__call_id__deletion_post
+      parameters:
+      - name: call_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Call Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Request Conversation Deletion V1 Conversations  Call Id  Deletion Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/workspace/erasure:
+    post:
+      tags:
+      - privacy
+      summary: Request Workspace Erasure
+      operationId: request_workspace_erasure_v1_workspace_erasure_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceErasureBody'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Request Workspace Erasure V1 Workspace Erasure Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/privacy-jobs/{job_id}:
+    get:
+      tags:
+      - privacy
+      summary: Get Privacy Job
+      operationId: get_privacy_job_v1_privacy_jobs__job_id__get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Job Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Privacy Job V1 Privacy Jobs  Job Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/webhook-targets:
+    get:
+      tags:
+      - webhooks
+      summary: List Webhook Targets
+      operationId: list_webhook_targets_v1_webhook_targets_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Webhook Targets V1 Webhook Targets Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - webhooks
+      summary: Create Webhook Target
+      operationId: create_webhook_target_v1_webhook_targets_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookTargetBody'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Webhook Target V1 Webhook Targets Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/webhook-targets/{target_id}/disable:
+    post:
+      tags:
+      - webhooks
+      summary: Disable Webhook Target
+      operationId: disable_webhook_target_v1_webhook_targets__target_id__disable_post
+      parameters:
+      - name: target_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Target Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Disable Webhook Target V1 Webhook Targets  Target Id  Disable Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/conversations/{call_id}/review:
+    post:
+      tags:
+      - webhooks
+      summary: Decide Conversation Review
+      operationId: decide_conversation_review_v1_conversations__call_id__review_post
+      parameters:
+      - name: call_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Call Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewDecisionBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Decide Conversation Review V1 Conversations  Call Id  Review Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /health:
+    get:
+      summary: Health
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Health Health Get
+  /:
+    get:
+      summary: Root
+      description: Browser / tooling probes hit `/`; send humans to the demo console.
+      operationId: root__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /json/version:
+    get:
+      summary: Json Version
+      description: Chrome/CDP-style probes often hit this on open ports — avoid noisy 404s.
+      operationId: json_version_json_version_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Json Version Json Version Get
+  /v1/session:
+    post:
+      summary: Mint Session
+      operationId: mint_session_v1_session_post
+      parameters:
+      - name: X-Tenant-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Tenant-Id
+      - name: X-Timestamp
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 32
+          title: X-Timestamp
+      - name: X-Nonce
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 255
+          title: X-Nonce
+      - name: X-Agent-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Agent-Id
+      - name: X-Signature
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 64
+          maxLength: 128
+          title: X-Signature
+      - name: Origin
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Origin
+      - name: Referer
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Referer
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Language
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Language
+      - name: X-Voice-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Voice-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/session/mint:
+    post:
+      summary: Quick Mint Session
+      description: Mint a session with a tenant API key, or in local demo mode.
+      operationId: quick_mint_session_v1_session_mint_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuickMintBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /mint:
+    post:
+      summary: Quick Mint Session
+      description: Mint a session with a tenant API key, or in local demo mode.
+      operationId: quick_mint_session_mint_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuickMintBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/studio/sessions:
+    post:
+      summary: Studio Mint Session
+      description: Mint a short-lived room token for an authenticated Studio workspace.
+      operationId: studio_mint_session_v1_studio_sessions_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudioMintBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/session/refresh:
+    post:
+      summary: Refresh Session
+      operationId: refresh_session_v1_session_refresh_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Refresh Session V1 Session Refresh Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/usage:
+    get:
+      summary: Get Usage
+      operationId: get_usage_v1_usage_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Usage V1 Usage Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/audit:
+    get:
+      summary: Get Audit
+      operationId: get_audit_v1_audit_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Audit V1 Audit Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/secrets/rotate:
+    post:
+      summary: Rotate Secret
+      operationId: rotate_secret_v1_secrets_rotate_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Tenant-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Tenant-Id
+      - name: X-Actor-Role
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Actor-Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotateSecretBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Rotate Secret V1 Secrets Rotate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /metrics:
+    get:
+      summary: Metrics
+      operationId: metrics_metrics_get
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    AcceptInvitationBody:
+      properties:
+        token:
+          type: string
+          maxLength: 1024
+          minLength: 20
+          title: Token
+      type: object
+      required:
+      - token
+      title: AcceptInvitationBody
+    AutosavePatchBody:
+      properties:
+        patch:
+          additionalProperties: true
+          type: object
+          title: Patch
+        expected_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected Revision
+        debounce_seconds:
+          type: number
+          title: Debounce Seconds
+          default: 30.0
+        force:
+          type: boolean
+          title: Force
+          default: false
+      type: object
+      required:
+      - patch
+      - expected_revision
+      title: AutosavePatchBody
+    Body_upload_knowledge_source_v1_knowledge_bases__knowledge_base_id__sources_post:
+      properties:
+        source:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Source
+      type: object
+      required:
+      - source
+      title: Body_upload_knowledge_source_v1_knowledge_bases__knowledge_base_id__sources_post
+    ChangeMemberRoleBody:
+      properties:
+        role:
+          type: string
+          enum:
+          - tenant_admin
+          - tenant_editor
+          - tenant_developer
+          - tenant_viewer
+          - compliance_admin
+          title: Role
+      type: object
+      required:
+      - role
+      title: ChangeMemberRoleBody
+    CreateAPIKeyBody:
+      properties:
+        name:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Name
+        scopes:
+          items:
+            type: string
+          type: array
+          title: Scopes
+          default:
+          - session:mint
+        role:
+          type: string
+          title: Role
+          default: tenant_viewer
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+      type: object
+      required:
+      - name
+      title: CreateAPIKeyBody
+    CreateAgentBody:
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Name
+        description:
+          type: string
+          title: Description
+          default: ''
+        persona:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Persona
+        languages:
+          items:
+            type: string
+          type: array
+          title: Languages
+        providers:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Providers
+        compliance:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Compliance
+      type: object
+      required:
+      - name
+      title: CreateAgentBody
+    CreateFAQSourceBody:
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Name
+          default: FAQ
+        items:
+          items:
+            $ref: '#/components/schemas/FAQItemBody'
+          type: array
+          maxItems: 1000
+          minItems: 1
+          title: Items
+      type: object
+      required:
+      - items
+      title: CreateFAQSourceBody
+    CreateInvitationBody:
+      properties:
+        email:
+          type: string
+          maxLength: 320
+          minLength: 3
+          title: Email
+        role:
+          type: string
+          enum:
+          - tenant_admin
+          - tenant_editor
+          - tenant_developer
+          - tenant_viewer
+          - compliance_admin
+          title: Role
+          default: tenant_viewer
+        expires_in_hours:
+          type: integer
+          maximum: 168.0
+          minimum: 1.0
+          title: Expires In Hours
+          default: 72
+      type: object
+      required:
+      - email
+      title: CreateInvitationBody
+    CreateKnowledgeBaseBody:
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Name
+      type: object
+      required:
+      - name
+      title: CreateKnowledgeBaseBody
+    CreateProviderCredentialBody:
+      properties:
+        provider_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Provider Id
+        credential_type:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Credential Type
+          default: api_key
+        reference:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Reference
+          default: default
+        secret:
+          type: string
+          format: password
+          title: Secret
+          writeOnly: true
+      type: object
+      required:
+      - provider_id
+      - secret
+      title: CreateProviderCredentialBody
+    CreateWebhookTargetBody:
+      properties:
+        name:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Name
+        url:
+          type: string
+          maxLength: 2048
+          minLength: 8
+          title: Url
+      type: object
+      required:
+      - name
+      - url
+      title: CreateWebhookTargetBody
+    CreateWorkspaceBody:
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Name
+      type: object
+      required:
+      - name
+      title: CreateWorkspaceBody
+    EndSupportBody:
+      properties:
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+            minLength: 8
+          - type: 'null'
+          title: Reason
+      additionalProperties: false
+      type: object
+      title: EndSupportBody
+    ExtractionField:
+      properties:
+        name:
+          type: string
+          pattern: ^[A-Za-z][A-Za-z0-9_]{0,63}$
+          title: Name
+          description: Field name
+        type:
+          type: string
+          enum:
+          - string
+          - number
+          - boolean
+          - datetime
+          - phone
+          title: Type
+          default: string
+        description:
+          type: string
+          title: Description
+          description: Field extraction prompt context
+          default: ''
+        required:
+          type: boolean
+          title: Required
+          default: false
+        sensitive:
+          type: boolean
+          title: Sensitive
+          default: false
+        confidence_threshold:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Confidence Threshold
+          default: 0.75
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      title: ExtractionField
+      description: Field definition within a tenant extraction schema.
+    FAQItemBody:
+      properties:
+        question:
+          type: string
+          maxLength: 2000
+          minLength: 1
+          title: Question
+        answer:
+          type: string
+          maxLength: 20000
+          minLength: 1
+          title: Answer
+      type: object
+      required:
+      - question
+      - answer
+      title: FAQItemBody
+    GrantStaffBody:
+      properties:
+        email:
+          type: string
+          maxLength: 320
+          minLength: 3
+          title: Email
+        role:
+          type: string
+          enum:
+          - platform_admin
+          - platform_support
+          title: Role
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 8
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - email
+      - role
+      - reason
+      title: GrantStaffBody
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    LegalHoldBody:
+      properties:
+        hold:
+          type: boolean
+          title: Hold
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 8
+          title: Reason
+      type: object
+      required:
+      - hold
+      - reason
+      title: LegalHoldBody
+    OnboardingPatchBody:
+      properties:
+        business_name:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Business Name
+        use_case:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Use Case
+        languages:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Languages
+        operating_region:
+          anyOf:
+          - type: string
+            maxLength: 128
+          - type: 'null'
+          title: Operating Region
+        timezone:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+          - type: 'null'
+          title: Timezone
+        escalation_email:
+          anyOf:
+          - type: string
+            maxLength: 320
+          - type: 'null'
+          title: Escalation Email
+        completed_steps:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Completed Steps
+      type: object
+      title: OnboardingPatchBody
+    OutboundCallBody:
+      properties:
         agent_id:
           type: string
           format: uuid
-        caller_id:
+          title: Agent Id
+        destination:
           type: string
-        test_call:
-          type: boolean
-          default: false
-
-    SessionMintResponse:
+          pattern: ^\+[1-9][0-9]{7,14}$
+          title: Destination
+        purpose:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Purpose
+        consent_reference:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Consent Reference
+        idempotency_key:
+          type: string
+          maxLength: 255
+          minLength: 8
+          title: Idempotency Key
       type: object
       required:
-        - session_id
-        - token
-        - ws_url
+      - agent_id
+      - destination
+      - purpose
+      - consent_reference
+      - idempotency_key
+      title: OutboundCallBody
+    PinSessionBody:
       properties:
         session_id:
           type: string
           format: uuid
-        token:
-          type: string
-        ws_url:
-          type: string
-        expires_at:
-          type: string
-          format: date-time
-
-    AgentConfig:
+          title: Session Id
+        version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Version
       type: object
       required:
-        - agent_id
-        - tenant_id
-        - name
+      - session_id
+      title: PinSessionBody
+    PreviewQueryBody:
+      properties:
+        query:
+          type: string
+          maxLength: 2000
+          minLength: 1
+          title: Query
+        top_k:
+          type: integer
+          maximum: 8.0
+          minimum: 1.0
+          title: Top K
+          default: 4
+      type: object
+      required:
+      - query
+      title: PreviewQueryBody
+    ProviderCategory:
+      type: string
+      enum:
+      - stt
+      - llm
+      - tts
+      - s2s
+      title: ProviderCategory
+    QuickMintBody:
+      properties:
+        tenant_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+          - type: 'null'
+          title: Tenant Id
+        agent_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+          - type: 'null'
+          title: Agent Id
+        language:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Language
+        voice_id:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Voice Id
+      type: object
+      title: QuickMintBody
+    RefreshBody:
+      properties:
+        token:
+          type: string
+          maxLength: 4096
+          minLength: 1
+          title: Token
+      type: object
+      required:
+      - token
+      title: RefreshBody
+    ReviewDecisionBody:
+      properties:
+        decision:
+          type: string
+          enum:
+          - approve
+          - reject
+          title: Decision
+        note:
+          type: string
+          maxLength: 1000
+          title: Note
+          default: ''
+      type: object
+      required:
+      - decision
+      title: ReviewDecisionBody
+    RevisionBody:
+      properties:
+        expected_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected Revision
+      type: object
+      required:
+      - expected_revision
+      title: RevisionBody
+    RevokeStaffBody:
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 8
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - reason
+      title: RevokeStaffBody
+    RotateSecretBody:
+      properties:
+        tenant_id:
+          type: string
+          title: Tenant Id
+        provider_id:
+          type: string
+          title: Provider Id
+        new_secret:
+          type: string
+          minLength: 1
+          title: New Secret
+      type: object
+      required:
+      - tenant_id
+      - provider_id
+      - new_secret
+      title: RotateSecretBody
+    StartSupportBody:
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 8
+          title: Reason
+        reference:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Reference
+        scopes:
+          items:
+            type: string
+            enum:
+            - configuration
+            - readiness
+          type: array
+          maxItems: 2
+          minItems: 1
+          title: Scopes
+        duration_minutes:
+          type: integer
+          enum:
+          - 15
+          - 30
+          - 60
+          title: Duration Minutes
+      additionalProperties: false
+      type: object
+      required:
+      - reason
+      - scopes
+      - duration_minutes
+      title: StartSupportBody
+    StudioMintBody:
       properties:
         agent_id:
           type: string
+          maxLength: 128
+          minLength: 1
+          title: Agent Id
+        language:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Language
+        voice_id:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Voice Id
+        test_mode:
+          type: string
+          enum:
+          - offline
+          - mock
+          - live
+          title: Test Mode
+          default: offline
+      type: object
+      required:
+      - agent_id
+      title: StudioMintBody
+    TelephonyPolicySettings:
+      properties:
+        outbound_enabled:
+          type: boolean
+          title: Outbound Enabled
+          default: false
+        allowed_destinations:
+          items:
+            type: string
+          type: array
+          title: Allowed Destinations
+          default: []
+        calling_timezone:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Calling Timezone
+          default: UTC
+        window_start:
+          type: string
+          format: time
+          title: Window Start
+          default: 09:00:00
+        window_end:
+          type: string
+          format: time
+          title: Window End
+          default: '17:00:00'
+        max_concurrent_calls:
+          type: integer
+          maximum: 1000.0
+          minimum: 1.0
+          title: Max Concurrent Calls
+          default: 1
+        max_calls_per_minute:
+          type: integer
+          maximum: 10000.0
+          minimum: 1.0
+          title: Max Calls Per Minute
+          default: 1
+        daily_spend_cap_cents:
+          type: integer
+          maximum: 100000000.0
+          minimum: 1.0
+          title: Daily Spend Cap Cents
+          default: 100
+        reserved_spend_cents_per_call:
+          type: integer
+          minimum: 1.0
+          title: Reserved Spend Cents Per Call
+          default: 1
+        max_call_duration_seconds:
+          type: integer
+          maximum: 14400.0
+          minimum: 1.0
+          title: Max Call Duration Seconds
+          default: 600
+      additionalProperties: false
+      type: object
+      title: TelephonyPolicySettings
+    TenantExtractionSchema:
+      properties:
+        schema_id:
+          type: string
           format: uuid
+          title: Schema Id
         tenant_id:
           type: string
           format: uuid
+          title: Tenant Id
         name:
           type: string
-        description:
-          type: string
-        version:
+          title: Name
+          default: default_schema
+        fields:
+          items:
+            $ref: '#/components/schemas/ExtractionField'
+          type: array
+          title: Fields
+        max_fields:
           type: integer
-        is_published:
-          type: boolean
-
-    CreateAgentRequest:
+          title: Max Fields
+          description: Per-tenant max field cap (default 50)
+          default: 50
+      additionalProperties: false
       type: object
       required:
-        - name
+      - tenant_id
+      title: TenantExtractionSchema
+      description: Tenant-authored extraction schema with max_fields cap enforcement.
+    ValidationError:
       properties:
-        name:
-          type: string
-        description:
-          type: string
-        languages:
-          type: array
+        loc:
           items:
-            type: string
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    WorkspaceErasureBody:
+      properties:
+        confirm_workspace_name:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Confirm Workspace Name
+      type: object
+      required:
+      - confirm_workspace_name
+      title: WorkspaceErasureBody

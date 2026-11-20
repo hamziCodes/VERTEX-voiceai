@@ -9,13 +9,33 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 import uvicorn
 
+from core.observability.http import install_observability, observability_runtime
+from core.runtime.health import CheckResult, ReadinessProbe, install_health_routes
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    yield
+    async with observability_runtime(_app, "worker-managed"):
+        yield
 
 
 app = FastAPI(title="Wavia Managed Worker", version="0.1.0", lifespan=lifespan)
+
+
+install_observability(app, "worker-managed")
+
+
+async def _managed_runtime_check() -> CheckResult:
+    # H05: LiveKit/managed transport is roadmap-only for v1. This process has
+    # no session runtime, so it must never receive traffic.
+    return CheckResult.fail(
+        "managed_runtime", "LiveKit managed runtime is roadmap-only (not implemented)"
+    )
+
+
+readiness = ReadinessProbe("worker-managed")
+readiness.add_check("managed_runtime", _managed_runtime_check)
+install_health_routes(app, readiness)
 
 
 @app.get("/health")

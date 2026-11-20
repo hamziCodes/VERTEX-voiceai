@@ -1,16 +1,5 @@
-"""Tenant Webhook Target Registry Model."""
+"""Compatibility import for the durable webhook target model."""
 
-from __future__ import annotations
+from post_call.webhook.models import TenantWebhookTarget, WebhookTargetState
 
-from uuid import UUID, uuid4
-from pydantic import BaseModel, Field
-
-
-class TenantWebhookTarget(BaseModel):
-    """Tenant configured webhook dispatch target."""
-
-    target_id: UUID = Field(default_factory=uuid4)
-    tenant_id: UUID = Field(...)
-    url: str = Field(...)
-    secret: str = Field(..., description="Shared HMAC signing secret (required, fails closed if missing)")
-    enabled: bool = Field(default=True)
+__all__ = ["TenantWebhookTarget", "WebhookTargetState"]

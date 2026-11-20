@@ -13,14 +13,15 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import httpx
 
 from core.observability.logging import get_logger
+from core.providers.interfaces.live_stt import BaseLiveSTTSession
 from core.providers.interfaces.stt import Transcript
+from core.providers.mode import should_use_mock_provider
 
 logger = get_logger("ucve.providers.gladia_live")
 
@@ -28,7 +29,7 @@ _GLADIA_LIVE_INIT = "https://api.gladia.io/v2/live"
 _STOP_SENTINEL = object()
 
 
-class GladiaLiveSTTSession:
+class GladiaLiveSTTSession(BaseLiveSTTSession):
     """A single Gladia live streaming session (connect → stream → close)."""
 
     def __init__(
@@ -42,12 +43,7 @@ class GladiaLiveSTTSession:
         model: str = "solaria-1",
         connect_factory: Callable[[str], Any] | None = None,
     ) -> None:
-        self.api_key = (
-            api_key
-            or os.environ.get("PLATFORM_GLADIA_API_KEY")
-            or os.environ.get("GLADIA_API_KEY")
-            or ""
-        ).strip()
+        self.api_key = (api_key or "").strip()
         self._language = language
         self._endpointing = endpointing
         self._receive_partials = receive_partials
@@ -59,7 +55,11 @@ class GladiaLiveSTTSession:
         self._ws: Any | None = None
         self._live = False
         self._audio_q: asyncio.Queue[bytes | object] = asyncio.Queue(maxsize=256)
-        self._transcript_q: asyncio.Queue[Transcript | object] = asyncio.Queue()
+        self._transcript_q: asyncio.Queue[Transcript | object] = asyncio.Queue(
+            maxsize=256
+        )
+        self.dropped_partial_count = 0
+        self.dropped_final_count = 0
         self._send_task: asyncio.Task[None] | None = None
         self._recv_task: asyncio.Task[None] | None = None
         self._closed = False
@@ -68,11 +68,13 @@ class GladiaLiveSTTSession:
     def is_live(self) -> bool:
         return self._live
 
+    @property
+    def transcript_queue_capacity(self) -> int:
+        return self._transcript_q.maxsize
+
     def _use_mock(self) -> bool:
-        return (
-            not self.api_key
-            or os.environ.get("RUN_MOCK_PROVIDERS") == "1"
-            or os.environ.get("RUN_LIVE_PROVIDERS") != "1"
+        return should_use_mock_provider(
+            provider_id="gladia", api_key=self.api_key
         )
 
     async def start(self) -> bool:
@@ -91,7 +93,10 @@ class GladiaLiveSTTSession:
             logger.info("Gladia Live session connected")
             return True
         except Exception as exc:  # pragma: no cover - network failure path
-            logger.error("Gladia Live init failed; falling back to batch", error=str(exc))
+            logger.error(
+                "Gladia Live init failed; falling back to batch",
+                error_type=type(exc).__name__,
+            )
             self._live = False
             return False
 
@@ -151,7 +156,7 @@ class GladiaLiveSTTSession:
         except asyncio.CancelledError:
             return
         except Exception as exc:  # pragma: no cover
-            logger.warning("Gladia Live send loop ended", error=str(exc))
+            logger.warning("Gladia Live send loop ended", error_type=type(exc).__name__)
 
     async def _send_stop(self) -> None:
         try:
@@ -164,13 +169,23 @@ class GladiaLiveSTTSession:
             async for raw in self._ws:
                 transcript = self._parse_message(raw)
                 if transcript is not None:
-                    await self._transcript_q.put(transcript)
+                    await self._queue_transcript(transcript)
         except asyncio.CancelledError:
             return
         except Exception as exc:  # pragma: no cover
-            logger.warning("Gladia Live recv loop ended", error=str(exc))
+            logger.warning("Gladia Live recv loop ended", error_type=type(exc).__name__)
         finally:
             await self._transcript_q.put(_STOP_SENTINEL)
+
+    async def _queue_transcript(self, transcript: Transcript) -> None:
+        """Bound partials while applying lossless backpressure to finals."""
+        if transcript.is_final:
+            await self._transcript_q.put(transcript)
+            return
+        try:
+            self._transcript_q.put_nowait(transcript)
+        except asyncio.QueueFull:
+            self.dropped_partial_count += 1
 
     def _parse_message(self, raw: str | bytes) -> Transcript | None:
         try:
@@ -179,7 +194,9 @@ class GladiaLiveSTTSession:
             return None
         msg_type = data.get("type")
         if msg_type == "error":
-            logger.error("Gladia Live error event", payload=data.get("data") or data)
+            error_data = data.get("data") if isinstance(data.get("data"), dict) else {}
+            code = error_data.get("code") or error_data.get("type") or "unknown"
+            logger.error("Gladia Live error event", error_code=str(code)[:64])
             return None
         if msg_type != "transcript":
             return None
@@ -191,9 +208,9 @@ class GladiaLiveSTTSession:
             return None
         if not is_final and not self._receive_partials:
             return None
-        logger.info(
+        logger.debug(
             "Gladia Live transcript",
-            text=text[:120],
+            text_chars=len(text),
             is_final=is_final,
         )
         return Transcript(
@@ -207,15 +224,7 @@ class GladiaLiveSTTSession:
         """Queue a PCM16 frame for transmission (no-op in mock mode)."""
         if not self._live or self._closed or not pcm16:
             return
-        try:
-            self._audio_q.put_nowait(pcm16)
-        except asyncio.QueueFull:
-            # Drop-oldest to bound memory under backpressure.
-            try:
-                self._audio_q.get_nowait()
-                self._audio_q.put_nowait(pcm16)
-            except asyncio.QueueEmpty:  # pragma: no cover
-                pass
+        await self._audio_q.put(pcm16)
 
     async def transcripts(self) -> AsyncIterator[Transcript]:
         """Async iterator over partial + final transcripts until the session ends."""

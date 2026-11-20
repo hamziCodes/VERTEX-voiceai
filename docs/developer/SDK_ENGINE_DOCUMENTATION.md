@@ -92,13 +92,14 @@ Default speaking values:
 | Setting | Default | Env var | Source |
 | --- | ---: | --- | --- |
 | TTS chunk size | `8192` bytes | `UCVE_TTS_CHUNK_SIZE_BYTES` | `core/listening/config.py:200` |
-| TTS pop skip | `2048` bytes | `UCVE_TTS_POP_SKIP_BYTES` | `core/listening/config.py:201` |
-| Egress prebuffer | `35` ms | `UCVE_EGRESS_PREBUFFER_MS` | `core/listening/config.py:202` |
-| Client prebuffer chunks | `3` | `UCVE_CLIENT_PREBUFFER_CHUNKS` | `core/listening/config.py:203` |
-| First chunk words | `2` | `UCVE_CHUNKER_FIRST_WORDS` | `core/listening/config.py:204` |
-| Min chunk words | `3` | `UCVE_CHUNKER_MIN_WORDS` | `core/listening/config.py:205` |
-| Tool filler delay | `400` ms | `UCVE_TOOL_FILLER_DELAY_MS` | `core/listening/config.py:206` |
-| Debug latency | `false` | `UCVE_DEBUG_LATENCY` | `core/listening/config.py:207` |
+| Egress prebuffer | `35` ms | `UCVE_EGRESS_PREBUFFER_MS` | `core/listening/config.py` |
+| First-audio timeout | `3000` ms | `UCVE_TTS_FIRST_CHUNK_TIMEOUT_MS` | `core/listening/config.py` |
+| Inter-chunk timeout | `3000` ms | `UCVE_TTS_INTER_CHUNK_TIMEOUT_MS` | `core/listening/config.py` |
+| Overall TTS timeout | `30000` ms | `UCVE_TTS_OVERALL_TIMEOUT_MS` | `core/listening/config.py` |
+| First chunk words | `2` | `UCVE_CHUNKER_FIRST_WORDS` | `core/listening/config.py` |
+| Min chunk words | `3` | `UCVE_CHUNKER_MIN_WORDS` | `core/listening/config.py` |
+| Tool filler delay | `400` ms | `UCVE_TOOL_FILLER_DELAY_MS` | `core/listening/config.py` |
+| Debug latency | `false` | `UCVE_DEBUG_LATENCY` | `core/listening/config.py` |
 
 ### FSM States and Transitions
 
@@ -198,7 +199,7 @@ Sources: `core/providers/interfaces/vad.py:11`, `core/providers/interfaces/stt.p
 
 ### TTS: Uplift
 
-`UpliftTTSProvider` uses `PLATFORM_UPLIFT_API_KEY` or `UPLIFT_API_KEY`, default base `https://api.upliftai.org`, default path `/v1/synthesis/text-to-speech`, and default output format `PCM_16000_16` (`core/providers/adapters/uplift_tts.py:36`). Voice resolution uses config voice ID, `UPLIFT_VOICE_ID`, `PLATFORM_UPLIFT_VOICE_ID`, then `v_meklc281` (`core/providers/adapters/uplift_tts.py:101`). Live synthesis strips a WAV RIFF header when present and can skip initial bytes with `UCVE_TTS_POP_SKIP_BYTES` (`core/providers/adapters/uplift_tts.py:117`).
+`UpliftTTSProvider` uses `PLATFORM_UPLIFT_API_KEY` or `UPLIFT_API_KEY`, default base `https://api.upliftai.org`, default path `/v1/synthesis/text-to-speech`, and default output format `PCM_16000_16`. Voice resolution uses config voice ID, `UPLIFT_VOICE_ID`, `PLATFORM_UPLIFT_VOICE_ID`, then `v_meklc281`. Live synthesis reads the HTTP body incrementally, emits the first audio bytes immediately, and parses variable RIFF/WAVE chunks without discarding valid PCM (`core/providers/adapters/uplift_tts.py`).
 
 ### TTS: ElevenLabs
 
@@ -278,7 +279,10 @@ Connection behavior:
 - JSON `metric` events are passed to `on_metric`.
 - `send_audio(pcm16_bytes)` sends raw binary audio (`sdk/python/ucve/client.py:109`).
 - `emit_playback_started()` sends `control.playback_started` with timestamp and kind (`sdk/python/ucve/client.py:115`).
-- `send_barge_in(rms=0.08)` sends `control.barge_in` (`sdk/python/ucve/client.py:125`).
+- `send_barge_in(rms=0.08)` sends sequenced `control.barge_in` correlated to the active turn.
+- `on_clear_audio` clears application-owned playout and may return played milliseconds; the SDK automatically sends `control.clear_audio_ack`.
+- `emit_playback_drained()` confirms normal client playout completion.
+- `on_played_text_commit` receives the assistant context boundary accepted by the server.
 - `disconnect()` cancels the listener and closes the socket (`sdk/python/ucve/client.py:135`).
 
 Minimal Python use:
@@ -348,7 +352,10 @@ Connection behavior:
 - JSON `metric` events are sent to `onMetric`.
 - `sendAudioChunk()` sends an `ArrayBuffer` or `Uint8Array` (`sdk/typescript/src/client.ts:101`).
 - `emitPlaybackStarted()` sends `control.playback_started` (`sdk/typescript/src/client.ts:108`).
-- `sendBargeIn(rms=0.08)` sends `control.barge_in` (`sdk/typescript/src/client.ts:118`).
+- `sendBargeIn(rms=0.08)` sends sequenced `control.barge_in` for the active turn.
+- `onClearAudio` clears application-owned playout and returns played milliseconds for the automatic acknowledgment.
+- `emitPlaybackDrained()` confirms normal client playout completion.
+- `onPlayedTextCommit` receives the server-accepted assistant context boundary.
 - `disconnect()` closes the socket (`sdk/typescript/src/client.ts:128`).
 
 Minimal TypeScript use:
@@ -383,7 +390,10 @@ The shared schema defines:
 | --- | --- | --- |
 | `control.pong` | required `t` number | `sdk/shared/event_schema.json:7` |
 | `control.playback_started` | required `t`, optional `kind` | `sdk/shared/event_schema.json:22` |
-| `control.barge_in` | required `rms`, optional `t` | `sdk/shared/event_schema.json:38` |
+| `control.barge_in` | `turn_id`, monotonic `sequence`, optional `rms`/`t` | `sdk/shared/event_schema.json` |
+| `control.clear_audio` / `_ack` | `turn_id`, `sequence`; ack adds `played_audio_ms` | `sdk/shared/event_schema.json` |
+| `control.playback_drained` | `turn_id`, `played_audio_ms` | `sdk/shared/event_schema.json` |
+| `assistant.played_text_commit` | `turn_id`, text, played duration, completeness | `sdk/shared/event_schema.json` |
 | `text.turn` | required `text` | `sdk/shared/event_schema.json:54` |
 | `transcript` | `speaker` enum `user` or `agent`, `text` | `sdk/shared/event_schema.json:70` |
 | `metric` | `event`, `waterfall` object | `sdk/shared/event_schema.json:86` |
@@ -409,7 +419,9 @@ Client -> server:
 | `control.pong` | JSON | Responds to server ping |
 | `control.ping` | JSON | Worker responds with pong |
 | `control.playback_started` | JSON | Client tells server audio playback reached user |
-| `control.barge_in` | JSON | Client requests barge-in with RMS |
+| `control.barge_in` | JSON | Client requests barge-in with active turn and sequence |
+| `control.clear_audio_ack` | JSON | Confirms scheduled audio was stopped and reports played duration |
+| `control.playback_drained` | JSON | Confirms an uninterrupted turn finished rendering |
 | `text_turn` / `user_turn` | JSON | Runtime text turn aliases |
 | `set_prompt` | JSON | Runtime prompt update |
 
@@ -421,7 +433,10 @@ Server -> client:
 | `transcript` | JSON | User or agent transcript |
 | `metric` | JSON | Session-ready, latency waterfall, debug events |
 | `ping` | JSON | Server keepalive |
-| `barge_in` related control | JSON | Worker notification path exists |
+| `control.barge_in` | JSON | Committed interruption with turn and sequence |
+| `control.clear_audio` | JSON | Requires immediate client playout clear and acknowledgment |
+| `audio_end` | JSON | Marks that server egress is drained for the turn |
+| `assistant.played_text_commit` | JSON | Text admitted to conversation history |
 
 The ping loop sends a control ping every 20 seconds and closes with code `1001` on pong timeout (`worker_raw/ws_constants.py:7`, `worker_raw/ws_session.py:282`).
 
@@ -511,10 +526,10 @@ The agents router is mounted at `/v1/agents` (`control_plane/routes/agents.py:18
 
 | Method | Path | Purpose | Source |
 | --- | --- | --- | --- |
-| POST | `/v1/telephony/telnyx/webhook` | Telnyx webhook with signature headers | `control_plane/routes/telephony.py:12` |
+| POST | `/v1/telephony/calls` | Authenticated, policy-gated single outbound call | `control_plane/routes/telephony.py` |
 | POST | `/v1/extraction-schemas` | Create extraction schema | `control_plane/routes/extraction_schemas.py:12` |
 | GET | `/v1/knowledge-bases/status/{tenant_id}` | Placeholder KB status | `control_plane/routes/knowledge_bases.py:10` |
-| POST | `/v1/alerts/config/{tenant_id}` | Update alert email/webhook config | `control_plane/routes/alerts.py:10` |
+| GET | `/v1/alerts/{tenant_id}` | List the tenant's operational alerts (quota, capacity, provider chain) | `control_plane/routes/alerts.py` |
 
 Usage currently returns quota and zeroed usage totals (`control_plane/routes/usage.py:8`). Audit queries are tenant-scoped unless role is `platform_admin` (`control_plane/audit_routes.py:10`). Secret rotation endpoint returns a success message after RBAC checks (`control_plane/secrets_routes.py:12`).
 
@@ -526,7 +541,7 @@ The standalone telephony gateway exposes:
 | --- | --- | --- | --- |
 | GET | `/health` | Health check | `telephony_gateway/main.py:19` |
 | GET | `/` | Service metadata | `telephony_gateway/main.py:24` |
-| POST | `/v1/telephony/webhook/{carrier}` | Generic carrier webhook normalization | `telephony_gateway/main.py:29` |
+| POST | `/v1/telephony/webhooks/telnyx` | Exact-body Ed25519 Telnyx webhook admission | `telephony_gateway/main.py` |
 
 `WebhookNormalizer` supports Telnyx and Twilio. Telnyx event names are mapped into answered, ended, and DTMF categories using carrier payload fields (`telephony_gateway/webhook_normalizer.py:20`). Twilio maps `CallStatus` values such as `in-progress`, `answered`, `completed`, `canceled`, `failed`, and `busy` (`telephony_gateway/webhook_normalizer.py:46`).
 
@@ -534,9 +549,13 @@ Telnyx signature verification is fail-closed. It checks required headers, timest
 
 ### Trunks and SIP
 
-`SIPTrunkConfig` supports providers `telnyx`, `twilio`, `plivo`, `bandwidth`, and `generic_pta`; roles `primary`, `secondary`, and `sandbox`; priority; enabled state; region; and generated trunk ID (`telephony_gateway/trunk_config.py:10`). Trunk validation requires a credentials reference and enabled state (`telephony_gateway/trunk_config.py:41`).
+`SIPTrunkConfig` models known provider and role values, priority, enabled state,
+region, credential reference, connection ID, and trunk ID. Readiness requires an
+enabled supported adapter plus both the credential reference and connection ID.
 
-`TrunkFailoverRouter` sorts trunks by priority and chooses the first enabled healthy trunk. It can load enabled tenant trunks from DB with RLS and falls back to a default Telnyx trunk when none are configured (`telephony_gateway/failover.py:19`).
+`TrunkFailoverRouter` sorts tenant trunks by priority and fails closed unless a
+supported trunk is explicitly healthy and fully configured. Secondary selection
+is only for new calls; established calls are never migrated transparently.
 
 `DirectSIPTransport` performs inbound RTP mu-law decode, 8 kHz to 16 kHz resampling, and rebuffering into 512-sample canonical frames. Egress down-samples 16 kHz PCM16 to 8 kHz and encodes mu-law (`core/transport/direct_sip.py:19`).
 
@@ -544,7 +563,12 @@ Telnyx signature verification is fail-closed. It checks required headers, timest
 
 ### Outbound and Supervisor Features
 
-The repository does not contain a production outbound dialer, predictive campaign engine, answering-machine detection, supervisor whisper, or true carrier warm-transfer implementation. `docs/agent-studio/OUTBOUND_UI_DEFERRED.md:1` explicitly classifies outbound calling campaigns, predictive dialing algorithms, and batch contact ingestion as later work. A built-in `escalate_to_human` tool exists, but it is a tool-call result path, not a telephony transfer feature (`core/mcp/builtin_tools.py:48`).
+The repository contains a controlled, authenticated single-call Telnyx Dial path
+with tenant policy, durable idempotency, spend/rate/concurrency caps, and a
+separate live-call gate. It does not contain campaigns, batch contact ingestion,
+predictive dialing, answering-machine detection, supervisor whisper, or true
+carrier warm transfer. `escalate_to_human` remains a tool result, not a telephony
+transfer feature.
 
 ## 5. Post-Call Intelligence & Memory Engine
 
@@ -692,15 +716,15 @@ The example environment file documents these public configuration names. Values 
 | Control secrets | `UCVE_JWT_SECRET`, `UCVE_MINT_HMAC_SECRET`, `UCVE_METRICS_BEARER` | `.env.example:21` |
 | WebSocket/CORS | `UCVE_WS_PUBLIC_URL`, `UCVE_ALLOWED_ORIGINS` | `.env.example:26` |
 | Data stores | `DATABASE_URL`, `REDIS_URL` | `.env.example:38` |
-| LLM providers | `PLATFORM_GROQ_API_KEY`, `GOOGLE_API_KEY`, `PLATFORM_OPENAI_API_KEY`, `PLATFORM_ANTHROPIC_API_KEY` | `.env.example:47` |
-| STT providers | `PLATFORM_GLADIA_API_KEY`, `PLATFORM_DEEPGRAM_API_KEY`, `PLATFORM_SONIOX_API_KEY` | `.env.example:62` |
-| TTS providers | `PLATFORM_UPLIFT_API_KEY`, `UPLIFT_VOICE_ID`, `PLATFORM_UPLIFT_VOICE_ID`, `UPLIFT_OUTPUT_FORMAT`, `PLATFORM_ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `PLATFORM_ELEVENLABS_VOICE_ID`, `ELEVENLABS_OUTPUT_FORMAT`, `ELEVENLABS_MODEL_ID`, `PLATFORM_CARTESIA_API_KEY`, `CARTESIA_API_KEY`, `CARTESIA_VOICE_ID`, `CARTESIA_MODEL_ID`, `CARTESIA_SAMPLE_RATE`, `CARTESIA_VERSION`, `PLATFORM_RIME_API_KEY`, `PLATFORM_FISH_AUDIO_API_KEY` | `.env.example:74` |
-| Telephony | `TELNYX_API_KEY`, `TELNYX_CONNECTION_ID`, `TELNYX_PUBLIC_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `UCVE_ENABLE_LIVEKIT`, `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | `.env.example:110` |
+| LLM providers | `PLATFORM_GROQ_API_KEY`, `PLATFORM_GEMINI_API_KEY`, `PLATFORM_OPENAI_API_KEY`, `WAVIA_POST_CALL_LLM_PROVIDER`, `WAVIA_POST_CALL_LLM_MODEL` | `.env.example:47` |
+| STT providers | `PLATFORM_GLADIA_API_KEY`, `PLATFORM_DEEPGRAM_API_KEY` | `.env.example:62` |
+| TTS providers | `PLATFORM_UPLIFT_API_KEY`, `UPLIFT_VOICE_ID`, `PLATFORM_UPLIFT_VOICE_ID`, `UPLIFT_OUTPUT_FORMAT`, `PLATFORM_ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `PLATFORM_ELEVENLABS_VOICE_ID`, `ELEVENLABS_OUTPUT_FORMAT`, `ELEVENLABS_MODEL_ID`, `PLATFORM_CARTESIA_API_KEY`, `CARTESIA_VOICE_ID`, `CARTESIA_MODEL_ID`, `CARTESIA_SAMPLE_RATE`, `CARTESIA_VERSION` | `.env.example:74` |
+| Telephony | `TELNYX_PUBLIC_KEY`, `UCVE_TELEPHONY_MEDIA_PUBLIC_URL`, `RUN_LIVE_TELEPHONY`, tenant BYOK credential/trunk records | `.env.example` |
 | KMS/cloud | `AWS_KMS_KEY_ID`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `GCP_KMS_KEY_NAME`, `GOOGLE_APPLICATION_CREDENTIALS` | `.env.example:130` |
 | Observability | `OTEL_EXPORTER_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `SENTRY_DSN` | `.env.example:142` |
 | Pipeline phases | `UCVE_PIPELINE_V2` | `.env.example:147` |
 | Listening | `UCVE_VAD_THRESHOLD`, `UCVE_VAD_MIN_SPEECH_MS`, `UCVE_VAD_MIN_SILENCE_MS`, `UCVE_VAD_PRE_SPEECH_MS`, `UCVE_NOISE_GATE_K`, `UCVE_NOISE_GATE_WINDOW`, `UCVE_NOISE_GATE_DEFAULT_FLOOR`, `UCVE_BARGE_VERIFY_WINDOW_MS`, `UCVE_BARGE_MIN_SUSTAINED_SPEECH_MS`, `UCVE_BARGE_TEXT_BACKUP_WORDS`, `UCVE_GLADIA_ENDPOINTING`, `UCVE_GLADIA_RECEIVE_PARTIALS`, `UCVE_STT_MOCK_TEXT` | `.env.example:155` |
-| Speaking | `UCVE_TTS_CHUNK_SIZE_BYTES`, `UCVE_TTS_POP_SKIP_BYTES`, `UCVE_EGRESS_PREBUFFER_MS`, `UCVE_CLIENT_PREBUFFER_CHUNKS`, `UCVE_CHUNKER_FIRST_WORDS`, `UCVE_CHUNKER_MIN_WORDS`, `UCVE_TOOL_FILLER_DELAY_MS`, `UCVE_DEBUG_LISTENING`, `UCVE_DEBUG_LATENCY`, `UCVE_INITIAL_GREETING` | `.env.example:175` |
+| Speaking | `UCVE_TTS_CHUNK_SIZE_BYTES`, `UCVE_EGRESS_PREBUFFER_MS`, `UCVE_TTS_FIRST_CHUNK_TIMEOUT_MS`, `UCVE_TTS_INTER_CHUNK_TIMEOUT_MS`, `UCVE_TTS_OVERALL_TIMEOUT_MS`, `UCVE_CHUNKER_FIRST_WORDS`, `UCVE_CHUNKER_MIN_WORDS`, `UCVE_TOOL_FILLER_DELAY_MS`, `UCVE_DEBUG_LISTENING`, `UCVE_DEBUG_LATENCY`, `UCVE_INITIAL_GREETING` | `.env.example` |
 
 ### Known Integration Caveats
 

@@ -68,8 +68,11 @@ def main() -> None:
     print(f"Google Gemini LLM: key_present={bool(gemini)}")
     if gemini:
         try:
+            # Header, not ?key=: a query-string key lands in proxy logs and in
+            # httpx error messages, which this script prints.
             r = httpx.get(
-                f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini}",
+                "https://generativelanguage.googleapis.com/v1beta/models",
+                headers={"x-goog-api-key": gemini},
                 timeout=10.0,
             )
             print(f"  Gemini ping HTTP {r.status_code}")

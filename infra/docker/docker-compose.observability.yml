@@ -1,0 +1,20 @@
+# Local telemetry collector (Phase 14). Not a production monitoring stack.
+#   UCVE_METRICS_BEARER=<local value> WAVIA_SCRAPE_TARGETS='["host.docker.internal:8080"]' \
+#     docker compose -f infra/docker/docker-compose.observability.yml up -d
+# Then run services with OTEL_EXPORTER_ENABLED=true and
+# OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318.
+name: wavia-observability
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      UCVE_METRICS_BEARER: ${UCVE_METRICS_BEARER:?set a local metrics bearer}
+      WAVIA_SCRAPE_TARGETS: ${WAVIA_SCRAPE_TARGETS:-["host.docker.internal:8080"]}
+    ports:
+      - "4318:4318"
+    volumes:
+      - ../observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+      - ${WAVIA_TELEMETRY_DIR:-../../hamza_local/telemetry}:/telemetry
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -18,4 +18,4 @@ ALTER TABLE telephony_dids FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY telephony_dids_tenant_isolation ON telephony_dids
     FOR ALL
-    USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);

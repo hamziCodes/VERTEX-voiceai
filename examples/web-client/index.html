@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     :root {
+      --header-height: 94px;
       --bg-dark: #0a0d12;
       --panel-bg: rgba(18, 24, 38, 0.85);
       --panel-border: rgba(255, 255, 255, 0.08);
@@ -610,6 +611,372 @@
     .pill-warn { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); border: 1px solid rgba(245, 158, 11, 0.3); }
     .pill-error { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); border: 1px solid rgba(244, 63, 94, 0.3); }
     .pill-idle { background: rgba(148, 163, 184, 0.1); color: var(--text-muted); border: 1px solid rgba(148, 163, 184, 0.2); }
+
+    /* Compact voice workspace */
+    #tab-playground.active {
+      height: calc(100vh - var(--header-height));
+      padding: 0.75rem 0;
+      overflow: hidden;
+    }
+
+    .playground-workspace {
+      height: 100%;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(260px, 310px) minmax(390px, 1fr) minmax(310px, 390px);
+      gap: 0.75rem;
+    }
+
+    .workspace-panel {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      background: #111722;
+      border: 1px solid var(--panel-border);
+      border-radius: 0.75rem;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+    }
+
+    .workspace-scroll {
+      height: 100%;
+      overflow-y: auto;
+      padding: 1rem;
+      scrollbar-width: thin;
+    }
+
+    .workspace-heading,
+    .section-heading,
+    .panel-tabs,
+    .conversation-status,
+    .log-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.65rem;
+    }
+
+    .workspace-heading h2 {
+      font-size: 0.95rem;
+      letter-spacing: -0.01em;
+    }
+
+    .workspace-kicker,
+    .section-label {
+      color: var(--text-muted);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .runtime-mode {
+      flex: none;
+      padding: 0.28rem 0.5rem;
+      border-radius: 0.35rem;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      color: var(--text-muted);
+      font: 700 0.65rem/1 var(--font-mono);
+      letter-spacing: 0.04em;
+    }
+
+    .runtime-mode.mock {
+      color: var(--accent-amber);
+      border-color: rgba(245, 158, 11, 0.45);
+      background: rgba(245, 158, 11, 0.1);
+    }
+
+    .runtime-mode.live {
+      color: var(--accent-green);
+      border-color: rgba(16, 185, 129, 0.45);
+      background: rgba(16, 185, 129, 0.1);
+    }
+
+    .mode-notice {
+      margin: 0.75rem 0;
+      padding: 0.65rem 0.75rem;
+      border-left: 2px solid var(--accent-amber);
+      background: rgba(245, 158, 11, 0.07);
+      color: #cbd5e1;
+      font-size: 0.74rem;
+      line-height: 1.45;
+    }
+
+    .session-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+      margin: 0.85rem 0 0.6rem;
+    }
+
+    .session-actions .btn-primary { grid-column: 1 / -1; }
+    .session-actions button { padding: 0.65rem 0.75rem; }
+
+    .compact-toggle {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      padding: 0.6rem;
+      border: 1px solid var(--panel-border);
+      border-radius: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .setup-disclosure {
+      margin-top: 0.8rem;
+      border-top: 1px solid var(--panel-border);
+      padding-top: 0.8rem;
+    }
+
+    .setup-disclosure summary {
+      cursor: pointer;
+      color: var(--text-main);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .setup-content { padding-top: 0.75rem; }
+    .setup-content .provider-grid { grid-template-columns: 1fr; }
+    .setup-content .system-prompt-box { margin-top: 0.65rem; min-height: 74px; }
+
+    .conversation-panel {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      gap: 0.75rem;
+      padding: 1rem;
+    }
+
+    .conversation-panel .visualizer-container { padding: 0.65rem 0.75rem; }
+    .conversation-panel canvas { height: 42px; }
+    .conversation-panel .transcript-box { height: auto; min-height: 0; }
+    .conversation-panel .input-bar { margin: 0; }
+
+    .voice-state {
+      color: var(--text-muted);
+      font: 700 0.68rem/1 var(--font-mono);
+    }
+
+    .voice-state.speaking { color: var(--accent-green); }
+
+    .inspector-panel {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .panel-tabs {
+      justify-content: flex-start;
+      padding: 0.7rem;
+      border-bottom: 1px solid var(--panel-border);
+      overflow-x: auto;
+    }
+
+    .panel-tab {
+      flex: 1;
+      min-width: max-content;
+      padding: 0.48rem 0.65rem;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.72rem;
+    }
+
+    .panel-tab.active {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.06);
+      border-color: var(--panel-border);
+    }
+
+    .inspector-content { min-height: 0; }
+    .inspector-view { display: none; height: 100%; overflow-y: auto; padding: 1rem; }
+    .inspector-view.active { display: block; }
+    .inspector-view .latency-grid { grid-template-columns: repeat(2, 1fr); }
+    .inspector-view .console-logs { height: calc(100% - 42px); min-height: 260px; }
+    .inspector-view .metrics-grid { margin-top: 0.75rem; }
+
+    /* Knowledge Setup */
+    #tab-knowledge.active {
+      height: calc(100vh - var(--header-height));
+      overflow: hidden;
+    }
+
+    .knowledge-shell {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 0.85rem;
+    }
+
+    .knowledge-heading {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .knowledge-heading h2 { font-size: 1.15rem; margin-top: 0.2rem; }
+    .knowledge-heading p { color: var(--text-muted); font-size: 0.78rem; margin-top: 0.25rem; }
+
+    .knowledge-workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 260px minmax(420px, 1fr) 330px;
+      gap: 0.85rem;
+    }
+
+    .knowledge-pane {
+      min-height: 0;
+      overflow-y: auto;
+      background: rgba(14, 19, 30, 0.92);
+      border: 1px solid var(--panel-border);
+      border-radius: 0.7rem;
+      padding: 1rem;
+    }
+
+    .knowledge-pane h3 { font-size: 0.88rem; margin-bottom: 0.25rem; }
+    .knowledge-help { color: var(--text-muted); font-size: 0.72rem; line-height: 1.5; }
+    .knowledge-form { display: grid; gap: 0.7rem; }
+    .knowledge-form + .knowledge-form { margin-top: 0.85rem; }
+    .knowledge-form label { color: #cbd5e1; font-size: 0.72rem; font-weight: 600; }
+    .knowledge-form input, .knowledge-form select, .knowledge-form textarea { width: 100%; }
+
+    .knowledge-divider { border: 0; border-top: 1px solid var(--panel-border); margin: 1rem 0; }
+    .knowledge-mode {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--accent-amber);
+      font: 700 0.65rem/1 var(--font-mono);
+      letter-spacing: 0.04em;
+    }
+    .knowledge-mode::before { content: ''; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: currentColor; }
+    .knowledge-mode.connected { color: var(--accent-green); }
+
+    .knowledge-steps { list-style: none; display: grid; gap: 0.35rem; margin-top: 0.8rem; }
+    .knowledge-steps li {
+      display: grid;
+      grid-template-columns: 1.35rem 1fr;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.4rem 0.45rem;
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      border-left: 2px solid transparent;
+    }
+    .knowledge-steps li::before {
+      content: attr(data-step);
+      display: grid;
+      place-items: center;
+      width: 1.25rem;
+      height: 1.25rem;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 50%;
+      font: 600 0.62rem/1 var(--font-mono);
+    }
+    .knowledge-steps li.complete { color: #cbd5e1; border-left-color: var(--accent-green); }
+    .knowledge-steps li.complete::before { content: '✓'; color: var(--accent-green); border-color: var(--accent-green); }
+
+    .knowledge-main-pane { display: grid; grid-template-rows: auto minmax(0, 1fr); padding: 0; overflow: hidden; }
+    .knowledge-task-tabs {
+      display: flex;
+      gap: 0.25rem;
+      padding: 0.65rem;
+      border-bottom: 1px solid var(--panel-border);
+      overflow-x: auto;
+    }
+    .knowledge-task-tab {
+      min-width: max-content;
+      padding: 0.5rem 0.7rem;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.72rem;
+    }
+    .knowledge-task-tab.active { color: var(--text-main); border-color: var(--panel-border); background: rgba(255,255,255,0.06); }
+    .knowledge-task-panel { display: none; overflow-y: auto; padding: 1rem; }
+    .knowledge-task-panel.active { display: block; }
+    .knowledge-task-panel h3 { font-size: 1rem; }
+
+    .knowledge-dropzone {
+      margin-top: 0.9rem;
+      min-height: 150px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 1.25rem;
+      border: 1px dashed rgba(79, 172, 254, 0.55);
+      border-radius: 0.65rem;
+      background: rgba(79, 172, 254, 0.045);
+      cursor: pointer;
+    }
+    .knowledge-dropzone.dragging { border-color: var(--accent-cyan); background: rgba(0,242,254,0.09); }
+    .knowledge-dropzone input { position: absolute; opacity: 0; pointer-events: none; }
+    .knowledge-dropzone strong { display: block; font-size: 0.86rem; }
+    .knowledge-dropzone span { display: block; margin-top: 0.35rem; color: var(--text-muted); font-size: 0.7rem; line-height: 1.5; }
+
+    .knowledge-action-row { display: flex; gap: 0.55rem; margin-top: 0.85rem; flex-wrap: wrap; }
+    .knowledge-action-row button { flex: 1; min-width: 130px; }
+    .knowledge-feedback { min-height: 1.4rem; margin-top: 0.7rem; color: var(--text-muted); font-size: 0.72rem; }
+    .knowledge-feedback.error { color: var(--accent-rose); }
+    .knowledge-feedback.success { color: var(--accent-green); }
+
+    .knowledge-source-header { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+    .knowledge-source-list { display: grid; gap: 0.55rem; margin-top: 0.85rem; }
+    .knowledge-source {
+      padding: 0.7rem;
+      border: 1px solid var(--panel-border);
+      border-left: 2px solid var(--text-muted);
+      border-radius: 0.45rem;
+      background: rgba(255,255,255,0.025);
+    }
+    .knowledge-source[data-status='ready'] { border-left-color: var(--accent-green); }
+    .knowledge-source[data-status='failed'] { border-left-color: var(--accent-rose); }
+    .knowledge-source-name { font-size: 0.76rem; font-weight: 650; overflow-wrap: anywhere; }
+    .knowledge-source-meta { margin-top: 0.3rem; color: var(--text-muted); font: 0.64rem/1.5 var(--font-mono); }
+    .knowledge-source-actions { display: flex; gap: 0.35rem; margin-top: 0.55rem; }
+    .knowledge-source-actions button { padding: 0.35rem 0.5rem; font-size: 0.66rem; }
+
+    .knowledge-empty { padding: 1.4rem 0.5rem; text-align: center; color: var(--text-muted); font-size: 0.74rem; line-height: 1.5; }
+    .knowledge-result-list { display: grid; gap: 0.65rem; margin-top: 0.85rem; }
+    .knowledge-result { padding: 0.8rem; border-left: 2px solid var(--accent-cyan); background: rgba(255,255,255,0.035); }
+    .knowledge-result p { font-size: 0.78rem; line-height: 1.55; }
+    .knowledge-result footer { margin-top: 0.45rem; color: var(--text-muted); font: 0.64rem/1.4 var(--font-mono); }
+
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .knowledge-dropzone:focus-visible {
+      outline: 2px solid var(--accent-cyan);
+      outline-offset: 2px;
+    }
+
+    @media (min-width: 1181px) {
+      body:has(#tab-playground.active) { overflow: hidden; }
+    }
+
+    @media (max-width: 1180px) {
+      header { padding-inline: 1rem; }
+      .brand-title p { display: none; }
+      .tab-nav { max-width: 62vw; overflow-x: auto; }
+      .tab-btn { white-space: nowrap; padding-inline: 0.7rem; }
+      .playground-workspace { grid-template-columns: 270px minmax(360px, 1fr); }
+      .inspector-panel { grid-column: 1 / -1; min-height: 360px; }
+      #tab-playground.active { height: auto; overflow: visible; }
+      #tab-knowledge.active { height: auto; overflow: visible; }
+      .knowledge-workspace { grid-template-columns: 250px minmax(0, 1fr); }
+      .knowledge-sources-pane { grid-column: 1 / -1; max-height: 380px; }
+    }
+
+    @media (max-width: 760px) {
+      :root { --header-height: 116px; }
+      header { align-items: flex-start; flex-wrap: wrap; gap: 0.6rem; }
+      .tab-nav { order: 3; max-width: 100%; width: 100%; }
+      main { padding: 0 0.65rem; }
+      .playground-workspace { display: flex; flex-direction: column; }
+      .workspace-panel { min-height: 420px; }
+      .conversation-panel { min-height: 620px; }
+      .provider-grid, .latency-grid, .grid-2col, .grid-3col { grid-template-columns: 1fr; }
+      .knowledge-heading { align-items: flex-start; flex-direction: column; }
+      .knowledge-workspace { grid-template-columns: 1fr; }
+      .knowledge-sources-pane { grid-column: auto; }
+      .knowledge-task-tabs { position: sticky; top: 0; background: #0e131e; z-index: 2; }
+    }
   </style>
 </head>
 <body>
@@ -624,13 +991,14 @@
     </div>
 
     <!-- Tab Bar -->
-    <nav class="tab-nav">
-      <button class="tab-btn active" data-tab="playground">🎙️ Voice Playground</button>
-      <button class="tab-btn" data-tab="onboarding">🚀 Quickstart & Guide</button>
-      <button class="tab-btn" data-tab="endpoints">🌐 Endpoint Matrix</button>
-      <button class="tab-btn" data-tab="rag">🧠 RAG Inspector</button>
-      <button class="tab-btn" data-tab="telephony">📞 Telephony Gateway</button>
-      <button class="tab-btn" data-tab="keys">🔑 Provider Keys</button>
+    <nav class="tab-nav" role="tablist" aria-label="Developer console sections">
+      <button class="tab-btn active" data-tab="playground" role="tab" aria-selected="true" aria-controls="tab-playground">🎙️ Voice Playground</button>
+      <button class="tab-btn" data-tab="onboarding" role="tab" aria-selected="false" aria-controls="tab-onboarding">🚀 Quickstart & Guide</button>
+      <button class="tab-btn" data-tab="endpoints" role="tab" aria-selected="false" aria-controls="tab-endpoints">🌐 Endpoint Matrix</button>
+      <button class="tab-btn" data-tab="knowledge" role="tab" aria-selected="false" aria-controls="tab-knowledge">📚 Knowledge Setup</button>
+      <button class="tab-btn" data-tab="rag" role="tab" aria-selected="false" aria-controls="tab-rag">🧠 RAG Inspector</button>
+      <button class="tab-btn" data-tab="telephony" role="tab" aria-selected="false" aria-controls="tab-telephony">📞 Telephony Gateway</button>
+      <button class="tab-btn" data-tab="keys" role="tab" aria-selected="false" aria-controls="tab-keys">🔑 Provider Keys</button>
     </nav>
 
     <div id="statusBadge" class="status-badge">
@@ -644,182 +1012,186 @@
     <!-- TAB 1: VOICE PLAYGROUND -->
     <!-- ========================================================================= -->
     <section id="tab-playground" class="tab-content active">
-      <div class="playground-grid">
-        <!-- Controls & Visualizers -->
-        <div class="card">
-          <div class="card-title">
-            <span>Session Controls</span>
-          </div>
+      <div class="playground-workspace">
+        <aside class="workspace-panel control-panel">
+          <div class="workspace-scroll">
+            <div class="workspace-heading">
+              <div>
+                <div class="workspace-kicker">Voice session</div>
+                <h2>Control room</h2>
+              </div>
+              <span id="runtimeModeBadge" class="runtime-mode">MODE UNKNOWN</span>
+            </div>
 
-          <div class="btn-group">
-            <button id="startBtn" class="btn-primary">
-              <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 1A5 5 0 1 1 8 3a5 5 0 0 1 0 10z"/></svg>
-              Start Voice Session
-            </button>
-            <button id="muteBtn" class="btn-secondary" disabled>
-              <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/></svg>
-              <span id="muteText">Mute Mic</span>
-            </button>
-            <button id="stopBtn" class="btn-danger" disabled>
-              <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
-              End Session
-            </button>
-            <button id="speakerTestBtn" class="btn-secondary" type="button">
-              Test Speakers
-            </button>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; padding: 0.45rem 0.65rem; background: rgba(0, 242, 254, 0.06); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 0.5rem; font-size: 0.78rem;">
-            <input type="checkbox" id="echoGuardCheck" checked style="accent-color: var(--accent-cyan); width: 1rem; height: 1rem; cursor: pointer;" />
-            <label for="echoGuardCheck" style="cursor: pointer; user-select: none; color: #f1f5f9;">
-              <strong>Echo Guard</strong> (Auto-mutes mic while Agent speaks — prevents speaker loops)
+            <div id="sttModeNotice" class="mode-notice">
+              Connect to inspect provider and transcript mode.
+            </div>
+
+            <div class="session-actions">
+              <button id="startBtn" class="btn-primary">
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 1A5 5 0 1 1 8 3a5 5 0 0 1 0 10z"/></svg>
+                Start session
+              </button>
+              <button id="muteBtn" class="btn-secondary" disabled>
+                <span id="muteText">Mute mic</span>
+              </button>
+              <button id="stopBtn" class="btn-danger" disabled>End session</button>
+            </div>
+
+            <label class="compact-toggle" for="echoGuardCheck">
+              <input type="checkbox" id="echoGuardCheck" />
+              <span><strong>Echo guard</strong><br />Pause microphone input while agent audio plays.</span>
             </label>
-          </div>
-          <audio id="speakerAudio" autoplay playsinline style="display:none"></audio>
-          <p class="provider-hint" id="speakerHint">Use Chrome/Edge. If the startup test chime is silent, check output device.</p>
 
-          <div class="card-title" style="margin-top: 0.5rem;">
-            <span>Voice Pipeline Providers</span>
+            <button id="speakerTestBtn" class="btn-secondary" type="button" style="width:100%; margin-top:0.6rem;">
+              Test speakers
+            </button>
+            <audio id="speakerAudio" autoplay playsinline style="display:none"></audio>
+            <p class="provider-hint" id="speakerHint">Chrome or Edge recommended.</p>
+
+            <details class="setup-disclosure" open>
+              <summary>Pipeline setup</summary>
+              <div class="setup-content">
+                <div class="provider-grid">
+                  <div class="provider-field">
+                    <label for="sttProviderSelect">Speech to text</label>
+                    <select id="sttProviderSelect">
+                      <option value="gladia" selected>Gladia</option>
+                      <option value="deepgram">Deepgram Nova-3</option>
+                    </select>
+                  </div>
+                  <div class="provider-field">
+                    <label for="llmProviderSelect">Language model</label>
+                    <select id="llmProviderSelect">
+                      <option value="groq" selected>Groq</option>
+                      <option value="gemini">Google Gemini</option>
+                      <option value="openai">OpenAI</option>
+                    </select>
+                  </div>
+                  <div class="provider-field">
+                    <label for="llmModelSelect">Model</label>
+                    <select id="llmModelSelect">
+                      <option value="openai/gpt-oss-120b" selected>GPT-OSS 120B</option>
+                      <option value="qwen/qwen3.8-27b">Qwen 3.8 27B</option>
+                      <option value="openai/gpt-oss-20b">GPT-OSS 20B</option>
+                    </select>
+                  </div>
+                  <div class="provider-field">
+                    <label for="ttsProviderSelect">Text to speech</label>
+                    <select id="ttsProviderSelect">
+                      <option value="cartesia" selected>Cartesia Sonic</option>
+                      <option value="uplift">Uplift Orator</option>
+                      <option value="elevenlabs">ElevenLabs Turbo 2.5</option>
+                    </select>
+                  </div>
+                </div>
+                <label class="section-label" for="systemPromptInput" style="display:block; margin-top:0.75rem;">Agent instruction</label>
+                <textarea id="systemPromptInput" class="system-prompt-box" rows="3" placeholder="Enter system prompt">You are Wavia Voice AI, a helpful, natural, concise voice assistant. Respond directly and concisely in 1-2 short conversational sentences.</textarea>
+              </div>
+            </details>
           </div>
-          <div class="provider-grid">
-            <div class="provider-field">
-              <label for="sttProviderSelect">STT Provider</label>
-              <select id="sttProviderSelect">
-                <option value="gladia" selected>Gladia (Live STT)</option>
-                <option value="deepgram">Deepgram (Nova-3 STT)</option>
-              </select>
+        </aside>
+
+        <section class="workspace-panel conversation-panel" aria-label="Live conversation">
+          <div class="workspace-heading">
+            <div>
+              <div class="workspace-kicker">Conversation</div>
+              <h2>Live transcript</h2>
             </div>
-            <div class="provider-field">
-              <label for="ttsProviderSelect">TTS Provider</label>
-              <select id="ttsProviderSelect">
-                <option value="cartesia" selected>Cartesia (Sonic / EN)</option>
-                <option value="uplift">Uplift (Orator / UR+EN)</option>
-                <option value="elevenlabs">ElevenLabs (Turbo 2.5)</option>
-              </select>
-            </div>
-            <div class="provider-field">
-              <label for="llmProviderSelect">LLM Provider</label>
-              <select id="llmProviderSelect">
-                <option value="groq" selected>Groq (Ultra-Fast LPUs)</option>
-                <option value="gemini">Google Gemini (Google AI)</option>
-                <option value="openai">OpenAI (GPT-4o)</option>
-              </select>
-            </div>
-            <div class="provider-field">
-              <label for="llmModelSelect">LLM Model</label>
-              <select id="llmModelSelect">
-                <option value="openai/gpt-oss-120b" selected>GPT-OSS 120B (Groq Fast)</option>
-                <option value="qwen/qwen3.8-27b">Qwen 3.8 27B (Groq Low-Latency)</option>
-                <option value="openai/gpt-oss-20b">GPT-OSS 20B (Groq Ultra-Fast)</option>
-              </select>
-            </div>
+            <span id="voiceState" class="voice-state">WAITING</span>
           </div>
 
-          <div class="card-title" style="margin-top: 0.5rem;">
-            <span>System Prompt (AI Agent Persona)</span>
-          </div>
-          <textarea id="systemPromptInput" class="system-prompt-box" rows="2" placeholder="Enter System Prompt...">You are Wavia Voice AI, a helpful, natural, concise voice assistant. Respond directly and concisely in 1-2 short conversational sentences.</textarea>
-
-          <div class="card-title">
-            <span>Live Vocal Visualizer</span>
-          </div>
           <div class="visualizer-container">
             <canvas id="waveformCanvas"></canvas>
             <div class="meter-label">
-              <span>Mic Volume Level</span>
+              <span>Microphone level</span>
               <span id="meterPercent">0%</span>
             </div>
-            <div class="meter-bar">
-              <div id="meterFill" class="meter-fill"></div>
-            </div>
+            <div class="meter-bar"><div id="meterFill" class="meter-fill"></div></div>
           </div>
 
-          <div class="card-title">
-            <span>Session Metrics</span>
-          </div>
-          <div class="metrics-grid">
-            <div class="metric-card">
-              <div class="metric-title">PCM Frames</div>
-              <div id="metricFrames" class="metric-value">0</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-title">Audio Out (KB)</div>
-              <div id="metricBytes" class="metric-value">0</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-title">RTT Ping</div>
-              <div id="metricRtt" class="metric-value">-- ms</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-title">VAD Status</div>
-              <div id="metricVad" class="metric-value" style="font-size:0.9rem;">SILENCE</div>
-            </div>
-          </div>
-
-          <div class="card-title" style="margin-top: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
-            <span>⚡ Latency Waterfall (Real-Time)</span>
-            <span id="sloBadge" class="slo-badge">TARGET &lt; 450ms</span>
-          </div>
-          <div class="latency-grid">
-            <div class="latency-card">
-              <div class="latency-stage">STT</div>
-              <div id="latencyStt" class="latency-val">-- ms</div>
-              <div class="latency-sub">Speech → Final</div>
-            </div>
-            <div class="latency-card">
-              <div class="latency-stage">LLM (TTFT)</div>
-              <div id="latencyLlm" class="latency-val">-- ms</div>
-              <div class="latency-sub">1st Token</div>
-            </div>
-            <div class="latency-card">
-              <div class="latency-stage">TTS (TTFB)</div>
-              <div id="latencyTts" class="latency-val">-- ms</div>
-              <div class="latency-sub">1st Audio</div>
-            </div>
-            <div class="latency-card highlight">
-              <div class="latency-stage">TOTAL E2E</div>
-              <div id="latencyE2e" class="latency-val">-- ms</div>
-              <div id="latencyE2eSub" class="latency-sub">End to End</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Right Side: Transcriptions & Event Stream -->
-        <div class="card">
-          <div class="card-title">
-            <span>Live Real-Time Transcriptions</span>
-          </div>
-          <div id="transcriptBox" class="transcript-box">
+          <div id="transcriptBox" class="transcript-box" aria-live="polite">
             <div class="transcript-entry">
-              <span class="transcript-badge badge-agent">AGENT</span>
-              <span class="transcript-text">Voice session ready. Click "Start Voice Session" to talk, or send simulated turns below.</span>
-            </div>
-          </div>
-
-          <div class="card-title" style="margin-top: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
-            <span>Developer Event Stream</span>
-            <div style="display: flex; gap: 0.5rem;">
-              <button id="copyLogBtn" class="btn-secondary btn-sm">Copy Logs</button>
-              <button id="clearLogBtn" class="btn-secondary btn-sm">Clear</button>
-            </div>
-          </div>
-
-          <div id="consoleLogs" class="console-logs">
-            <div class="log-entry">
-              <span class="log-time">00:00:00</span>
-              <span class="log-tag tag-ws">SYSTEM</span>
-              <span class="log-msg">Wavia Developer Console initialized.</span>
+              <span class="transcript-badge badge-agent">SYSTEM</span>
+              <span class="transcript-text">Start a session to inspect microphone, VAD, transcript, and response timing.</span>
             </div>
           </div>
 
           <div class="input-bar">
-            <input id="textTurnInput" type="text" placeholder="Simulate text turn (e.g. Hello Wavia, what is the latency?)..." disabled />
-            <button id="sendTurnBtn" class="btn-secondary" disabled>Send Turn</button>
+            <input id="textTurnInput" type="text" placeholder="Send a text turn for pipeline testing" disabled />
+            <button id="sendTurnBtn" class="btn-secondary" disabled>Send</button>
           </div>
-        </div>
+        </section>
+
+        <aside class="workspace-panel inspector-panel">
+          <div class="panel-tabs" role="tablist" aria-label="Session inspector">
+            <button class="panel-tab active" data-panel="latency" role="tab" aria-selected="true">Latency</button>
+            <button class="panel-tab" data-panel="metrics" role="tab" aria-selected="false">Metrics</button>
+            <button class="panel-tab" data-panel="events" role="tab" aria-selected="false">Events</button>
+          </div>
+
+          <div class="inspector-content">
+            <section id="panel-latency" class="inspector-view active" role="tabpanel">
+              <div class="section-heading">
+                <span class="section-label">Turn waterfall</span>
+                <span id="sloBadge" class="slo-badge">AWAITING TURN</span>
+              </div>
+              <div class="latency-grid">
+                <div class="latency-card">
+                  <div class="latency-stage">STT</div>
+                  <div id="latencyStt" class="latency-val">-- ms</div>
+                  <div class="latency-sub">Speech to final</div>
+                </div>
+                <div class="latency-card">
+                  <div class="latency-stage">LLM TTFT</div>
+                  <div id="latencyLlm" class="latency-val">-- ms</div>
+                  <div class="latency-sub">First token</div>
+                </div>
+                <div class="latency-card">
+                  <div class="latency-stage">TTS TTFB</div>
+                  <div id="latencyTts" class="latency-val">-- ms</div>
+                  <div class="latency-sub">First audio</div>
+                </div>
+                <div class="latency-card highlight">
+                  <div class="latency-stage">Audible E2E</div>
+                  <div id="latencyE2e" class="latency-val">-- ms</div>
+                  <div id="latencyE2eSub" class="latency-sub">Acoustic end to playback ack</div>
+                </div>
+              </div>
+              <p class="provider-hint" style="margin-top:0.8rem;">Measurements remain provisional until live production samples establish release targets.</p>
+            </section>
+
+            <section id="panel-metrics" class="inspector-view" role="tabpanel">
+              <div class="section-heading"><span class="section-label">Session health</span></div>
+              <div class="metrics-grid">
+                <div class="metric-card"><div class="metric-title">Mic frames</div><div id="metricFrames" class="metric-value">0</div></div>
+                <div class="metric-card"><div class="metric-title">Mic data</div><div id="metricBytes" class="metric-value">0 KB</div></div>
+                <div class="metric-card"><div class="metric-title">Round trip</div><div id="metricRtt" class="metric-value">-- ms</div></div>
+                <div class="metric-card"><div class="metric-title">Server VAD</div><div id="metricVad" class="metric-value" style="font-size:0.9rem;">WAITING</div></div>
+              </div>
+            </section>
+
+            <section id="panel-events" class="inspector-view" role="tabpanel">
+              <div class="log-actions">
+                <span class="section-label">Developer events</span>
+                <div class="log-actions">
+                  <button id="copyLogBtn" class="btn-secondary btn-sm">Copy</button>
+                  <button id="clearLogBtn" class="btn-secondary btn-sm">Clear</button>
+                </div>
+              </div>
+              <div id="consoleLogs" class="console-logs">
+                <div class="log-entry">
+                  <span class="log-time">00:00:00</span>
+                  <span class="log-tag tag-ws">SYSTEM</span>
+                  <span class="log-msg">Wavia developer console initialized.</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </aside>
       </div>
     </section>
 
-    <!-- ========================================================================= -->
     <!-- TAB 2: ONBOARDING & QUICKSTART GUIDE -->
     <!-- ========================================================================= -->
     <section id="tab-onboarding" class="tab-content">
@@ -933,7 +1305,159 @@
     </section>
 
     <!-- ========================================================================= -->
-    <!-- TAB 4: RAG & KNOWLEDGE INSPECTOR -->
+    <!-- TAB 4: GUIDED KNOWLEDGE SETUP -->
+    <!-- ========================================================================= -->
+    <section id="tab-knowledge" class="tab-content" role="tabpanel" aria-label="Knowledge Setup">
+      <div class="knowledge-shell">
+        <div class="knowledge-heading">
+          <div>
+            <div class="workspace-kicker">Business knowledge</div>
+            <h2>Prepare what your agent is allowed to know</h2>
+            <p>Upload bounded files, inspect honest processing states, test citations, then activate and bind one reviewed revision.</p>
+          </div>
+          <span id="knowledgeMode" class="knowledge-mode">CONTROL PLANE DISCONNECTED</span>
+        </div>
+
+        <div class="knowledge-workspace">
+          <aside class="knowledge-pane" aria-label="Knowledge setup controls">
+            <h3>Workspace connection</h3>
+            <p class="knowledge-help">Your management key stays in this browser tab only. Provider and MCP credentials are never collected here.</p>
+            <form id="knowledgeConnectionForm" class="knowledge-form" autocomplete="off">
+              <div class="provider-field">
+                <label for="knowledgeApiUrl">Control Plane URL</label>
+                <input id="knowledgeApiUrl" type="url" value="http://127.0.0.1:8000" required />
+              </div>
+              <div class="provider-field">
+                <label for="knowledgeApiKey">Management API key</label>
+                <input id="knowledgeApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="ucve_live_…" required />
+              </div>
+              <button id="knowledgeConnectBtn" class="btn-primary" type="submit">Connect workspace</button>
+            </form>
+            <p id="knowledgeConnectionStatus" class="knowledge-feedback" role="status" aria-live="polite">Start the local Control Plane and enter a scoped management key.</p>
+
+            <hr class="knowledge-divider" />
+            <form id="knowledgeCreateForm" class="knowledge-form">
+              <div class="provider-field">
+                <label for="knowledgeBaseName">New knowledge base</label>
+                <input id="knowledgeBaseName" type="text" maxlength="255" placeholder="Customer support policies" required disabled />
+              </div>
+              <button class="btn-secondary" type="submit" disabled>Create base</button>
+            </form>
+            <div class="provider-field" style="margin-top:0.75rem;">
+              <label for="knowledgeBaseSelect">Working knowledge base</label>
+              <select id="knowledgeBaseSelect" disabled>
+                <option value="">Connect to load bases</option>
+              </select>
+            </div>
+
+            <ol class="knowledge-steps" aria-label="Setup progress">
+              <li id="knowledgeStep1" data-step="1">Connect securely</li>
+              <li id="knowledgeStep2" data-step="2">Create or select a base</li>
+              <li id="knowledgeStep3" data-step="3">Add files or FAQs</li>
+              <li id="knowledgeStep4" data-step="4">Wait for ready states</li>
+              <li id="knowledgeStep5" data-step="5">Review source details</li>
+              <li id="knowledgeStep6" data-step="6">Test passages and citations</li>
+              <li id="knowledgeStep7" data-step="7">Activate the revision</li>
+              <li id="knowledgeStep8" data-step="8">Bind it to an agent</li>
+            </ol>
+          </aside>
+
+          <section class="knowledge-pane knowledge-main-pane" aria-label="Knowledge setup task">
+            <div class="knowledge-task-tabs" role="tablist" aria-label="Knowledge tasks">
+              <button class="knowledge-task-tab active" data-knowledge-task="upload" role="tab" aria-selected="true" aria-controls="knowledge-task-upload">Upload files</button>
+              <button class="knowledge-task-tab" data-knowledge-task="faq" role="tab" aria-selected="false" aria-controls="knowledge-task-faq">Add FAQ</button>
+              <button class="knowledge-task-tab" data-knowledge-task="preview" role="tab" aria-selected="false" aria-controls="knowledge-task-preview">Test knowledge</button>
+              <button class="knowledge-task-tab" data-knowledge-task="publish" role="tab" aria-selected="false" aria-controls="knowledge-task-publish">Activate & bind</button>
+            </div>
+
+            <div id="knowledge-task-upload" class="knowledge-task-panel active" role="tabpanel">
+              <h3>Add business documents</h3>
+              <p class="knowledge-help">Files are validated before upload, then parsed and embedded by background jobs. This screen never marks unfinished work as ready.</p>
+              <form id="knowledgeUploadForm">
+                <label id="knowledgeDropzone" class="knowledge-dropzone" for="knowledgeFileInput" tabindex="0">
+                  <input id="knowledgeFileInput" type="file" accept=".pdf,.docx,.txt,.md,.csv,.xlsx" multiple disabled />
+                  <span><strong>Choose files or drop them here</strong>PDF up to 20 MiB. DOCX, CSV and XLSX up to 10 MiB. TXT and Markdown up to 5 MiB.</span>
+                </label>
+                <div id="knowledgeFileSelection" class="knowledge-feedback">No files selected.</div>
+                <div class="knowledge-action-row">
+                  <button id="knowledgeUploadBtn" class="btn-primary" type="submit" disabled>Upload selected files</button>
+                </div>
+              </form>
+              <p id="knowledgeUploadStatus" class="knowledge-feedback" role="status" aria-live="polite"></p>
+            </div>
+
+            <div id="knowledge-task-faq" class="knowledge-task-panel" role="tabpanel" hidden>
+              <h3>Add a question and answer</h3>
+              <p class="knowledge-help">Each submission becomes a traceable FAQ source. Add only information the agent is permitted to use.</p>
+              <form id="knowledgeFaqForm" class="knowledge-form">
+                <div class="provider-field">
+                  <label for="knowledgeFaqName">FAQ source name</label>
+                  <input id="knowledgeFaqName" type="text" maxlength="255" value="Frequently asked questions" required disabled />
+                </div>
+                <div class="provider-field">
+                  <label for="knowledgeFaqQuestion">Question</label>
+                  <textarea id="knowledgeFaqQuestion" rows="3" maxlength="2000" required disabled></textarea>
+                </div>
+                <div class="provider-field">
+                  <label for="knowledgeFaqAnswer">Approved answer</label>
+                  <textarea id="knowledgeFaqAnswer" rows="6" maxlength="20000" required disabled></textarea>
+                </div>
+                <button id="knowledgeFaqBtn" class="btn-primary" type="submit" disabled>Add FAQ source</button>
+              </form>
+              <p id="knowledgeFaqStatus" class="knowledge-feedback" role="status" aria-live="polite"></p>
+            </div>
+
+            <div id="knowledge-task-preview" class="knowledge-task-panel" role="tabpanel" hidden>
+              <h3>Test retrieved passages</h3>
+              <p class="knowledge-help">Results come from the selected tenant base and show source, revision, location and score. No result is fabricated when retrieval is unavailable.</p>
+              <form id="knowledgePreviewForm" class="knowledge-form">
+                <div class="provider-field">
+                  <label for="knowledgePreviewQuery">Test question</label>
+                  <textarea id="knowledgePreviewQuery" rows="3" maxlength="2000" placeholder="What is our refund policy?" required disabled></textarea>
+                </div>
+                <button id="knowledgePreviewBtn" class="btn-primary" type="submit" disabled>Run preview query</button>
+              </form>
+              <p id="knowledgePreviewStatus" class="knowledge-feedback" role="status" aria-live="polite"></p>
+              <div id="knowledgePreviewResults" class="knowledge-result-list"></div>
+            </div>
+
+            <div id="knowledge-task-publish" class="knowledge-task-panel" role="tabpanel" hidden>
+              <h3>Activate and attach the reviewed revision</h3>
+              <p class="knowledge-help">Activation is available only when every source is ready. Binding publishes a new immutable agent configuration version.</p>
+              <div id="knowledgeActivationSummary" class="metric-card" style="margin-top:0.9rem;">Select a knowledge base to inspect readiness.</div>
+              <div class="knowledge-action-row">
+                <button id="knowledgeActivateBtn" class="btn-primary" type="button" disabled>Activate revision</button>
+              </div>
+              <form id="knowledgeBindForm" class="knowledge-form" style="margin-top:1rem;">
+                <div class="provider-field">
+                  <label for="knowledgeAgentId">Agent ID</label>
+                  <input id="knowledgeAgentId" type="text" inputmode="text" placeholder="00000000-0000-0000-0000-000000000000" required disabled />
+                </div>
+                <button id="knowledgeBindBtn" class="btn-secondary" type="submit" disabled>Bind and publish agent version</button>
+              </form>
+              <p id="knowledgePublishStatus" class="knowledge-feedback" role="status" aria-live="polite"></p>
+            </div>
+          </section>
+
+          <aside class="knowledge-pane knowledge-sources-pane" aria-label="Knowledge sources">
+            <div class="knowledge-source-header">
+              <div>
+                <div class="workspace-kicker">Selected base</div>
+                <h3 id="knowledgeSelectedName">No base selected</h3>
+              </div>
+              <button id="knowledgeRefreshBtn" class="btn-secondary btn-sm" type="button" disabled>Refresh</button>
+            </div>
+            <p id="knowledgeBaseSummary" class="knowledge-help">Connect and select a base to see its real source states.</p>
+            <div id="knowledgeSourceList" class="knowledge-source-list" aria-live="polite">
+              <div class="knowledge-empty">No source data loaded.</div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 5: RAG & KNOWLEDGE INSPECTOR -->
     <!-- ========================================================================= -->
     <section id="tab-rag" class="tab-content">
       <div class="grid-2col">
@@ -1184,12 +1708,638 @@
     tabButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         const target = btn.getAttribute('data-tab');
-        tabButtons.forEach(b => b.classList.remove('active'));
+        tabButtons.forEach(b => {
+          b.classList.remove('active');
+          b.setAttribute('aria-selected', 'false');
+        });
         tabContents.forEach(c => c.classList.remove('active'));
 
         btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
         const activeSection = document.getElementById('tab-' + target);
         if (activeSection) activeSection.classList.add('active');
+      });
+      btn.addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const items = Array.from(tabButtons);
+        const current = items.indexOf(btn);
+        const next = event.key === 'Home' ? 0
+          : event.key === 'End' ? items.length - 1
+          : (current + (event.key === 'ArrowRight' ? 1 : -1) + items.length) % items.length;
+        items[next].focus();
+        items[next].click();
+      });
+    });
+
+    // =========================================================================
+    // GUIDED KNOWLEDGE SETUP
+    // =========================================================================
+    const knowledgeState = {
+      token: '',
+      apiBase: '',
+      bases: [],
+      selectedBase: null,
+      sources: [],
+      previewComplete: false,
+      bindingComplete: false,
+      pollTimer: null,
+    };
+
+    const knowledgeElements = {
+      connectionForm: document.getElementById('knowledgeConnectionForm'),
+      apiUrl: document.getElementById('knowledgeApiUrl'),
+      apiKey: document.getElementById('knowledgeApiKey'),
+      connectBtn: document.getElementById('knowledgeConnectBtn'),
+      connectionStatus: document.getElementById('knowledgeConnectionStatus'),
+      mode: document.getElementById('knowledgeMode'),
+      createForm: document.getElementById('knowledgeCreateForm'),
+      baseName: document.getElementById('knowledgeBaseName'),
+      baseSelect: document.getElementById('knowledgeBaseSelect'),
+      uploadForm: document.getElementById('knowledgeUploadForm'),
+      fileInput: document.getElementById('knowledgeFileInput'),
+      dropzone: document.getElementById('knowledgeDropzone'),
+      fileSelection: document.getElementById('knowledgeFileSelection'),
+      uploadBtn: document.getElementById('knowledgeUploadBtn'),
+      uploadStatus: document.getElementById('knowledgeUploadStatus'),
+      faqForm: document.getElementById('knowledgeFaqForm'),
+      faqName: document.getElementById('knowledgeFaqName'),
+      faqQuestion: document.getElementById('knowledgeFaqQuestion'),
+      faqAnswer: document.getElementById('knowledgeFaqAnswer'),
+      faqBtn: document.getElementById('knowledgeFaqBtn'),
+      faqStatus: document.getElementById('knowledgeFaqStatus'),
+      previewForm: document.getElementById('knowledgePreviewForm'),
+      previewQuery: document.getElementById('knowledgePreviewQuery'),
+      previewBtn: document.getElementById('knowledgePreviewBtn'),
+      previewStatus: document.getElementById('knowledgePreviewStatus'),
+      previewResults: document.getElementById('knowledgePreviewResults'),
+      activateBtn: document.getElementById('knowledgeActivateBtn'),
+      activationSummary: document.getElementById('knowledgeActivationSummary'),
+      bindForm: document.getElementById('knowledgeBindForm'),
+      agentId: document.getElementById('knowledgeAgentId'),
+      bindBtn: document.getElementById('knowledgeBindBtn'),
+      publishStatus: document.getElementById('knowledgePublishStatus'),
+      refreshBtn: document.getElementById('knowledgeRefreshBtn'),
+      selectedName: document.getElementById('knowledgeSelectedName'),
+      baseSummary: document.getElementById('knowledgeBaseSummary'),
+      sourceList: document.getElementById('knowledgeSourceList'),
+    };
+
+    function setKnowledgeFeedback(element, message, tone = '') {
+      if (!element) return;
+      element.textContent = message;
+      element.className = `knowledge-feedback${tone ? ' ' + tone : ''}`;
+    }
+
+    function knowledgeErrorMessage(error) {
+      if (error && error.message) return error.message;
+      return 'The request could not be completed.';
+    }
+
+    async function knowledgeRequest(path, options = {}) {
+      if (!knowledgeState.apiBase || !knowledgeState.token) {
+        throw new Error('Connect the workspace first.');
+      }
+      const headers = new Headers(options.headers || {});
+      headers.set('Authorization', `Bearer ${knowledgeState.token}`);
+      if (options.body && !(options.body instanceof FormData)) {
+        headers.set('Content-Type', 'application/json');
+      }
+      const response = await fetch(`${knowledgeState.apiBase}${path}`, {
+        ...options,
+        headers,
+      });
+      let payload = null;
+      if (response.status !== 204) {
+        const text = await response.text();
+        if (text) {
+          try { payload = JSON.parse(text); }
+          catch (_) { payload = null; }
+        }
+      }
+      if (!response.ok) {
+        const detail = payload && payload.detail;
+        const message = typeof detail === 'string'
+          ? detail
+          : detail && detail.message
+            ? detail.message
+            : `Request failed with HTTP ${response.status}.`;
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
+      }
+      return payload;
+    }
+
+    function selectedKnowledgeBaseId() {
+      return knowledgeElements.baseSelect ? knowledgeElements.baseSelect.value : '';
+    }
+
+    function setKnowledgeControls() {
+      const connected = Boolean(knowledgeState.token);
+      const selected = Boolean(knowledgeState.selectedBase);
+      const active = selected && knowledgeState.selectedBase.status === 'active';
+      const ready = selected
+        && knowledgeState.selectedBase.source_count > 0
+        && knowledgeState.selectedBase.ready_source_count === knowledgeState.selectedBase.source_count;
+      if (knowledgeElements.baseName) knowledgeElements.baseName.disabled = !connected;
+      if (knowledgeElements.createForm) {
+        knowledgeElements.createForm.querySelector('button').disabled = !connected;
+      }
+      if (knowledgeElements.baseSelect) knowledgeElements.baseSelect.disabled = !connected;
+      if (knowledgeElements.fileInput) knowledgeElements.fileInput.disabled = !selected;
+      if (knowledgeElements.uploadBtn) {
+        knowledgeElements.uploadBtn.disabled = !selected || !knowledgeElements.fileInput.files.length;
+      }
+      [knowledgeElements.faqName, knowledgeElements.faqQuestion, knowledgeElements.faqAnswer, knowledgeElements.faqBtn,
+       knowledgeElements.previewQuery, knowledgeElements.previewBtn, knowledgeElements.refreshBtn].forEach(element => {
+        if (element) element.disabled = !selected;
+      });
+      if (knowledgeElements.activateBtn) knowledgeElements.activateBtn.disabled = !ready || active;
+      if (knowledgeElements.agentId) knowledgeElements.agentId.disabled = !active;
+      if (knowledgeElements.bindBtn) knowledgeElements.bindBtn.disabled = !active;
+    }
+
+    function updateKnowledgeSteps() {
+      const selected = knowledgeState.selectedBase;
+      const hasSources = knowledgeState.sources.length > 0;
+      const allReady = hasSources && knowledgeState.sources.every(source => source.status === 'ready');
+      const states = [
+        Boolean(knowledgeState.token),
+        Boolean(selected),
+        hasSources,
+        allReady,
+        hasSources,
+        knowledgeState.previewComplete,
+        selected && selected.status === 'active',
+        knowledgeState.bindingComplete,
+      ];
+      states.forEach((complete, index) => {
+        document.getElementById(`knowledgeStep${index + 1}`)?.classList.toggle('complete', Boolean(complete));
+      });
+    }
+
+    function renderKnowledgeBases(preferredId = '') {
+      const select = knowledgeElements.baseSelect;
+      if (!select) return;
+      select.replaceChildren();
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = knowledgeState.bases.length ? 'Select a knowledge base' : 'No knowledge bases yet';
+      select.appendChild(placeholder);
+      knowledgeState.bases.forEach(base => {
+        const option = document.createElement('option');
+        option.value = base.knowledge_base_id;
+        option.textContent = `${base.name} · ${base.status}`;
+        select.appendChild(option);
+      });
+      if (preferredId && knowledgeState.bases.some(base => base.knowledge_base_id === preferredId)) {
+        select.value = preferredId;
+      }
+    }
+
+    function sourceLocation(citation) {
+      if (!citation || typeof citation !== 'object') return 'Location unavailable';
+      return Object.entries(citation)
+        .slice(0, 4)
+        .map(([key, value]) => `${key.replaceAll('_', ' ')}: ${String(value)}`)
+        .join(' · ') || 'Location unavailable';
+    }
+
+    function renderKnowledgeSources() {
+      const list = knowledgeElements.sourceList;
+      if (!list) return;
+      list.replaceChildren();
+      if (!knowledgeState.sources.length) {
+        const empty = document.createElement('div');
+        empty.className = 'knowledge-empty';
+        empty.textContent = knowledgeState.selectedBase
+          ? 'No sources yet. Upload a file or add an FAQ.'
+          : 'No source data loaded.';
+        list.appendChild(empty);
+        return;
+      }
+      knowledgeState.sources.forEach(source => {
+        const row = document.createElement('article');
+        row.className = 'knowledge-source';
+        row.dataset.status = source.status;
+        const name = document.createElement('div');
+        name.className = 'knowledge-source-name';
+        name.textContent = source.display_name;
+        const meta = document.createElement('div');
+        meta.className = 'knowledge-source-meta';
+        meta.textContent = `${String(source.status).toUpperCase()} · revision ${source.revision} · ${source.chunk_count} chunks · ${Math.ceil(source.byte_count / 1024)} KiB`;
+        row.append(name, meta);
+        if (source.error_message) {
+          const failure = document.createElement('div');
+          failure.className = 'knowledge-feedback error';
+          failure.textContent = source.error_message;
+          row.appendChild(failure);
+        }
+        const actions = document.createElement('div');
+        actions.className = 'knowledge-source-actions';
+        if (source.status === 'failed') {
+          const retry = document.createElement('button');
+          retry.type = 'button';
+          retry.className = 'btn-secondary';
+          retry.dataset.sourceAction = 'retry';
+          retry.dataset.sourceId = source.source_id;
+          retry.textContent = 'Retry';
+          actions.appendChild(retry);
+        }
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn-danger';
+        remove.dataset.sourceAction = 'delete';
+        remove.dataset.sourceId = source.source_id;
+        remove.textContent = 'Remove';
+        actions.appendChild(remove);
+        row.appendChild(actions);
+        list.appendChild(row);
+      });
+    }
+
+    function renderKnowledgeSummary() {
+      const base = knowledgeState.selectedBase;
+      if (!base) {
+        if (knowledgeElements.selectedName) knowledgeElements.selectedName.textContent = 'No base selected';
+        if (knowledgeElements.baseSummary) knowledgeElements.baseSummary.textContent = 'Connect and select a base to see its real source states.';
+        if (knowledgeElements.activationSummary) knowledgeElements.activationSummary.textContent = 'Select a knowledge base to inspect readiness.';
+        return;
+      }
+      if (knowledgeElements.selectedName) knowledgeElements.selectedName.textContent = base.name;
+      if (knowledgeElements.baseSummary) {
+        knowledgeElements.baseSummary.textContent = `${base.ready_source_count} of ${base.source_count} sources ready · ${base.total_chunks} chunks · revision ${base.active_revision || 1} · ${base.status}`;
+      }
+      if (knowledgeElements.activationSummary) {
+        const ready = base.source_count > 0 && base.ready_source_count === base.source_count;
+        knowledgeElements.activationSummary.textContent = base.status === 'active'
+          ? `Revision ${base.active_revision} is active and can be bound to an agent.`
+          : ready
+            ? 'Every source is ready. Review preview results before activation.'
+            : `${base.source_count - base.ready_source_count} source(s) still need to reach ready.`;
+      }
+    }
+
+    async function loadKnowledgeBase(baseId, { quiet = false } = {}) {
+      if (!baseId) {
+        knowledgeState.selectedBase = null;
+        knowledgeState.sources = [];
+        renderKnowledgeSummary();
+        renderKnowledgeSources();
+        setKnowledgeControls();
+        updateKnowledgeSteps();
+        return;
+      }
+      try {
+        const [base, sources] = await Promise.all([
+          knowledgeRequest(`/v1/knowledge-bases/${baseId}`),
+          knowledgeRequest(`/v1/knowledge-bases/${baseId}/sources`),
+        ]);
+        knowledgeState.selectedBase = base;
+        knowledgeState.sources = sources;
+        const index = knowledgeState.bases.findIndex(item => item.knowledge_base_id === baseId);
+        if (index >= 0) knowledgeState.bases[index] = base;
+        renderKnowledgeSummary();
+        renderKnowledgeSources();
+        setKnowledgeControls();
+        updateKnowledgeSteps();
+        if (!quiet) setKnowledgeFeedback(knowledgeElements.connectionStatus, 'Knowledge state refreshed.', 'success');
+      } catch (error) {
+        if (!quiet) setKnowledgeFeedback(knowledgeElements.connectionStatus, knowledgeErrorMessage(error), 'error');
+      }
+    }
+
+    function startKnowledgePolling() {
+      if (knowledgeState.pollTimer) clearInterval(knowledgeState.pollTimer);
+      knowledgeState.pollTimer = setInterval(() => {
+        const baseId = selectedKnowledgeBaseId();
+        if (baseId && knowledgeState.token && document.visibilityState === 'visible') {
+          loadKnowledgeBase(baseId, { quiet: true });
+        }
+      }, 4000);
+    }
+
+    async function connectKnowledgeWorkspace(event) {
+      event.preventDefault();
+      const apiBase = knowledgeElements.apiUrl.value.trim().replace(/\/$/, '');
+      const token = knowledgeElements.apiKey.value.trim();
+      if (!apiBase || !token) return;
+      knowledgeElements.connectBtn.disabled = true;
+      setKnowledgeFeedback(knowledgeElements.connectionStatus, 'Checking access…');
+      knowledgeState.apiBase = apiBase;
+      knowledgeState.token = token;
+      try {
+        knowledgeState.bases = await knowledgeRequest('/v1/knowledge-bases');
+        knowledgeElements.apiKey.value = '';
+        knowledgeElements.mode.textContent = 'LOCAL MANAGEMENT API CONNECTED';
+        knowledgeElements.mode.classList.add('connected');
+        knowledgeElements.connectBtn.textContent = 'Reconnect workspace';
+        renderKnowledgeBases();
+        setKnowledgeControls();
+        updateKnowledgeSteps();
+        startKnowledgePolling();
+        setKnowledgeFeedback(knowledgeElements.connectionStatus, `Connected. ${knowledgeState.bases.length} knowledge base(s) available.`, 'success');
+      } catch (error) {
+        knowledgeState.token = '';
+        knowledgeState.bases = [];
+        knowledgeElements.mode.textContent = 'CONTROL PLANE DISCONNECTED';
+        knowledgeElements.mode.classList.remove('connected');
+        renderKnowledgeBases();
+        setKnowledgeControls();
+        updateKnowledgeSteps();
+        setKnowledgeFeedback(knowledgeElements.connectionStatus, knowledgeErrorMessage(error), 'error');
+      } finally {
+        knowledgeElements.connectBtn.disabled = false;
+      }
+    }
+
+    async function createKnowledgeBase(event) {
+      event.preventDefault();
+      const name = knowledgeElements.baseName.value.trim();
+      if (!name) return;
+      const button = knowledgeElements.createForm.querySelector('button');
+      button.disabled = true;
+      try {
+        const created = await knowledgeRequest('/v1/knowledge-bases', {
+          method: 'POST', body: JSON.stringify({ name }),
+        });
+        knowledgeState.bases.push(created);
+        renderKnowledgeBases(created.knowledge_base_id);
+        knowledgeElements.baseName.value = '';
+        await loadKnowledgeBase(created.knowledge_base_id);
+        setKnowledgeFeedback(knowledgeElements.connectionStatus, `Created “${created.name}”.`, 'success');
+      } catch (error) {
+        setKnowledgeFeedback(knowledgeElements.connectionStatus, knowledgeErrorMessage(error), 'error');
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    const knowledgeFileLimits = {
+      pdf: 20 * 1024 * 1024,
+      docx: 10 * 1024 * 1024,
+      txt: 5 * 1024 * 1024,
+      md: 5 * 1024 * 1024,
+      csv: 10 * 1024 * 1024,
+      xlsx: 10 * 1024 * 1024,
+    };
+
+    function validateKnowledgeFiles(files) {
+      for (const file of files) {
+        const extension = file.name.split('.').pop().toLowerCase();
+        const limit = knowledgeFileLimits[extension];
+        if (!limit) throw new Error(`${file.name}: unsupported file type.`);
+        if (file.size > limit) throw new Error(`${file.name}: file exceeds its size limit.`);
+        if (!file.size) throw new Error(`${file.name}: empty files are not accepted.`);
+      }
+    }
+
+    function updateKnowledgeFileSelection() {
+      const files = Array.from(knowledgeElements.fileInput.files || []);
+      try {
+        validateKnowledgeFiles(files);
+        setKnowledgeFeedback(
+          knowledgeElements.fileSelection,
+          files.length ? `${files.length} file(s) selected · ${Math.ceil(files.reduce((sum, file) => sum + file.size, 0) / 1024)} KiB total` : 'No files selected.'
+        );
+        knowledgeElements.uploadBtn.disabled = !knowledgeState.selectedBase || !files.length;
+      } catch (error) {
+        setKnowledgeFeedback(knowledgeElements.fileSelection, knowledgeErrorMessage(error), 'error');
+        knowledgeElements.uploadBtn.disabled = true;
+      }
+    }
+
+    async function uploadKnowledgeFiles(event) {
+      event.preventDefault();
+      const files = Array.from(knowledgeElements.fileInput.files || []);
+      if (!files.length || !knowledgeState.selectedBase) return;
+      try { validateKnowledgeFiles(files); }
+      catch (error) { setKnowledgeFeedback(knowledgeElements.uploadStatus, knowledgeErrorMessage(error), 'error'); return; }
+      knowledgeElements.uploadBtn.disabled = true;
+      let uploaded = 0;
+      try {
+        for (const file of files) {
+          setKnowledgeFeedback(knowledgeElements.uploadStatus, `Uploading ${file.name} (${uploaded + 1}/${files.length})…`);
+          const form = new FormData();
+          form.append('source', file, file.name);
+          await knowledgeRequest(`/v1/knowledge-bases/${selectedKnowledgeBaseId()}/sources`, { method: 'POST', body: form });
+          uploaded += 1;
+        }
+        knowledgeElements.uploadForm.reset();
+        updateKnowledgeFileSelection();
+        await loadKnowledgeBase(selectedKnowledgeBaseId(), { quiet: true });
+        setKnowledgeFeedback(knowledgeElements.uploadStatus, `${uploaded} file(s) accepted and queued.`, 'success');
+      } catch (error) {
+        setKnowledgeFeedback(knowledgeElements.uploadStatus, `${uploaded} uploaded. ${knowledgeErrorMessage(error)}`, 'error');
+      } finally {
+        setKnowledgeControls();
+      }
+    }
+
+    async function addKnowledgeFaq(event) {
+      event.preventDefault();
+      if (!knowledgeState.selectedBase) return;
+      knowledgeElements.faqBtn.disabled = true;
+      try {
+        await knowledgeRequest(`/v1/knowledge-bases/${selectedKnowledgeBaseId()}/faqs`, {
+          method: 'POST',
+          body: JSON.stringify({
+            name: knowledgeElements.faqName.value.trim(),
+            items: [{
+              question: knowledgeElements.faqQuestion.value.trim(),
+              answer: knowledgeElements.faqAnswer.value.trim(),
+            }],
+          }),
+        });
+        knowledgeElements.faqQuestion.value = '';
+        knowledgeElements.faqAnswer.value = '';
+        await loadKnowledgeBase(selectedKnowledgeBaseId(), { quiet: true });
+        setKnowledgeFeedback(knowledgeElements.faqStatus, 'FAQ accepted and queued.', 'success');
+      } catch (error) {
+        setKnowledgeFeedback(knowledgeElements.faqStatus, knowledgeErrorMessage(error), 'error');
+      } finally {
+        setKnowledgeControls();
+      }
+    }
+
+    function renderKnowledgePreview(results) {
+      knowledgeElements.previewResults.replaceChildren();
+      if (!results.length) {
+        const empty = document.createElement('div');
+        empty.className = 'knowledge-empty';
+        empty.textContent = 'No matching passages were returned.';
+        knowledgeElements.previewResults.appendChild(empty);
+        return;
+      }
+      results.forEach(result => {
+        const article = document.createElement('article');
+        article.className = 'knowledge-result';
+        const text = document.createElement('p');
+        text.textContent = result.text;
+        const footer = document.createElement('footer');
+        const score = typeof result.score === 'number' ? `${(result.score * 100).toFixed(1)}%` : 'unscored';
+        footer.textContent = `${sourceLocation(result.citation)} · revision ${result.revision} · chunk ${result.ordinal} · score ${score}`;
+        article.append(text, footer);
+        knowledgeElements.previewResults.appendChild(article);
+      });
+    }
+
+    async function previewKnowledge(event) {
+      event.preventDefault();
+      knowledgeElements.previewBtn.disabled = true;
+      setKnowledgeFeedback(knowledgeElements.previewStatus, 'Running bounded retrieval…');
+      try {
+        const payload = await knowledgeRequest(`/v1/knowledge-bases/${selectedKnowledgeBaseId()}/preview-query`, {
+          method: 'POST',
+          body: JSON.stringify({ query: knowledgeElements.previewQuery.value.trim(), top_k: 4 }),
+        });
+        renderKnowledgePreview(payload.results || []);
+        knowledgeState.previewComplete = true;
+        updateKnowledgeSteps();
+        setKnowledgeFeedback(knowledgeElements.previewStatus, `${(payload.results || []).length} passage(s) returned from revision ${payload.revision}.`, 'success');
+      } catch (error) {
+        knowledgeState.previewComplete = false;
+        renderKnowledgePreview([]);
+        setKnowledgeFeedback(knowledgeElements.previewStatus, knowledgeErrorMessage(error), 'error');
+      } finally {
+        setKnowledgeControls();
+      }
+    }
+
+    async function activateKnowledgeBase() {
+      knowledgeElements.activateBtn.disabled = true;
+      try {
+        await knowledgeRequest(`/v1/knowledge-bases/${selectedKnowledgeBaseId()}/activate`, { method: 'POST' });
+        await loadKnowledgeBase(selectedKnowledgeBaseId(), { quiet: true });
+        setKnowledgeFeedback(knowledgeElements.publishStatus, 'Revision activated. It can now be bound to an agent.', 'success');
+      } catch (error) {
+        setKnowledgeFeedback(knowledgeElements.publishStatus, knowledgeErrorMessage(error), 'error');
+      } finally {
+        setKnowledgeControls();
+      }
+    }
+
+    async function bindKnowledgeBase(event) {
+      event.preventDefault();
+      const agentId = knowledgeElements.agentId.value.trim();
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(agentId)) {
+        setKnowledgeFeedback(knowledgeElements.publishStatus, 'Enter a valid agent UUID.', 'error');
+        return;
+      }
+      knowledgeElements.bindBtn.disabled = true;
+      try {
+        const binding = await knowledgeRequest(`/v1/knowledge-bases/${selectedKnowledgeBaseId()}/bind/${agentId}`, { method: 'POST' });
+        knowledgeState.bindingComplete = true;
+        updateKnowledgeSteps();
+        setKnowledgeFeedback(knowledgeElements.publishStatus, `Bound to agent version ${binding.agent_config_version}.`, 'success');
+      } catch (error) {
+        setKnowledgeFeedback(knowledgeElements.publishStatus, knowledgeErrorMessage(error), 'error');
+      } finally {
+        setKnowledgeControls();
+      }
+    }
+
+    const knowledgeTaskTabs = document.querySelectorAll('.knowledge-task-tab');
+    const knowledgeTaskPanels = document.querySelectorAll('.knowledge-task-panel');
+    function selectKnowledgeTask(tab) {
+      const target = tab.dataset.knowledgeTask;
+      knowledgeTaskTabs.forEach(item => {
+        const active = item === tab;
+        item.classList.toggle('active', active);
+        item.setAttribute('aria-selected', String(active));
+      });
+      knowledgeTaskPanels.forEach(panel => {
+        const active = panel.id === `knowledge-task-${target}`;
+        panel.classList.toggle('active', active);
+        panel.hidden = !active;
+      });
+    }
+    knowledgeTaskTabs.forEach(tab => {
+      tab.addEventListener('click', () => selectKnowledgeTask(tab));
+      tab.addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const tabs = Array.from(knowledgeTaskTabs);
+        const current = tabs.indexOf(tab);
+        const next = event.key === 'Home' ? 0
+          : event.key === 'End' ? tabs.length - 1
+          : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        tabs[next].focus();
+        selectKnowledgeTask(tabs[next]);
+      });
+    });
+
+    if (knowledgeElements.connectionForm) knowledgeElements.connectionForm.addEventListener('submit', connectKnowledgeWorkspace);
+    if (knowledgeElements.createForm) knowledgeElements.createForm.addEventListener('submit', createKnowledgeBase);
+    if (knowledgeElements.baseSelect) knowledgeElements.baseSelect.addEventListener('change', () => {
+      knowledgeState.previewComplete = false;
+      knowledgeState.bindingComplete = false;
+      loadKnowledgeBase(selectedKnowledgeBaseId());
+    });
+    if (knowledgeElements.fileInput) knowledgeElements.fileInput.addEventListener('change', updateKnowledgeFileSelection);
+    if (knowledgeElements.uploadForm) knowledgeElements.uploadForm.addEventListener('submit', uploadKnowledgeFiles);
+    if (knowledgeElements.faqForm) knowledgeElements.faqForm.addEventListener('submit', addKnowledgeFaq);
+    if (knowledgeElements.previewForm) knowledgeElements.previewForm.addEventListener('submit', previewKnowledge);
+    if (knowledgeElements.activateBtn) knowledgeElements.activateBtn.addEventListener('click', activateKnowledgeBase);
+    if (knowledgeElements.bindForm) knowledgeElements.bindForm.addEventListener('submit', bindKnowledgeBase);
+    if (knowledgeElements.refreshBtn) knowledgeElements.refreshBtn.addEventListener('click', () => loadKnowledgeBase(selectedKnowledgeBaseId()));
+    if (knowledgeElements.dropzone) {
+      knowledgeElements.dropzone.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          knowledgeElements.fileInput.click();
+        }
+      });
+      ['dragenter', 'dragover'].forEach(type => knowledgeElements.dropzone.addEventListener(type, event => {
+        event.preventDefault();
+        knowledgeElements.dropzone.classList.add('dragging');
+      }));
+      ['dragleave', 'drop'].forEach(type => knowledgeElements.dropzone.addEventListener(type, event => {
+        event.preventDefault();
+        knowledgeElements.dropzone.classList.remove('dragging');
+      }));
+      knowledgeElements.dropzone.addEventListener('drop', event => {
+        if (knowledgeElements.fileInput.disabled || !event.dataTransfer.files.length) return;
+        knowledgeElements.fileInput.files = event.dataTransfer.files;
+        updateKnowledgeFileSelection();
+      });
+    }
+    if (knowledgeElements.sourceList) knowledgeElements.sourceList.addEventListener('click', async event => {
+      const button = event.target.closest('button[data-source-action]');
+      if (!button) return;
+      const sourceId = button.dataset.sourceId;
+      const action = button.dataset.sourceAction;
+      if (action === 'delete' && !window.confirm('Remove this source and its indexed chunks?')) return;
+      button.disabled = true;
+      try {
+        await knowledgeRequest(`/v1/knowledge-bases/${selectedKnowledgeBaseId()}/sources/${sourceId}${action === 'retry' ? '/retry' : ''}`, {
+          method: action === 'retry' ? 'POST' : 'DELETE',
+        });
+        await loadKnowledgeBase(selectedKnowledgeBaseId(), { quiet: true });
+        setKnowledgeFeedback(knowledgeElements.connectionStatus, action === 'retry' ? 'Source retry queued.' : 'Source removed.', 'success');
+      } catch (error) {
+        setKnowledgeFeedback(knowledgeElements.connectionStatus, knowledgeErrorMessage(error), 'error');
+        button.disabled = false;
+      }
+    });
+
+    setKnowledgeControls();
+    updateKnowledgeSteps();
+
+    const panelTabs = document.querySelectorAll('.panel-tab');
+    const inspectorViews = document.querySelectorAll('.inspector-view');
+    panelTabs.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.getAttribute('data-panel');
+        panelTabs.forEach(item => {
+          item.classList.remove('active');
+          item.setAttribute('aria-selected', 'false');
+        });
+        inspectorViews.forEach(view => view.classList.remove('active'));
+        btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+        document.getElementById('panel-' + target)?.classList.add('active');
       });
     });
 
@@ -1214,6 +2364,9 @@
     const llmModelSelect = document.getElementById('llmModelSelect');
     const ttsProviderSelect = document.getElementById('ttsProviderSelect');
     const systemPromptInput = document.getElementById('systemPromptInput');
+    const runtimeModeBadge = document.getElementById('runtimeModeBadge');
+    const sttModeNotice = document.getElementById('sttModeNotice');
+    const voiceState = document.getElementById('voiceState');
 
     const LLM_MODELS = {
       groq: [
@@ -1275,6 +2428,21 @@
     let isMuted = false;
     let activeSources = [];
     let nextPlayTime = 0;
+    const prebufferQueryValue = new URLSearchParams(window.location.search).get('prebuffer_ms');
+    const requestedPrebufferMs = Number(prebufferQueryValue);
+    const prebufferConfiguredByQuery = prebufferQueryValue !== null && Number.isFinite(requestedPrebufferMs);
+    let clientPrebufferMs = prebufferConfiguredByQuery
+      ? Math.min(250, Math.max(0, requestedPrebufferMs))
+      : 50;
+    let playbackUnderrunCount = 0;
+    let pendingPlaybackTurnId = null;
+    let activePlaybackTurnId = null;
+    let playbackTurnStartTime = null;
+    let playbackScheduledMs = 0;
+    let playbackEndReceived = false;
+    let playbackDrainSent = false;
+    const acknowledgedPlaybackTurns = new Set();
+    const playbackAckTimers = new Map();
     let isAgentSpeaking = false;
     let agentSpeakingTimer = null;
     let clientBargeFrames = 0;
@@ -1282,9 +2450,25 @@
     let totalBytesSent = 0;
     let pingStartTime = 0;
     let pingInterval = null;
+    let protocolSequence = 0;
+    const protocolVersion = '1.0.0';
     const echoGuardCheck = document.getElementById('echoGuardCheck');
     const speakerAudio = document.getElementById('speakerAudio');
     const speakerTestBtn = document.getElementById('speakerTestBtn');
+
+    function buildWireEvent(eventType, payload = {}) {
+      protocolSequence += 1;
+      return {
+        protocol_version: protocolVersion,
+        event_id: (window.crypto && window.crypto.randomUUID)
+          ? window.crypto.randomUUID()
+          : `evt-${Date.now()}-${protocolSequence}`,
+        sequence: protocolSequence,
+        event_type: eventType,
+        timestamp_ms: Date.now(),
+        payload
+      };
+    }
 
     if (canvas) {
       canvas.width = canvas.offsetWidth;
@@ -1396,13 +2580,26 @@
         const model = (llmModelSelect && llmModelSelect.value) || '';
         const tts = (ttsProviderSelect && ttsProviderSelect.value) || 'cartesia';
 
-        const wsUrl = `${wsUrlRaw}?token=${encodeURIComponent(token)}&stt_provider=${stt}&llm_provider=${llm}&llm_model=${encodeURIComponent(model)}&tts_provider=${tts}`;
+        const wsTarget = new URL(wsUrlRaw);
+        wsTarget.searchParams.set('token', token);
+        wsTarget.searchParams.set('protocol_version', protocolVersion);
+        wsTarget.searchParams.set('stt_provider', stt);
+        wsTarget.searchParams.set('llm_provider', llm);
+        wsTarget.searchParams.set('llm_model', model);
+        wsTarget.searchParams.set('tts_provider', tts);
+        const wsUrl = wsTarget.toString();
         addLog('WS', `Connecting to Worker Raw: STT=${stt}, LLM=${llm} (${model}), TTS=${tts}`, 'tag-ws');
 
         ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
 
         ws.onopen = async () => {
+          ws.send(JSON.stringify(buildWireEvent('protocol.hello', {
+            protocol_version: protocolVersion,
+            sdk: { name: 'wavia-local-demo', version: '1.0.0' },
+            capabilities: ['pcm16', 'barge_in', 'playback_ack'],
+            resume: null
+          })));
           setStatus('connected', 'CONNECTED');
           startBtn.disabled = true;
           muteBtn.disabled = false;
@@ -1410,13 +2607,14 @@
           textTurnInput.disabled = false;
           sendTurnBtn.disabled = false;
           addLog('WS', 'WebSocket connected to Worker Raw node.', 'tag-ws');
+          if (voiceState) voiceState.textContent = 'MIC STARTING';
 
           // Keep-alive / RTT ping loop
           if (pingInterval) clearInterval(pingInterval);
           pingInterval = setInterval(() => {
             if (ws && ws.readyState === WebSocket.OPEN) {
               pingStartTime = performance.now();
-              ws.send(JSON.stringify({ event_type: 'ping' }));
+              ws.send(JSON.stringify(buildWireEvent('control.ping')));
             }
           }, 3000);
 
@@ -1498,21 +2696,78 @@
 
     function handleWsControlMessage(msg) {
       const type = msg.event_type || msg.type;
-      if (type === 'barge_in' || type === 'control.barge_in') {
+      if (type === 'barge_in') {
         stopPlayback();
         addLog('VAD', 'Barge-in: Agent speech interrupted.', 'tag-vad');
+      } else if (type === 'control.barge_in') {
+        addLog('VAD', 'Barge-in committed; clearing scheduled speech.', 'tag-vad');
+      } else if (type === 'control.clear_audio') {
+        const p = msg.payload || {};
+        const stopped = stopPlayback();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(buildWireEvent('control.clear_audio_ack', {
+              turn_id: p.turn_id || stopped.turnId || null,
+              sequence: Number(p.sequence || 0),
+              played_audio_ms: stopped.playedAudioMs
+          })));
+        }
       } else if (type === 'pong' || type === 'control.pong') {
         const rtt = Math.round(performance.now() - pingStartTime);
         if (metricRtt) metricRtt.textContent = rtt + ' ms';
-      } else if (type === 'transcript') {
+      } else if (type === 'ping' || type === 'control.ping') {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(buildWireEvent('control.pong')));
+        }
+      } else if (type === 'transcript.final' || type === 'transcript.partial' || type === 'transcript') {
         const p = msg.payload || {};
         appendTranscript(p.role || p.speaker || 'agent', p.text || msg.text || '');
       } else if (type === 'metric') {
         const p = msg.payload || {};
-        if (p.kind === 'vad') {
+        if (p.kind === 'session_ready') {
+          const isMock = p.provider_mode === 'mock';
+          if (runtimeModeBadge) {
+            runtimeModeBadge.textContent = isMock ? 'OFFLINE MOCK' : 'LIVE PROVIDERS';
+            runtimeModeBadge.className = 'runtime-mode ' + (isMock ? 'mock' : 'live');
+          }
+          if (sttModeNotice) {
+            if (p.stt_transcript_mode === 'fixed_mock') {
+              sttModeNotice.textContent = 'Speech detection is real. Transcript text is a fixed offline test value.';
+            } else if (p.stt_transcript_mode === 'disabled') {
+              sttModeNotice.textContent = 'Mock STT does not transcribe words. Set UCVE_STT_MOCK_TEXT for deterministic offline turns.';
+            } else {
+              sttModeNotice.textContent = 'Live STT is enabled. Provider usage may incur charges.';
+            }
+          }
+          if (voiceState) voiceState.textContent = 'LISTENING';
+          addLog('MODE', `${p.provider_mode || 'unknown'} providers / ${p.stt_transcript_mode || 'unknown'} STT`, 'tag-stt');
+        } else if (p.kind === 'vad' || p.kind === 'vad_state') {
           if (metricVad) metricVad.textContent = p.speech ? 'SPEECH' : 'SILENCE';
+          if (voiceState) {
+            voiceState.textContent = p.speech ? 'SPEECH DETECTED' : 'LISTENING';
+            voiceState.className = 'voice-state' + (p.speech ? ' speaking' : '');
+          }
+        } else if (p.kind === 'vad_debug') {
+          const speaking = Boolean(p.speech_start) || Number(p.prob || 0) >= 0.5;
+          if (metricVad) metricVad.textContent = speaking ? 'SPEECH' : (p.gated ? 'GATED' : 'SILENCE');
         } else if (p.kind === 'latency') {
           updateLatencyWaterfall(p);
+        }
+      } else if (type === 'audio.start' || type === 'audio_start') {
+        const p = msg.payload || {};
+        pendingPlaybackTurnId = p.turn_id || null;
+        activePlaybackTurnId = p.turn_id || null;
+        playbackTurnStartTime = null;
+        playbackScheduledMs = 0;
+        playbackEndReceived = false;
+        playbackDrainSent = false;
+        if (!prebufferConfiguredByQuery && Number.isFinite(Number(p.recommended_prebuffer_ms))) {
+          clientPrebufferMs = Math.min(250, Math.max(0, Number(p.recommended_prebuffer_ms)));
+        }
+      } else if (type === 'audio.end' || type === 'audio_end') {
+        const p = msg.payload || {};
+        if (!activePlaybackTurnId || p.turn_id === activePlaybackTurnId) {
+          playbackEndReceived = true;
+          maybeAcknowledgePlaybackDrained();
         }
       }
     }
@@ -1533,27 +2788,23 @@
     }
 
     function updateLatencyWaterfall(lat) {
-      if (lat.stt_final_ms && document.getElementById('latencyStt')) {
-        document.getElementById('latencyStt').textContent = Math.round(lat.stt_final_ms) + ' ms';
+      const durations = lat.durations_ms || {};
+      if (durations.stt_after_acoustic_end != null && document.getElementById('latencyStt')) {
+        document.getElementById('latencyStt').textContent = Math.round(durations.stt_after_acoustic_end) + ' ms';
       }
-      if (lat.llm_ttft_ms && document.getElementById('latencyLlm')) {
-        document.getElementById('latencyLlm').textContent = Math.round(lat.llm_ttft_ms) + ' ms';
+      if (durations.llm_ttft != null && document.getElementById('latencyLlm')) {
+        document.getElementById('latencyLlm').textContent = Math.round(durations.llm_ttft) + ' ms';
       }
-      if (lat.tts_ttfb_ms && document.getElementById('latencyTts')) {
-        document.getElementById('latencyTts').textContent = Math.round(lat.tts_ttfb_ms) + ' ms';
+      if (durations.tts_ttfb != null && document.getElementById('latencyTts')) {
+        document.getElementById('latencyTts').textContent = Math.round(durations.tts_ttfb) + ' ms';
       }
-      if (lat.e2e_playback_ms && document.getElementById('latencyE2e')) {
-        const e2e = Math.round(lat.e2e_playback_ms);
+      if (durations.user_perceived_e2e != null && document.getElementById('latencyE2e')) {
+        const e2e = Math.round(durations.user_perceived_e2e);
         document.getElementById('latencyE2e').textContent = e2e + ' ms';
         const badge = document.getElementById('sloBadge');
         if (badge) {
-          if (e2e <= 450) {
-            badge.textContent = `TARGET MET (${e2e}ms)`;
-            badge.className = 'slo-badge';
-          } else {
-            badge.textContent = `BREACH (${e2e}ms)`;
-            badge.className = 'slo-badge warn';
-          }
+          badge.textContent = `PROVISIONAL (${lat.measurement_quality})`;
+          badge.className = 'slo-badge';
         }
       }
     }
@@ -1579,13 +2830,41 @@
         source.connect(playCtx.destination);
 
         const now = playCtx.currentTime;
-        // Schedule sequentially on timeline with a 50ms smooth jitter buffer
-        if (nextPlayTime < now) {
-          nextPlayTime = now + 0.05;
+        const underrun = nextPlayTime < now;
+        // Schedule sequentially on a bounded, configurable jitter buffer.
+        if (underrun) {
+          playbackUnderrunCount += 1;
+          nextPlayTime = now + (clientPrebufferMs / 1000);
         }
 
-        source.start(nextPlayTime);
+        const scheduledContextTime = nextPlayTime;
+        if (playbackTurnStartTime === null) playbackTurnStartTime = scheduledContextTime;
+        const delayMs = Math.max(0, (scheduledContextTime - now) * 1000);
+        const scheduledPerformanceMs = performance.now() + delayMs;
+        source.start(scheduledContextTime);
+        const turnId = pendingPlaybackTurnId;
+        if (turnId && !acknowledgedPlaybackTurns.has(turnId)) {
+          acknowledgedPlaybackTurns.add(turnId);
+          pendingPlaybackTurnId = null;
+          const timerId = setTimeout(() => {
+            playbackAckTimers.delete(turnId);
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify(buildWireEvent('control.playback_started', {
+                kind: 'playback_started',
+                turn_id: turnId,
+                client_clock_domain: 'client_performance_ms',
+                client_playback_started_ms: performance.now(),
+                client_scheduled_playback_ms: scheduledPerformanceMs,
+                audio_context_time_sec: scheduledContextTime,
+                prebuffer_ms: delayMs,
+                underrun: underrun,
+                underrun_count: playbackUnderrunCount
+            })));
+          }, delayMs);
+          playbackAckTimers.set(turnId, timerId);
+        }
         nextPlayTime += buffer.duration;
+        playbackScheduledMs += buffer.duration * 1000;
         activeSources.push(source);
         isAgentSpeaking = true;
 
@@ -1594,6 +2873,7 @@
           if (idx !== -1) activeSources.splice(idx, 1);
           if (activeSources.length === 0) {
             isAgentSpeaking = false;
+            maybeAcknowledgePlaybackDrained();
           }
         };
 
@@ -1605,11 +2885,40 @@
       } catch (e) {}
     }
 
+    function currentPlayedAudioMs() {
+      if (!playCtx || playbackTurnStartTime === null) return 0;
+      const elapsedMs = Math.max(0, (playCtx.currentTime - playbackTurnStartTime) * 1000);
+      return Math.min(playbackScheduledMs, elapsedMs);
+    }
+
+    function maybeAcknowledgePlaybackDrained() {
+      if (!playbackEndReceived || playbackDrainSent || activeSources.length > 0) return;
+      if (!activePlaybackTurnId || !ws || ws.readyState !== WebSocket.OPEN) return;
+      playbackDrainSent = true;
+      ws.send(JSON.stringify(buildWireEvent('control.playback_drained', {
+          turn_id: activePlaybackTurnId,
+          played_audio_ms: playbackScheduledMs
+      })));
+      activePlaybackTurnId = null;
+    }
+
     function stopPlayback() {
+      const result = {
+        turnId: activePlaybackTurnId,
+        playedAudioMs: currentPlayedAudioMs()
+      };
       activeSources.forEach(s => {
         try { s.stop(); s.disconnect(); } catch (_) {}
       });
       activeSources = [];
+      playbackAckTimers.forEach(timerId => clearTimeout(timerId));
+      playbackAckTimers.clear();
+      pendingPlaybackTurnId = null;
+      activePlaybackTurnId = null;
+      playbackTurnStartTime = null;
+      playbackScheduledMs = 0;
+      playbackEndReceived = false;
+      playbackDrainSent = false;
       if (playCtx) {
         nextPlayTime = playCtx.currentTime;
       } else {
@@ -1617,10 +2926,12 @@
       }
       isAgentSpeaking = false;
       if (agentSpeakingTimer) { clearTimeout(agentSpeakingTimer); agentSpeakingTimer = null; }
+      return result;
     }
 
     function cleanup() {
       stopPlayback();
+      acknowledgedPlaybackTurns.clear();
       nextPlayTime = 0;
       if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
       if (ws) { try { ws.close(); } catch (_) {} ws = null; }
@@ -1638,6 +2949,17 @@
       if (meterFill) meterFill.style.width = '0%';
       if (meterPercent) meterPercent.textContent = '0%';
       if (metricVad) metricVad.textContent = 'IDLE';
+      if (runtimeModeBadge) {
+        runtimeModeBadge.textContent = 'MODE UNKNOWN';
+        runtimeModeBadge.className = 'runtime-mode';
+      }
+      if (sttModeNotice) {
+        sttModeNotice.textContent = 'Connect to inspect provider and transcript mode.';
+      }
+      if (voiceState) {
+        voiceState.textContent = 'WAITING';
+        voiceState.className = 'voice-state';
+      }
     }
 
     if (startBtn) startBtn.onclick = startSession;
@@ -1656,7 +2978,7 @@
         const text = textTurnInput.value.trim();
         if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
         appendTranscript('user', text);
-        ws.send(JSON.stringify({ event_type: 'text_turn', text: text }));
+        ws.send(JSON.stringify(buildWireEvent('text.turn', { text })));
         textTurnInput.value = '';
       };
     }

@@ -46,5 +46,13 @@ Desktop.ini
 # Cursor / local agent
 .cursor/
 .qoder/
+.worktrees/
 agent-transcripts/
 hamza_local/
+
+# Downloaded corpora and generated reports (latency corpus, release runs)
+external/
+artifacts/
+
+# Local embedding model bundles (fetched by core/rag/embedders/download_model.py)
+core/rag/embedders/models/

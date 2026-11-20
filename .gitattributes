@@ -1,0 +1,8 @@
+# Files executed inside Linux containers or by bash keep LF on every OS, so a
+# Windows checkout (core.autocrlf=true) can still run them unchanged.
+*.sh text eol=lf
+*.Dockerfile text eol=lf
+Dockerfile text eol=lf
+requirements/*.txt text eol=lf
+*.onnx binary
+*.sql text eol=lf

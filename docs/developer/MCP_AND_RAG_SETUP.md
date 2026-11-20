@@ -17,7 +17,7 @@ Register HTTP or SSE MCP endpoints per agent:
 
 ## Knowledge bases (Phase 23)
 
-1. Upload documents via `POST /v1/knowledge-bases/{id}/documents`.
+1. Upload documents via `POST /v1/knowledge-bases/{id}/sources` (file upload or URL; FAQs via `/faqs`).
 2. Tier selects embedder:
    - **Standard:** hosted embedder route
    - **HIPAA:** tenant-approved embedder only after BAA gate

@@ -16,15 +16,20 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, TypeVar
 
 _T = TypeVar("_T")
+_SHARED_VAD_EXECUTOR = ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="ucve-vad",
+)
 
 
 class VADWorker:
     """Serializes VAD / speech-capture inference on one background thread."""
 
     def __init__(self, thread_name_prefix: str = "ucve-vad") -> None:
-        self._executor = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix=thread_name_prefix
-        )
+        # The argument remains for source compatibility. A process-wide bounded
+        # executor prevents one thread and one queue per voice session.
+        del thread_name_prefix
+        self._executor = _SHARED_VAD_EXECUTOR
         self._closed = False
 
     async def submit(self, fn: Callable[..., _T], *args: Any) -> _T:
@@ -36,6 +41,4 @@ class VADWorker:
         return await loop.run_in_executor(self._executor, fn, *args)
 
     def shutdown(self) -> None:
-        if not self._closed:
-            self._closed = True
-            self._executor.shutdown(wait=False)
+        self._closed = True

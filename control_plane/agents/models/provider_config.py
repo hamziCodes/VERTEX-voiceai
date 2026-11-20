@@ -2,20 +2,34 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from core.secrets.policy import CredentialTier
 
 
 class ProviderRoute(BaseModel):
     """Single vendor route in a priority chain."""
 
+    model_config = ConfigDict(extra="forbid")
+
     provider_id: str = Field(description="Vendor provider identifier, e.g. 'groq', 'gemini', 'gladia', 'cartesia'.")
     model: str | None = Field(default=None, description="Optional model identifier, e.g. 'openai/gpt-oss-120b'.")
+    credential_ref: str | None = Field(
+        default=None,
+        description="Tenant-vault reference; never a plaintext credential.",
+    )
+    credential_tier: CredentialTier = Field(
+        default=CredentialTier.PLATFORM,
+        description="Published credential source policy for this route.",
+    )
     enabled: bool = Field(default=True, description="Whether this route is currently active.")
     priority: int = Field(default=1, description="Priority ranking in failover order (1 = primary, 2 = secondary).")
 
 
 class CategoryPriorityChain(BaseModel):
     """Priority chain for a single category and language."""
+
+    model_config = ConfigDict(extra="forbid")
 
     category: str = Field(description="Provider category: 'stt', 'llm', 'tts', 's2s'.")
     language: str = Field(default="en", description="Target language code (e.g. 'en', 'ar', 'es').")
@@ -27,6 +41,8 @@ class CategoryPriorityChain(BaseModel):
 
 class AgentProvidersConfig(BaseModel):
     """Multi-category provider priority chains for an agent."""
+
+    model_config = ConfigDict(extra="forbid")
 
     stt: list[CategoryPriorityChain] = Field(default_factory=list)
     llm: list[CategoryPriorityChain] = Field(default_factory=list)
@@ -43,7 +59,7 @@ class AgentProvidersConfig(BaseModel):
                     language="en",
                     routes=[
                         ProviderRoute(provider_id="gladia", priority=1, enabled=True),
-                        ProviderRoute(provider_id="whisper", priority=2, enabled=True),
+                        ProviderRoute(provider_id="deepgram", priority=2, enabled=True),
                     ],
                 )
             ],
@@ -63,7 +79,7 @@ class AgentProvidersConfig(BaseModel):
                     language="en",
                     routes=[
                         ProviderRoute(provider_id="cartesia", model="sonic-2", priority=1, enabled=True),
-                        ProviderRoute(provider_id="uplift", model="orator", priority=2, enabled=True),
+                        ProviderRoute(provider_id="elevenlabs", model="eleven_multilingual_v2", priority=2, enabled=True),
                     ],
                 )
             ],

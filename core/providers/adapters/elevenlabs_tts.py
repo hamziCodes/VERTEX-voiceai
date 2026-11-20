@@ -9,7 +9,13 @@ import httpx
 
 from core.buffers.cancellation import CancellationToken
 from core.observability.logging import get_logger
+from core.providers.exceptions import (
+    ProviderInvocationError,
+    classify_http_failure,
+    provider_invocation_error,
+)
 from core.providers.interfaces.tts import BaseTTSProvider, TTSChunk, TTSConfig
+from core.providers.mode import provider_is_locally_ready, should_use_mock_provider
 
 logger = get_logger("ucve.providers.elevenlabs")
 
@@ -36,17 +42,16 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
         self,
         api_key: str | None = None,
         *,
+        model: str | None = None,
         chunk_size_bytes: int = 3200,
     ) -> None:
-        self.api_key = (
-            api_key
-            or os.environ.get("PLATFORM_ELEVENLABS_API_KEY")
-            or os.environ.get("ELEVENLABS_API_KEY")
-            or os.environ.get("ELEVEN_API_KEY")
-            or ""
-        ).strip()
+        self.api_key = (api_key or "").strip()
         self.chunk_size_bytes = max(320, int(chunk_size_bytes))
-        self._model = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
+        self._model = (
+            model
+            or os.environ.get("ELEVENLABS_MODEL_ID")
+            or "eleven_multilingual_v2"
+        ).strip()
         # Default pcm_16000 matches WS egress — avoids per-chunk 22.05→16k resample artifacts.
         self._output_format = os.environ.get("ELEVENLABS_OUTPUT_FORMAT", "pcm_16000")
         self._client: httpx.AsyncClient | None = None
@@ -62,7 +67,7 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
             self._client = None
 
     def health_check(self) -> bool:
-        return True
+        return provider_is_locally_ready(api_key=self.api_key)
 
     def _resolve_voice(self, config: TTSConfig) -> str:
         voice = (config.voice_id or "").strip()
@@ -83,10 +88,8 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
         if cancellation_token and cancellation_token.is_cancelled:
             return
 
-        use_mock = (
-            not self.api_key
-            or os.environ.get("RUN_MOCK_PROVIDERS") == "1"
-            or os.environ.get("RUN_LIVE_PROVIDERS") != "1"
+        use_mock = should_use_mock_provider(
+            provider_id="elevenlabs", api_key=self.api_key
         )
         if use_mock:
             pcm = _tone_pcm(duration_ms=max(100, min(2000, len(text) * 40)))
@@ -115,7 +118,6 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
             text_len=len(text),
             voice_id=voice,
             output_format=self._output_format,
-            preview=text[:80],
         )
         client = self._get_client()
         try:
@@ -131,13 +133,14 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
                 json=payload,
             ) as resp:
                 if resp.status_code != 200:
-                    body = await resp.aread()
+                    await resp.aread()
                     logger.error(
                         "ElevenLabs TTS API call failed",
                         status_code=resp.status_code,
-                        error=body[:300].decode("utf-8", errors="replace"),
                     )
-                    resp.raise_for_status()
+                    raise ProviderInvocationError(
+                        classify_http_failure("elevenlabs", resp.status_code)
+                    )
 
                 native_rate = 16000
                 if "24000" in self._output_format:
@@ -147,12 +150,23 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
                 elif "44100" in self._output_format:
                     native_rate = 44100
                 buf = bytearray()
+                emitted_first_audio = False
                 async for raw in resp.aiter_bytes():
                     if cancellation_token and cancellation_token.is_cancelled:
                         return
                     if not raw:
                         continue
                     buf.extend(raw)
+                    if not emitted_first_audio and len(buf) >= 2:
+                        take = len(buf) - (len(buf) % 2)
+                        part = bytes(buf[:take])
+                        del buf[:take]
+                        emitted_first_audio = True
+                        yield TTSChunk(
+                            pcm_data=part,
+                            native_sample_rate=native_rate,
+                            is_final=False,
+                        )
                     while len(buf) >= self.chunk_size_bytes:
                         # Keep even byte alignment for int16 PCM.
                         take = self.chunk_size_bytes - (self.chunk_size_bytes % 2)
@@ -178,7 +192,10 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
                         native_sample_rate=native_rate,
                         is_final=True,
                     )
-        except Exception as exc:
-            logger.error("ElevenLabs TTS Exception: {0}".format(exc), error=str(exc))
+        except ProviderInvocationError:
             await self.aclose()
             raise
+        except Exception as exc:
+            logger.error("ElevenLabs TTS exception", error_type=type(exc).__name__)
+            await self.aclose()
+            raise provider_invocation_error("elevenlabs", exc) from exc

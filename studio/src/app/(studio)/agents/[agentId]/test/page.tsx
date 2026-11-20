@@ -1,0 +1,35 @@
+import { notFound } from "next/navigation";
+import { z } from "zod";
+
+import { hasWorkspaceCapability, requireWorkspace } from "@/auth/workspace";
+import { PageHeader } from "@/components/studio/page-header";
+import { AgentWorkspaceTabs } from "@/features/agents/agent-workspace-tabs";
+import { loadAgent } from "@/features/agents/data";
+import { mintVoiceSessionAction } from "@/features/voice-test/actions";
+import { configuredVoiceTestMode } from "@/features/voice-test/config";
+import { VoiceTestConsole } from "@/features/voice-test/voice-test-console";
+
+export default async function AgentTestPage({ params }: { params: Promise<{ agentId: string }> }) {
+  const { agentId } = await params;
+  if (!z.string().uuid().safeParse(agentId).success) notFound();
+  const { session, membership } = await requireWorkspace("session:read");
+  const agent = await loadAgent(session, membership.tenant_id, agentId);
+  return (
+    <div className="agent-workspace">
+      <AgentWorkspaceTabs agentId={agent.agent_id} />
+      <PageHeader
+        eyebrow={agent.name}
+        summary="Check conversation behavior, interruption, and turn timing before connecting a phone number or website."
+        title="Browser voice test"
+      />
+      {!agent.is_published ? <p className="inline-notice inline-notice--warning" role="alert">This agent has no published version. Publish it before starting a test.</p> : null}
+      <VoiceTestConsole
+        agentId={agent.agent_id}
+        agentName={agent.name}
+        canStart={agent.is_published && hasWorkspaceCapability(membership.capabilities, "session:mint")}
+        mintSession={mintVoiceSessionAction}
+        mode={configuredVoiceTestMode()}
+      />
+    </div>
+  );
+}

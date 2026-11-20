@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import os
+import time
+import uuid
 from typing import Any
+
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+from control_plane.auth.hmac_mint import expected_signature
 
 app = FastAPI(title="Customer Host Backend Example")
 
@@ -26,20 +31,31 @@ async def create_voice_session(req: SessionRequest) -> dict[str, Any]:
 
     The client never sees or possesses the host's tenant master key.
     """
-    payload = {
-        "tenant_id": TENANT_ID,
-        "agent_id": AGENT_ID,
-        "caller_id": req.caller_id,
-        "test_call": req.test_call,
-    }
+    del req  # Authenticate and authorize this request in the host application.
+    secret = os.environ.get("UCVE_MINT_HMAC_SECRET")
+    if not secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Host mint credentials are not configured.",
+        )
+    timestamp = str(int(time.time()))
+    nonce = uuid.uuid4().hex
     headers = {
-        "x-tenant-id": TENANT_ID,
+        "X-Tenant-Id": TENANT_ID,
+        "X-Timestamp": timestamp,
+        "X-Nonce": nonce,
+        "X-Agent-Id": AGENT_ID,
+        "X-Signature": expected_signature(
+            secret, TENANT_ID, timestamp, nonce, AGENT_ID
+        ),
     }
+    origin = os.environ.get("UCVE_HOST_ORIGIN")
+    if origin:
+        headers["Origin"] = origin
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.post(
-            f"{UCVE_CONTROL_PLANE}/v1/session/mint",
-            json=payload,
+            f"{UCVE_CONTROL_PLANE}/v1/session",
             headers=headers,
         )
         if resp.status_code != 200:

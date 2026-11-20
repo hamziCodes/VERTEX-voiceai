@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 from uuid import UUID
+
 from core.rag.models import KnowledgeBaseChunk
 
 
-def chunk_faq_items(faq_list: list[dict[str, Any]], tenant_id: UUID) -> list[KnowledgeBaseChunk]:
+def chunk_faq_items(
+    faq_list: list[dict[str, Any]], tenant_id: UUID
+) -> list[KnowledgeBaseChunk]:
     """Convert list of FAQ dict items ({question, answer}) into KnowledgeBaseChunks."""
     chunks: list[KnowledgeBaseChunk] = []
     for item in faq_list:

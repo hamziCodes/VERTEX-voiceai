@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import AsyncIterator
 
 import httpx
 
 from core.buffers.cancellation import CancellationToken
 from core.observability.logging import get_logger
+from core.providers.exceptions import (
+    ProviderInvocationError,
+    classify_http_failure,
+    provider_invocation_error,
+)
 from core.providers.interfaces.stt import BaseSTTProvider, STTConfig, Transcript
+from core.providers.mode import provider_is_locally_ready, should_use_mock_provider
 from core.types.audio import AudioFrame, pcm16_to_wav
 
 logger = get_logger("ucve.providers.deepgram")
@@ -26,18 +31,13 @@ class DeepgramSTTProvider(BaseSTTProvider):
         model: str = "nova-3",
         mock_text: str = "",
     ) -> None:
-        self.api_key = (
-            api_key
-            or os.environ.get("PLATFORM_DEEPGRAM_API_KEY")
-            or os.environ.get("DEEPGRAM_API_KEY")
-            or ""
-        ).strip()
+        self.api_key = (api_key or "").strip()
         self.model = model
         self.mock_text = mock_text
         self._base = "https://api.deepgram.com/v1/listen"
 
     def health_check(self) -> bool:
-        return True
+        return provider_is_locally_ready(api_key=self.api_key)
 
     async def transcribe_stream(
         self,
@@ -55,10 +55,8 @@ class DeepgramSTTProvider(BaseSTTProvider):
                     break
                 buf.extend(frame.pcm16)
 
-        use_mock = (
-            not self.api_key
-            or os.environ.get("RUN_MOCK_PROVIDERS") == "1"
-            or os.environ.get("RUN_LIVE_PROVIDERS") != "1"
+        use_mock = should_use_mock_provider(
+            provider_id="deepgram", api_key=self.api_key
         )
         if use_mock:
             if len(buf) < _MIN_PCM_BYTES:
@@ -96,8 +94,10 @@ class DeepgramSTTProvider(BaseSTTProvider):
                     params=params,
                 )
             if res.status_code != 200:
-                logger.error("Deepgram HTTP failure", status=res.status_code, body=res.text[:200])
-                return
+                logger.error("Deepgram HTTP failure", status=res.status_code)
+                raise ProviderInvocationError(
+                    classify_http_failure("deepgram", res.status_code)
+                )
 
             data = res.json()
             results = data.get("results", {})
@@ -116,5 +116,10 @@ class DeepgramSTTProvider(BaseSTTProvider):
                     confidence=confidence,
                     language=config.language,
                 )
+        except ProviderInvocationError:
+            raise
         except Exception as exc:
-            logger.error("Deepgram transcription exception", error=str(exc))
+            logger.error(
+                "Deepgram transcription exception", error_type=type(exc).__name__
+            )
+            raise provider_invocation_error("deepgram", exc) from exc

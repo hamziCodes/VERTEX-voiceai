@@ -1,0 +1,125 @@
+# Wavia alerting rules (Phase 14). Evaluated by Prometheus (or any
+# Prometheus-rules-compatible evaluator) against the /metrics endpoints.
+# Every expression uses metrics that the services actually export; the test
+# suite checks that and `promtool check rules` validates the syntax.
+# Thresholds: latency targets come from core/latency/slo_policy.py
+# (p50 450 ms, p95 850 ms); the rest are starting points to tune with traffic.
+groups:
+  - name: wavia-voice-slo
+    rules:
+      - alert: WaviaTurnLatencyP95AboveSLO
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(ucve_turn_latency_ms_bucket{measurement_quality="server_ack_upper_bound"}[10m]))
+          ) > 850
+          and sum(rate(ucve_turn_latency_ms_count{measurement_quality="server_ack_upper_bound"}[10m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          code: LATENCY_SLO_BREACH
+        annotations:
+          summary: "p95 end-of-speech to first audible sample is above 850 ms"
+          runbook: docs/runbooks/RUNBOOK_LATENCY_SLO_BREACH.md
+      - alert: WaviaTurnLatencyP50AboveTarget
+        expr: |
+          histogram_quantile(0.50,
+            sum by (le) (rate(ucve_turn_latency_ms_bucket{measurement_quality="server_ack_upper_bound"}[10m]))
+          ) > 450
+          and sum(rate(ucve_turn_latency_ms_count{measurement_quality="server_ack_upper_bound"}[10m])) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+          code: LATENCY_SLO_BREACH
+        annotations:
+          summary: "p50 end-of-speech to first audible sample is above 450 ms"
+          runbook: docs/runbooks/RUNBOOK_LATENCY_SLO_BREACH.md
+
+  - name: wavia-providers
+    rules:
+      - alert: WaviaProviderFailoverRateHigh
+        expr: sum by (category) (rate(ucve_provider_failover_total[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: error
+          code: PROVIDER_CHAIN_EXHAUSTED
+        annotations:
+          summary: "Provider routes for {{ $labels.category }} are failing over repeatedly"
+          runbook: docs/runbooks/RUNBOOK_PROVIDER_OUTAGE.md
+      - alert: WaviaOperationalAlertRaised
+        expr: sum by (code, severity) (increase(ucve_alerts_total{severity=~"error|critical"}[5m])) > 0
+        labels:
+          severity: "{{ $labels.severity }}"
+        annotations:
+          summary: "Wavia raised a {{ $labels.code }} alert; see /admin/operations"
+
+  - name: wavia-runtime
+    rules:
+      - alert: WaviaServiceNotReady
+        expr: min by (job, instance, service, check) (ucve_readiness) == 0
+        for: 3m
+        labels:
+          severity: error
+        annotations:
+          summary: "{{ $labels.service }} readiness check {{ $labels.check }} is failing"
+      - alert: WaviaMetricsScrapeDown
+        expr: up{job="wavia"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} is not exposing /metrics"
+      - alert: WaviaEventLoopLagHigh
+        expr: |
+          histogram_quantile(0.99, sum by (le, service) (rate(ucve_event_loop_lag_ms_bucket[5m]))) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} event loop p99 lag above 100 ms (audio jitter risk)"
+          runbook: docs/runbooks/RUNBOOK_WORKER_OOM.md
+      - alert: WaviaWorkerAtCapacity
+        expr: |
+          sum by (instance) (ucve_active_sessions{service="worker-raw"})
+          >= on (instance) group_left max by (instance) (ucve_worker_session_capacity)
+        for: 5m
+        labels:
+          severity: warning
+          code: CAPACITY_EXHAUSTED
+        annotations:
+          summary: "worker {{ $labels.instance }} is at its session capacity"
+      - alert: WaviaHttp5xxRateHigh
+        expr: |
+          sum by (service) (rate(ucve_http_requests_total{status_class="5xx"}[5m]))
+          / clamp_min(sum by (service) (rate(ucve_http_requests_total[5m])), 1e-9) > 0.05
+        for: 5m
+        labels:
+          severity: error
+        annotations:
+          summary: "{{ $labels.service }} is returning more than 5% server errors"
+
+  - name: wavia-jobs
+    rules:
+      - alert: WaviaJobsDeadLettered
+        expr: max by (job_family) (label_replace(ucve_job_queue_depth{state="dead_letter"}, "job_family", "$1", "job", "(.*)")) > 0
+        for: 1m
+        labels:
+          severity: error
+          code: JOB_DEAD_LETTER
+        annotations:
+          summary: "{{ $labels.job_family }} has dead-lettered jobs"
+          runbook: docs/runbooks/RUNBOOK_DLQ_BACKLOG.md
+      - alert: WaviaJobRunsFailing
+        expr: sum by (job) (increase(ucve_jobs_total{outcome="error"}[15m])) > 3
+        labels:
+          severity: error
+          code: JOB_RUN_FAILED
+        annotations:
+          summary: "Scheduled job {{ $labels.job }} is failing"
+          runbook: docs/runbooks/RUNBOOK_DLQ_BACKLOG.md
+      - alert: WaviaJobsRunnerSilent
+        expr: absent_over_time(ucve_jobs_total[30m])
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No background job has reported in 30 minutes; the jobs runner may be down"

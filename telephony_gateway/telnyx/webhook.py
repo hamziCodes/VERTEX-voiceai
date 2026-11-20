@@ -1,80 +1,136 @@
-"""Telnyx Webhook Gateway Handler — Receives Telnyx PSTN webhooks & mints SIP sessions."""
+"""Secure Telnyx webhook admission."""
 
 from __future__ import annotations
 
-from typing import Any
-from uuid import UUID, uuid4
+import asyncio
+import os
+from collections.abc import Callable
+from typing import Protocol
+from uuid import UUID
 
-from core.transport.caller_id import CallerIdContext
-from telephony_gateway.resolver.sip_participant_resolver import SIPParticipantResolver
+from pydantic import ValidationError
+
+from core.db.repos.telephony_repo import TelephonyAdmissionError
+from telephony_gateway.telnyx.models import (
+    TelnyxAcceptedEvent,
+    TelnyxWebhookEnvelope,
+)
 from telephony_gateway.telnyx.signature import verify_telnyx_signature
 
 
-class TelnyxWebhookHandler:
-    """Processes incoming Telnyx PSTN webhook events."""
+class TelnyxWebhookError(ValueError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+class TelnyxEventSink(Protocol):
+    async def accept_once(self, event: TelnyxWebhookEnvelope) -> bool: ...
+
+
+class InMemoryTelnyxEventSink:
+    """Deterministic development adapter; Phase 12B supplies PostgreSQL."""
+
+    def __init__(self) -> None:
+        self.events: dict[UUID, TelnyxWebhookEnvelope] = {}
+        self._lock = asyncio.Lock()
+
+    async def accept_once(self, event: TelnyxWebhookEnvelope) -> bool:
+        async with self._lock:
+            if event.data.id in self.events:
+                return False
+            self.events[event.data.id] = event.model_copy(deep=True)
+            return True
+
+
+def _require_ed25519_public_key(value: str) -> None:
+    """Fail at startup, not on the first webhook, when the key is unusable.
+
+    A malformed key would otherwise report "verifier configured" while every
+    genuine Telnyx webhook fails signature verification.
+    """
+    import base64
+    import binascii
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    try:
+        raw = base64.b64decode(value, validate=True)
+        if len(raw) != 32:
+            raise ValueError
+        Ed25519PublicKey.from_public_bytes(raw)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError(
+            "TELNYX_PUBLIC_KEY must be the base64 Ed25519 public key from the "
+            "Telnyx portal."
+        ) from exc
+
+
+class TelnyxWebhookService:
+    """Verify exact bytes, validate the envelope, then durably accept once."""
 
     def __init__(
         self,
-        telnyx_public_key: str = "",
-        hmac_secret: str = "",
-        resolver: SIPParticipantResolver | None = None,
+        *,
+        public_key: str,
+        event_sink: TelnyxEventSink,
+        now: Callable[[], float] | None = None,
+        max_body_bytes: int = 256 * 1024,
+        max_drift_sec: float = 300.0,
     ) -> None:
-        self.public_key = telnyx_public_key
-        self.hmac_secret = hmac_secret
-        self.resolver = resolver or SIPParticipantResolver()
+        if not public_key.strip():
+            raise ValueError("Telnyx public key is required.")
+        _require_ed25519_public_key(public_key.strip())
+        if max_body_bytes < 1:
+            raise ValueError("max_body_bytes must be positive.")
+        self.public_key = public_key.strip()
+        self.event_sink = event_sink
+        self.now = now
+        self.max_body_bytes = max_body_bytes
+        self.max_drift_sec = max_drift_sec
 
-    def process_event(
+    async def accept(
         self,
-        payload_bytes: bytes,
-        payload_json: dict[str, Any],
-        signature_header: str | None = None,
-        timestamp_header: str | None = None,
-    ) -> dict[str, Any]:
-        """Process incoming Telnyx webhook payload.
-
-        Fail-closed signature validation.
-        """
-        if not self.public_key and not self.hmac_secret:
-            raise ValueError("Telnyx public key or HMAC secret required for webhook signature verification")
-
-        valid = verify_telnyx_signature(
-            payload_bytes,
+        raw_body: bytes,
+        *,
+        signature_header: str | None,
+        timestamp_header: str | None,
+    ) -> TelnyxAcceptedEvent:
+        if not raw_body or len(raw_body) > self.max_body_bytes:
+            raise TelnyxWebhookError("invalid_telnyx_event")
+        if not verify_telnyx_signature(
+            raw_body,
             signature_header,
             timestamp_header,
             public_key=self.public_key,
-            hmac_secret=self.hmac_secret,
-        )
-        if not valid:
-            raise ValueError("Invalid Telnyx webhook signature")
-
-        data = payload_json.get("data", {})
-        event_type = data.get("event_type", "")
-        payload = data.get("payload", {})
-
-        from_num = payload.get("from")
-        to_num = payload.get("to")
-        if not from_num or not to_num:
-            raise ValueError("Webhook payload missing required 'from' or 'to' phone numbers")
-
-        call_id = payload.get("call_control_id", str(uuid4()))
-
-        tenant_id, agent_id = self.resolver.resolve(to_num)
-
-        caller_id = CallerIdContext(
-            from_number=from_num,
-            to_number=to_num,
-            sip_call_id=call_id,
-            carrier="telnyx",
+            max_drift_sec=self.max_drift_sec,
+            now=self.now() if self.now is not None else None,
+        ):
+            raise TelnyxWebhookError("invalid_telnyx_signature")
+        try:
+            event = TelnyxWebhookEnvelope.model_validate_json(raw_body)
+        except (ValidationError, ValueError, UnicodeDecodeError) as exc:
+            raise TelnyxWebhookError("invalid_telnyx_event") from exc
+        try:
+            accepted = await self.event_sink.accept_once(event)
+        except TelephonyAdmissionError as exc:
+            raise TelnyxWebhookError("telnyx_call_not_admitted") from exc
+        return TelnyxAcceptedEvent(
+            event_id=event.data.id,
+            event_type=event.data.event_type,
+            duplicate=not accepted,
         )
 
-        session_id = uuid4()
 
-        return {
-            "status": "accepted",
-            "event_type": event_type,
-            "session_id": session_id,
-            "tenant_id": tenant_id,
-            "agent_id": agent_id,
-            "caller_id": caller_id,
-            "transport_type": "sip",
-        }
+def build_telnyx_webhook_service(
+    *,
+    event_sink: TelnyxEventSink,
+    public_key: str | None = None,
+) -> TelnyxWebhookService:
+    """Build from injected config or the standard secret-safe environment boundary."""
+    configured_key = public_key
+    if configured_key is None:
+        configured_key = os.environ.get("TELNYX_PUBLIC_KEY")
+    if not configured_key or not configured_key.strip():
+        raise ValueError("TELNYX_PUBLIC_KEY is required for Telnyx webhooks.")
+    return TelnyxWebhookService(public_key=configured_key, event_sink=event_sink)

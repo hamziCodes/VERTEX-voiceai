@@ -40,4 +40,8 @@ Every UCVE SDK ships with a runtime manifest:
   "min_server_version": "0.1.0"
 }
 ```
-If an SDK connects to an incompatible server, it cleanly logs a version warning without crashing audio threads.
+The first WebSocket frame is `protocol.hello`. The server accepts compatible
+v1 minor versions and returns `session.ready`; an incompatible major receives a
+typed `PROTOCOL_VERSION_UNSUPPORTED` error and close code `4406` before provider
+startup. Python and TypeScript package versions can advance independently while
+both implement realtime protocol `1.0.0`.

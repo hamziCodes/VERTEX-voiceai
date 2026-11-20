@@ -87,8 +87,8 @@ class ListeningPipelineConfig:
 
     # VAD timing (§8.2)
     vad_threshold: float = 0.5
-    vad_min_speech_ms: int = 100
-    vad_min_silence_ms: int = 380
+    vad_min_speech_ms: int = 160
+    vad_min_silence_ms: int = 960
     vad_pre_speech_ms: int = 200
 
     # Adaptive noise gate (§8.2)
@@ -105,6 +105,9 @@ class ListeningPipelineConfig:
     gladia_endpointing: float = 0.2
     gladia_receive_partials: bool = True
     stt_mock_text: str = ""
+    stt_connect_timeout_ms: int = 3000
+    stt_reconnect_max_attempts: int = 3
+    ingress_backpressure_warn_ms: int = 100
 
     # Observability (§8.7)
     debug_listening: bool = False
@@ -175,12 +178,12 @@ class ListeningPipelineConfig:
         return int(self.vad_pre_speech_ms * 16 * 2)
 
     @classmethod
-    def from_env(cls) -> "ListeningPipelineConfig":
+    def from_env(cls) -> ListeningPipelineConfig:
         return cls(
             enabled_phases=_parse_phases(os.environ.get("UCVE_PIPELINE_V2")),
             vad_threshold=_env_float("UCVE_VAD_THRESHOLD", 0.5),
-            vad_min_speech_ms=_env_int("UCVE_VAD_MIN_SPEECH_MS", 100),
-            vad_min_silence_ms=_env_int("UCVE_VAD_MIN_SILENCE_MS", 380),
+            vad_min_speech_ms=_env_int("UCVE_VAD_MIN_SPEECH_MS", 160),
+            vad_min_silence_ms=_env_int("UCVE_VAD_MIN_SILENCE_MS", 960),
             vad_pre_speech_ms=_env_int("UCVE_VAD_PRE_SPEECH_MS", 200),
             noise_gate_k=_env_float("UCVE_NOISE_GATE_K", 3.0),
             noise_gate_window=_env_int("UCVE_NOISE_GATE_WINDOW", 50),
@@ -193,6 +196,13 @@ class ListeningPipelineConfig:
             gladia_endpointing=_env_float("UCVE_GLADIA_ENDPOINTING", 0.2),
             gladia_receive_partials=_env_bool("UCVE_GLADIA_RECEIVE_PARTIALS", True),
             stt_mock_text=_env_str("UCVE_STT_MOCK_TEXT", ""),
+            stt_connect_timeout_ms=_env_int("UCVE_STT_CONNECT_TIMEOUT_MS", 3000),
+            stt_reconnect_max_attempts=_env_int(
+                "UCVE_STT_RECONNECT_MAX_ATTEMPTS", 3
+            ),
+            ingress_backpressure_warn_ms=_env_int(
+                "UCVE_INGRESS_BACKPRESSURE_WARN_MS", 100
+            ),
             debug_listening=_env_bool("UCVE_DEBUG_LISTENING", False),
         )
 
@@ -205,9 +215,10 @@ class SpeakingPipelineConfig:
 
     # TTS / egress (§8.5)
     tts_chunk_size_bytes: int = 8192
-    tts_pop_skip_bytes: int = 2048
     egress_prebuffer_ms: int = 35
-    client_prebuffer_chunks: int = 3
+    tts_first_chunk_timeout_ms: int = 3000
+    tts_inter_chunk_timeout_ms: int = 3000
+    tts_overall_timeout_ms: int = 30000
 
     # LLM / chunking (§8.6)
     chunker_first_words: int = 2
@@ -229,13 +240,18 @@ class SpeakingPipelineConfig:
         return self.has_phase("tool_loop")
 
     @classmethod
-    def from_env(cls) -> "SpeakingPipelineConfig":
+    def from_env(cls) -> SpeakingPipelineConfig:
         return cls(
             enabled_phases=_parse_phases(os.environ.get("UCVE_PIPELINE_V2")),
             tts_chunk_size_bytes=_env_int("UCVE_TTS_CHUNK_SIZE_BYTES", 8192),
-            tts_pop_skip_bytes=_env_int("UCVE_TTS_POP_SKIP_BYTES", 2048),
             egress_prebuffer_ms=_env_int("UCVE_EGRESS_PREBUFFER_MS", 35),
-            client_prebuffer_chunks=_env_int("UCVE_CLIENT_PREBUFFER_CHUNKS", 3),
+            tts_first_chunk_timeout_ms=_env_int(
+                "UCVE_TTS_FIRST_CHUNK_TIMEOUT_MS", 3000
+            ),
+            tts_inter_chunk_timeout_ms=_env_int(
+                "UCVE_TTS_INTER_CHUNK_TIMEOUT_MS", 3000
+            ),
+            tts_overall_timeout_ms=_env_int("UCVE_TTS_OVERALL_TIMEOUT_MS", 30000),
             chunker_first_words=_env_int("UCVE_CHUNKER_FIRST_WORDS", 2),
             chunker_min_words=_env_int("UCVE_CHUNKER_MIN_WORDS", 3),
             tool_filler_delay_ms=_env_int("UCVE_TOOL_FILLER_DELAY_MS", 400),

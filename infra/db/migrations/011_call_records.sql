@@ -32,4 +32,4 @@ ALTER TABLE call_records FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY call_records_tenant_isolation ON call_records
     FOR ALL
-    USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);

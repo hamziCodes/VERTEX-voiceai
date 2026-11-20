@@ -5,38 +5,41 @@ from __future__ import annotations
 import datetime
 import json
 import logging
-import re
 import sys
 from typing import Any
 
+from core.compliance.redaction import redact_log_fields, redact_text
 from core.observability.context import ObservabilityContext
 
-# Regex patterns for PHI and secret URL query parameter redaction
-_PHONE_PATTERN = re.compile(r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b")
-_EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
-_SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
-_AUTH_PARAM_PATTERN = re.compile(r"((?:token|api_key|signature|access_token|jwt)=)[^&]*", re.IGNORECASE)
+CORRELATION_KEYS = (
+    "service",
+    "request_id",
+    "trace_id",
+    "span_id",
+    "call_id",
+    "tenant_id",
+    "session_id",
+    "turn_id",
+    "phase",
+)
 
 
 def redact_phi(text: str) -> str:
     """Redact sensitive PHI patterns (phone numbers, emails, SSNs) from text."""
     if not isinstance(text, str):
         return text
-    cleaned = _PHONE_PATTERN.sub("[REDACTED_PHONE]", text)
-    cleaned = _EMAIL_PATTERN.sub("[REDACTED_EMAIL]", cleaned)
-    cleaned = _SSN_PATTERN.sub("[REDACTED_SSN]", cleaned)
-    return cleaned
+    return redact_text(text)
 
 
 def redact_url_params(url: str) -> str:
     """Redact authentication token query parameters from URLs."""
     if not isinstance(url, str):
         return url
-    return _AUTH_PARAM_PATTERN.sub(r"\1[REDACTED]", url)
+    return redact_text(url)
 
 
 class StructuredJSONFormatter(logging.Formatter):
-    """Formatter producing standardized JSON log records enriched with context variables."""
+    """Format structured JSON logs with context and privacy redaction."""
 
     def format(self, record: logging.LogRecord) -> str:
         ctx = ObservabilityContext.get()
@@ -47,23 +50,24 @@ class StructuredJSONFormatter(logging.Formatter):
         message = redact_url_params(message)
 
         log_data: dict[str, Any] = {
-            "timestamp": datetime.datetime.fromtimestamp(record.created, tz=datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.fromtimestamp(
+                record.created, tz=datetime.UTC
+            ).isoformat(),
             "level": record.levelname,
             "event": message,
             "logger": record.name,
         }
 
         # Merge correlation IDs from context
-        for key in ("call_id", "tenant_id", "session_id", "phase"):
+        for key in CORRELATION_KEYS:
             if key in ctx:
                 log_data[key] = ctx[key]
 
         # Merge extra attributes if passed
         if hasattr(record, "extra_fields") and isinstance(record.extra_fields, dict):
-            for k, v in record.extra_fields.items():
-                if isinstance(v, str):
-                    v = redact_phi(redact_url_params(v))
-                log_data[k] = v
+            sanitized = redact_log_fields(record.extra_fields)
+            if isinstance(sanitized, dict):
+                log_data.update(sanitized)
 
         return json.dumps(log_data)
 
@@ -96,8 +100,76 @@ class StructuredLoggerWrapper:
             (),
             None,
         )
-        record.extra_fields = kwargs  # type: ignore[attr-defined]
+        record.extra_fields = kwargs
         self._logger.handle(record)
+
+
+_REDACTION_INSTALLED = False
+
+
+def _redact_argument(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return redact_text(value if isinstance(value, str) else str(value))
+
+
+def _redact_record_message(record: logging.LogRecord) -> None:
+    """Redact the message and each ``%`` argument while keeping their shape.
+
+    Formatters such as uvicorn's access formatter unpack ``record.args``, so
+    the arguments stay a tuple (or mapping) of the same length. When the
+    redacted pieces no longer format (a ``%d`` that received text), the
+    record falls back to one fully rendered, redacted message.
+    """
+    original_args = record.args
+    rendered = record.getMessage()
+    if isinstance(record.msg, str) and isinstance(original_args, tuple):
+        record.args = tuple(_redact_argument(value) for value in original_args)
+        record.msg = redact_text(record.msg)
+    elif isinstance(record.msg, str) and isinstance(original_args, dict):
+        record.args = {key: _redact_argument(value) for key, value in original_args.items()}
+        record.msg = redact_text(record.msg)
+    else:
+        record.msg = redact_text(rendered)
+        record.args = None
+        return
+    try:
+        record.getMessage()
+    except (TypeError, ValueError, KeyError):
+        record.msg = redact_text(rendered)
+        record.args = None
+
+
+def install_log_redaction() -> None:
+    """Redact every log record in the process, whichever logger created it.
+
+    Modules that use ``logging.getLogger`` directly (and third-party libraries)
+    bypass :class:`StructuredJSONFormatter`. Wrapping the record factory makes
+    the message, its ``%`` arguments and any formatted traceback pass through
+    the same PII/credential redaction before any handler sees them.
+    """
+    global _REDACTION_INSTALLED
+    if _REDACTION_INSTALLED:
+        return
+    previous = logging.getLogRecordFactory()
+
+    def factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
+        record = previous(*args, **kwargs)
+        try:
+            _redact_record_message(record)
+        except Exception:  # noqa: BLE001 - a log line must never crash the caller
+            record.msg = "[UNRENDERABLE LOG MESSAGE]"
+            record.args = None
+        if record.exc_info and record.exc_info[0] is not None:
+            import traceback
+
+            record.exc_text = redact_text(
+                "".join(traceback.format_exception(*record.exc_info))
+            ).rstrip("\n")
+        return record
+
+    logging.setLogRecordFactory(factory)
+    _REDACTION_INSTALLED = True
 
 
 _loggers: dict[str, StructuredLoggerWrapper] = {}

@@ -25,6 +25,8 @@ KNOWN_INSECURE_DEFAULTS: Final[frozenset[str]] = frozenset(
         "ucve-metrics-bearer",
         "ucve-hmac-salt",
         "ucve-master-key",
+        "ucve-jwt-secret-test-only-32bytes!",
+        "dev-mint-secret",
         "dev-secret",
         "secret",
         "test",
@@ -33,6 +35,9 @@ KNOWN_INSECURE_DEFAULTS: Final[frozenset[str]] = frozenset(
 )
 
 _DEV_ENVS: Final[frozenset[str]] = frozenset({"dev", "development", "test"})
+_PROTECTED_ENVS: Final[frozenset[str]] = frozenset(
+    {"staging", "production", "prod"}
+)
 
 
 class BootConfigurationError(RuntimeError):
@@ -46,6 +51,11 @@ def get_ucve_env() -> str:
 
 def is_production() -> bool:
     return get_ucve_env() == "production"
+
+
+def is_protected_environment() -> bool:
+    """Return True when local/test fallbacks must fail closed."""
+    return get_ucve_env() in _PROTECTED_ENVS
 
 
 def is_test_env() -> bool:
@@ -64,11 +74,12 @@ def allow_local_dev_kms() -> bool:
 def validate_secret_value(name: str, value: str | None) -> str:
     """Return stripped secret or raise if missing/insecure for production."""
     raw = (value or "").strip()
-    if is_production():
+    if is_protected_environment():
         if not raw or raw.lower() in KNOWN_INSECURE_DEFAULTS:
             raise BootConfigurationError(
-                f"Refusing to start: {name} is missing or equals a known insecure default "
-                f"(UCVE_ENV=production)."
+                f"Refusing to start: {name} is missing or equals a known "
+                "insecure default "
+                f"(UCVE_ENV={get_ucve_env()})."
             )
     return raw
 
@@ -79,7 +90,7 @@ def require_production_secrets() -> None:
 
     Required: UCVE_JWT_SECRET, UCVE_MINT_HMAC_SECRET, UCVE_METRICS_BEARER.
     """
-    if not is_production():
+    if not is_protected_environment():
         return
     for name in ("UCVE_JWT_SECRET", "UCVE_MINT_HMAC_SECRET", "UCVE_METRICS_BEARER"):
         validate_secret_value(name, os.environ.get(name))

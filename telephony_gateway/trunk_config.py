@@ -1,13 +1,13 @@
-"""SIP Trunk Configuration Data Model — Multi-trunk failover & credential vault references."""
+"""SIP trunk configuration and credential-reference metadata."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 
-class SIPTrunkProvider(str, Enum):
+class SIPTrunkProvider(StrEnum):
     """Supported telephony carrier & trunk providers."""
 
     TELNYX = "telnyx"
@@ -17,7 +17,7 @@ class SIPTrunkProvider(str, Enum):
     GENERIC_PTA = "generic_pta"
 
 
-class SIPTrunkRole(str, Enum):
+class SIPTrunkRole(StrEnum):
     """Trunk operational role in tenant failover chain."""
 
     PRIMARY = "primary"
@@ -31,6 +31,7 @@ class SIPTrunkConfig:
 
     provider: SIPTrunkProvider
     credentials_ref: str  # Vault key ID, e.g. "vault://tenant_id/telnyx_key"
+    connection_id: str = ""
     webhook_public_key: str = ""
     priority: int = 1  # 1 = Highest priority
     role: SIPTrunkRole = SIPTrunkRole.PRIMARY
@@ -40,6 +41,6 @@ class SIPTrunkConfig:
 
     def validate(self) -> bool:
         """Validate trunk config integrity. Single trunk config is valid."""
-        if not self.credentials_ref:
+        if not self.credentials_ref or not self.connection_id:
             return False
         return self.enabled

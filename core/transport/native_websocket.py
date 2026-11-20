@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import time
+import json
 from typing import Any, Protocol
 
 from control_plane.auth.jwt import verify_session_jwt
 from core.observability.logging import get_logger
-from core.types.events import ControlEvent, ControlEventType
+from core.protocol.realtime import build_event
+from core.types.events import ControlEventType
 
 logger = get_logger("ucve.transport.ws")
 
@@ -21,7 +22,7 @@ class WebSocketSender(Protocol):
 
 
 class NativeWebSocketTransport:
-    """Sovereign plane native WebSocket transport handling binary audio & control messages."""
+    """Sovereign WebSocket transport for binary audio and JSON control."""
 
     def __init__(self, websocket: WebSocketSender | None = None) -> None:
         self._ws = websocket
@@ -29,13 +30,14 @@ class NativeWebSocketTransport:
         self.session_id: str | None = None
         self.tenant_id: str | None = None
         self.agent_id: str | None = None
+        self._sequence = 0
 
     def bind(self, websocket: WebSocketSender) -> None:
         self._ws = websocket
         self.is_connected = True
 
     async def connect(self, connection_id: str, token: str) -> bool:
-        """Authenticate JWT token (from ?token= query param) and accept WS connection."""
+        """Authenticate the JWT from the connection query parameters."""
         try:
             payload = verify_session_jwt(token)
             self.session_id = payload.get("sub")
@@ -43,8 +45,8 @@ class NativeWebSocketTransport:
             self.agent_id = payload.get("agent_id")
             self.is_connected = True
             return True
-        except Exception as exc:
-            logger.warning("WS authentication failure", error=str(exc))
+        except Exception:
+            logger.warning("WS authentication failure")
             self.is_connected = False
             return False
 
@@ -57,37 +59,18 @@ class NativeWebSocketTransport:
     async def send_control_event(
         self, event_type: str | ControlEventType, data: dict[str, Any] | None = None
     ) -> None:
-        """Send JSON control event (control.pong, control.metric, language_changed, barge_in)."""
+        """Send one canonical versioned JSON control event."""
         if not self.is_connected or self._ws is None:
             raise ConnectionError("WS transport is disconnected.")
-        if isinstance(event_type, ControlEventType):
-            evt = ControlEvent(
-                event_type=event_type,
-                timestamp_ms=time.time() * 1000.0,
-                payload=data or {},
-            )
-        else:
-            try:
-                typed = ControlEventType(event_type)
-            except ValueError:
-                import json
-
-                await self._ws.send_text(
-                    json.dumps(
-                        {
-                            "event_type": event_type,
-                            "timestamp_ms": time.time() * 1000.0,
-                            "payload": data or {},
-                        }
-                    )
-                )
-                return
-            evt = ControlEvent(
-                event_type=typed,
-                timestamp_ms=time.time() * 1000.0,
-                payload=data or {},
-            )
-        await self._ws.send_text(evt.to_json())
+        name = (
+            event_type.value
+            if isinstance(event_type, ControlEventType)
+            else event_type
+        )
+        self._sequence += 1
+        await self._ws.send_text(
+            json.dumps(build_event(str(name), data, sequence=self._sequence))
+        )
 
     async def close(self, websocket: WebSocketSender | None = None) -> None:
         """Close WebSocket connection and mark transport disconnected."""

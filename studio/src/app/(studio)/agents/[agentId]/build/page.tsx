@@ -1,0 +1,43 @@
+import { notFound } from "next/navigation";
+import { z } from "zod";
+
+import { hasWorkspaceCapability, requireWorkspace } from "@/auth/workspace";
+import { publishAgentDraftAction, restoreAgentVersionAction, saveAgentDraftAction, validateAgentDraftAction } from "@/features/agents/actions";
+import { AgentDraftEditor } from "@/features/agents/agent-draft-editor";
+import { AgentWorkspaceTabs } from "@/features/agents/agent-workspace-tabs";
+import { loadAgent, loadAgentValidation, loadAgentVersions } from "@/features/agents/data";
+
+export default async function AgentBuildPage({ params }: { params: Promise<{ agentId: string }> }) {
+  const { agentId } = await params;
+  if (!z.string().uuid().safeParse(agentId).success) notFound();
+  const { session, membership } = await requireWorkspace("agent:read");
+  const [agent, validation, versions] = await Promise.all([
+    loadAgent(session, membership.tenant_id, agentId),
+    loadAgentValidation(session, membership.tenant_id, agentId),
+    loadAgentVersions(session, membership.tenant_id, agentId),
+  ]);
+  return (
+    <div className="agent-workspace">
+      <AgentWorkspaceTabs agentId={agent.agent_id} />
+      <header className="screen-header">
+        <div>
+          <p className="screen-eyebrow">Agents / Persona</p>
+          <h1>Build {agent.name}</h1>
+          <p className="screen-summary">Changes save automatically. Publishing creates an immutable version for new sessions.</p>
+        </div>
+      </header>
+      <AgentDraftEditor
+        actions={{
+          saveDraft: saveAgentDraftAction,
+          validateDraft: validateAgentDraftAction,
+          publishDraft: publishAgentDraftAction,
+          restoreVersion: restoreAgentVersionAction,
+        }}
+        canEdit={hasWorkspaceCapability(membership.capabilities, "agent:write")}
+        initialAgent={agent}
+        initialValidation={validation}
+        versions={versions}
+      />
+    </div>
+  );
+}
